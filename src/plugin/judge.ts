@@ -81,7 +81,18 @@ export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
       })
 
       return JudgeService.of({
-        judge: (input) => Cache.get(cache, keyOf(input)),
+        judge: (input) =>
+          Effect.gen(function* () {
+            const key = keyOf(input)
+            const answer = yield* Cache.get(cache, key)
+
+            // A cached None would negative-cache an outage for the whole TTL:
+            // drop it so the next call retries (budget checks are in-memory
+            // and cheap to re-run).
+            if (Option.isNone(answer)) yield* Cache.invalidate(cache, key)
+
+            return answer
+          }),
       })
     }),
   )

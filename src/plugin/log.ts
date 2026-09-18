@@ -27,7 +27,11 @@ const KEEP = 200
 
 const SCAN_LIMIT = 500
 
+const TRIM_EVERY = 25
+
 let sequence = 0
+
+let appends = 0
 
 // Fixed-width base-36 keeps keys lexicographically ordered: time first,
 // then a process-local sequence for same-millisecond decisions.
@@ -69,10 +73,15 @@ export const createDecisionLog = (storage: DecisionStorage, enabled: boolean): D
       // and one parse at read time is cheaper than a mirror type tree.
       yield* storage.set(nextKey(), JSON.stringify(entry))
 
-      // Best effort: trimming must never break a verdict flow.
-      yield* trimToKeep(storage).pipe(
-        Effect.catch((error) => Effect.logWarning("[jevvy] decision log trim failed", { error: String(error) })),
-      )
+      // Best effort and occasional: a scan per append would tax every
+      // verdict for a cap that only matters occasionally.
+      appends += 1
+
+      if (appends % TRIM_EVERY === 0) {
+        yield* trimToKeep(storage).pipe(
+          Effect.catch((error) => Effect.logWarning("[jevvy] decision log trim failed", { error: String(error) })),
+        )
+      }
     }).pipe(
       Effect.catch((error) => Effect.logWarning("[jevvy] decision log append failed", { error: String(error) })),
     ),

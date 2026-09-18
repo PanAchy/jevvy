@@ -20,7 +20,7 @@ export const DENY_FLOOR: readonly FloorRule[] = [
  * the privacy tier. `ask`, not `deny`: the user may well mean it.
  */
 export const CREDENTIAL_PATTERNS: readonly FloorRule[] = [  { pattern: /\btsk-[A-Za-z0-9_-]{8,}/, reason: "contains a TypeSafe API key shape" },
-  { pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/, reason: "contains a private key block" },
+  { pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/, reason: "contains a private key block" },
   { pattern: /AKIA[0-9A-Z]{16}/, reason: "contains an AWS access key shape" },
   { pattern: /gh[pousr]_[A-Za-z0-9]{20,}/, reason: "contains a GitHub token shape" },
   { pattern: /(^|[\s-])(password|passwd|secret|api[_-]?key|token)\s*[:=]\s*\S+/i, reason: "assigns a credential-shaped value" },

@@ -44,23 +44,39 @@ const parseSnapshot = (stored: string | undefined): UsageSnapshot => {
 
 const isStoredText = (u: unknown): u is string => typeof u === "string"
 
-export const createBudget = (storage: BudgetStorage, maxRequestsPerDay: number): Effect.Effect<Budget> =>
+export const createBudget = (
+  storage: BudgetStorage,
+  maxRequestsPerDay: number,
+  currentDay: () => string = dayKey,
+): Effect.Effect<Budget> =>
   Effect.gen(function* () {
     let warned = false
+    let day = currentDay()
 
-    const stored = yield* storage.get(dayKey()).pipe(Effect.orDie)
+    const stored = yield* storage.get(day).pipe(Effect.orDie)
     const seed = parseSnapshot(isStoredText(stored) ? stored : undefined)
     let requests = seed.requests
 
+    // Midnight rollover: a plugin that stays loaded for days must not stay
+    // exhausted forever.
+    const rollover = Effect.sync(() => {
+      const today = currentDay()
+
+      if (today !== day) {
+        day = today
+        requests = 0
+      }
+    })
+
     const persist = (count: number): Effect.Effect<void> =>
-      storage.set(dayKey(), JSON.stringify({ requests: count })).pipe(
+      storage.set(day, JSON.stringify({ requests: count })).pipe(
         Effect.catch((error) => Effect.logWarning("[jevvy] budget snapshot failed", { error: String(error) })),
       )
 
     return {
-      allow: Effect.sync(() => requests < maxRequestsPerDay).pipe(
-        Effect.flatMap((allowed) =>
-          allowed
+      allow: rollover.pipe(
+        Effect.flatMap(() =>
+          requests < maxRequestsPerDay
             ? Effect.succeed(true)
             : warned
               ? Effect.succeed(false)
@@ -72,10 +88,15 @@ export const createBudget = (storage: BudgetStorage, maxRequestsPerDay: number):
                 ),
         ),
       ),
-      record: Effect.sync(() => {
-        requests += 1
+      record: rollover.pipe(
+        Effect.flatMap(() =>
+          Effect.sync(() => {
+            requests += 1
 
-        return requests
-      }).pipe(Effect.flatMap(persist)),
+            return requests
+          }),
+        ),
+        Effect.flatMap(persist),
+      ),
     }
   })

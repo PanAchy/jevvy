@@ -64,4 +64,18 @@ describe("budget", () => {
 
     expect(await Effect.runPromise(budget.allow)).toBe(true)
   })
+
+  it("rolls over at midnight", async () => {
+    const { storage } = makeStorage()
+    let fakeDay = "usage/day-1"
+    const budget = await Effect.runPromise(createBudget(storage, 1, () => fakeDay))
+
+    await Effect.runPromise(budget.record)
+
+    expect(await Effect.runPromise(budget.allow)).toBe(false)
+
+    fakeDay = "usage/day-2"
+
+    expect(await Effect.runPromise(budget.allow)).toBe(true)
+  })
 })

