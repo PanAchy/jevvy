@@ -7,7 +7,7 @@
 // commands cost one judgment, not many; cached misses (None) expire with the
 // entry like everything else.
 
-import { Cache, Context, Effect, Layer, Option, Redacted } from "effect"
+import { Cache, Context, Effect, Exit, Layer, Option, Redacted } from "effect"
 import { createJudge, DEFAULT_MODEL, modelAvailable } from "../core/judge.ts"
 import type { JevJudge } from "../core/judge.ts"
 import type { CommandInput, Judged } from "../core/decision.ts"
@@ -23,6 +23,10 @@ export class JudgeService extends Context.Service<JudgeService, Judge>()("@jevvy
 const CACHE_CAPACITY = 512
 
 const CACHE_TTL_MS = 300_000
+
+// Unavailable answers (None) expire fast: a short-lived outage or timeout
+// must not be held against the command for the full cache lifetime.
+const NONE_TTL_MS = 5_000
 
 const JUDGMENT_TIMEOUT_MS = 5_000
 
@@ -100,11 +104,14 @@ export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
       const delegate = createJudge(Redacted.value(config.apiKey), config.model)
       const budget = yield* createBudget(config.budgetStorage, config.maxRequestsPerDay)
 
-      const cache = yield* Cache.make({
-        capacity: CACHE_CAPACITY,
-        timeToLive: CACHE_TTL_MS,
-        lookup: (key: string) => lookupJudged(delegate, config.cwd, budget, key),
-      })
+      const cache = yield* Cache.makeWith(
+        (key: string) => lookupJudged(delegate, config.cwd, budget, key),
+        {
+          capacity: CACHE_CAPACITY,
+          timeToLive: (exit) =>
+            Exit.isSuccess(exit) && Option.isNone(exit.value) ? NONE_TTL_MS : CACHE_TTL_MS,
+        },
+      )
 
       return JudgeService.of({
         judge: (input) =>
@@ -120,15 +127,7 @@ export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
 
             if (!verified) return Option.none<Judged>()
 
-            const key = keyOf(input)
-            const answer = yield* Cache.get(cache, key)
-
-            // A cached None would negative-cache an outage for the whole TTL:
-            // drop it so the next call retries (budget checks are in-memory
-            // and cheap to re-run).
-            if (Option.isNone(answer)) yield* Cache.invalidate(cache, key)
-
-            return answer
+            return yield* Cache.get(cache, keyOf(input))
           }),
       })
     }),
