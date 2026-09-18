@@ -19,8 +19,7 @@ export const DENY_FLOOR: readonly FloorRule[] = [
  * Credential-shaped commands are stopped in code and never sent to the API -
  * the privacy tier. `ask`, not `deny`: the user may well mean it.
  */
-export const CREDENTIAL_PATTERNS: readonly FloorRule[] = [
-  { pattern: /\btsk-[A-Za-z0-9_-]{8,}/, reason: "contains a TypeSafe API key shape" },
+export const CREDENTIAL_PATTERNS: readonly FloorRule[] = [  { pattern: /\btsk-[A-Za-z0-9_-]{8,}/, reason: "contains a TypeSafe API key shape" },
   { pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/, reason: "contains a private key block" },
   { pattern: /AKIA[0-9A-Z]{16}/, reason: "contains an AWS access key shape" },
   { pattern: /gh[pousr]_[A-Za-z0-9]{20,}/, reason: "contains a GitHub token shape" },
@@ -63,6 +62,19 @@ export const PROVEN_PREFIXES: readonly string[] = [
  */
 export const stripComments = (command: string): string =>
   command.replace(/(^|[\s;|&])#[^\n]*/g, "$1").trim()
+
+/**
+ * Redact credential-shaped substrings before a command is persisted or shown.
+ * The credential tier exists to keep secrets away from the model; the same
+ * duty applies to the decision log.
+ */
+export const redactSecrets = (command: string): string =>
+  CREDENTIAL_PATTERNS.reduce(
+    (redacted, { pattern }) => redacted.replace(new RegExp(pattern.source, withGlobal(pattern)), "[redacted]"),
+    command,
+  )
+
+const withGlobal = (pattern: RegExp): string => (pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`)
 
 export type CodeTier =
   | { readonly tier: "floor"; readonly reason: string }

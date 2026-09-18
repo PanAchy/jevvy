@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { classifyCodeTiers } from "../../src/core/floor.ts"
+import { classifyCodeTiers, redactSecrets } from "../../src/core/floor.ts"
 
 describe("code tiers - floor", () => {
   it.each([
@@ -53,6 +53,23 @@ describe("code tiers - comment stripping", () => {
   it("a dangerous command stays dangerous with a harmless comment", () => {
     const tier = classifyCodeTiers("git checkout -- . # dry run only")
     expect(tier.tier).toBe("unknown")
+  })
+})
+
+describe("redactSecrets - what gets persisted never carries credentials", () => {
+  it("redacts token-shaped values", () => {
+    const redacted = redactSecrets("curl -H 'Authorization: token ghp_abcdefghijklmnopqrstuvwxyz012345' https://api.github.com")
+    expect(redacted).toContain("[redacted]")
+    expect(redacted).not.toContain("ghp_")
+  })
+
+  it("redacts key assignments", () => {
+    const redacted = redactSecrets("export API_KEY=tsk_abcdefgh12345678")
+    expect(redacted).not.toContain("tsk_")
+  })
+
+  it("leaves plain commands untouched", () => {
+    expect(redactSecrets("git status && ls src")).toBe("git status && ls src")
   })
 })
 

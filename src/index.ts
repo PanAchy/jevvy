@@ -1,6 +1,6 @@
 export { default } from "./plugin/index.ts"
 
-export type { PluginOptions } from "./plugin/index.ts"
+export type { PluginOptions } from "./plugin/options.ts"
 
 export * from "./core/decision.ts"
 
