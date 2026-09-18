@@ -17,7 +17,7 @@ const judged = (r: RiskAnswers, context?: Judged["context"]): Judged => ({
   model: "jev-1.13.0",
 })
 
-describe("combine — bands", () => {
+describe("combine - bands", () => {
   it("asks loudly when any axis reaches high risk", () => {
     const verdict = combine({ command: "rm -rf build" }, judged(risk({ destructive: 0.9 })))
     expect(verdict.effect).toBe("ask")
@@ -42,7 +42,7 @@ describe("combine — bands", () => {
   })
 })
 
-describe("combine — softening", () => {
+describe("combine - softening", () => {
   const context = { authorized: 0.95, off_task: 0.1 }
 
   it("softens ask to allow when the task authorizes", () => {
@@ -62,7 +62,7 @@ describe("combine — softening", () => {
   })
 })
 
-describe("combine — thresholds are the whole policy", () => {
+describe("combine - thresholds are the whole policy", () => {
   it("a boundary value exactly at high-risk threshold asks loudly", () => {
     const verdict = combine({ command: "x" }, judged(risk({ destructive: defaultThresholds.highRisk })))
     expect(verdict.effect).toBe("ask")

@@ -1,14 +1,14 @@
 # jevvy
 
-Judgment layer for coding agents: Jev (TypeSafe System One) verdicts —
+Judgment layer for coding agents: Jev (TypeSafe System One) verdicts -
 allow / ask. jevvy never blocks; the user is the only "no". The core (`src/core`) is harness-agnostic; `src/plugin`
 is the OpenCode v2 Effect adapter.
 
 ## Repo policy
 
 Source-only tracking: source, workflows, README, AGENTS.md, LICENSE are
-committed. Agent artifacts — ADRs, research reports, design specs, the
-CONTEXT.md glossary — stay local and untracked under `docs/` (gitignored
+committed. Agent artifacts - ADRs, research reports, design specs, the
+CONTEXT.md glossary - stay local and untracked under `docs/` (gitignored
 already). Write decisions to `docs/adr/NNNN-slug.md`; keep domain language
 sharp in `CONTEXT.md`.
 
@@ -21,7 +21,7 @@ service-tag identity across the seam.
 ## Branches & PRs
 
 `main` gets changes only through PRs with green CI. Branches: `feat/x`,
-`fix/x`, `chore/x`. Squash-merge — one clean commit per PR, no half-done
+`fix/x`, `chore/x`. Squash-merge - one clean commit per PR, no half-done
 states on main. Every user-visible change ships with a changeset file
 (`npx changeset`) describing it for the changelog; the bot's "version
 packages" PR accumulates them, and merging it is followed by tagging

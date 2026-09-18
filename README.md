@@ -1,10 +1,10 @@
 # jevvy
 
 Judged permissions for coding agents. Before your agent runs a shell command,
-jevvy returns a **verdict** — *allow* or *ask* — from deterministic
+jevvy returns a **verdict** - *allow* or *ask* - from deterministic
 code tiers first and [Jev](https://typesafe.ai) (a calibrated decision model)
 second. No more hand-maintained allowlists; no rubber-stamping everything.
-jevvy never blocks a command — it answers, or stays quiet. You are the only
+jevvy never blocks a command - it answers, or stays quiet. You are the only
 one who can say no.
 
 Ships as a native **OpenCode v2 plugin**. The core is harness-agnostic: a CLI
@@ -50,7 +50,7 @@ mode at scale ([fx](https://github.com/vercel-labs/fx)).
 
 Set `TYPESAFE_API_KEY` (from [console.typesafe.ai](https://console.typesafe.ai/settings/keys))
 in the OpenCode server environment, or in the project's `.env`. Without a key,
-jevvy stays active on code tiers only — floor, credential, proven — and never
+jevvy stays active on code tiers only - floor, credential, proven - and never
 calls the model.
 
 ## Options
@@ -62,7 +62,7 @@ calls the model.
 | `thresholds.ask` | `0.55` | Max risk ≥ → ask |
 | `thresholds.allow` | `0.2` | Every axis < → allow (conjunctive) |
 | `thresholds.authorized` | `0.8` | Task authorization ≥ → soften one step (never `sensitive`) |
-| `dryRun` | `false` | Log verdicts, apply nothing — try it safely |
+| `dryRun` | `false` | Log verdicts, apply nothing - try it safely |
 | `noLog` | `false` | Disable the persistent decision log |
 
 Every verdict is logged (command, effect, reason, probabilities) to plugin
@@ -76,7 +76,7 @@ storage and to the OpenCode server log.
 | OpenRouter | planned | `OPENROUTER_API_KEY` |
 | Cloudflare | planned | `CLOUDFLARE_API_TOKEN` |
 | Vercel AI Gateway | planned | `AI_GATEWAY_API_KEY` |
-| OpenCode Zen | planned — free Jev announced | none (zero-config milestone) |
+| OpenCode Zen | planned - free Jev announced | none (zero-config milestone) |
 
 ## Honest limits
 
@@ -86,14 +86,14 @@ storage and to the OpenCode server log.
   thresholds bound what one axis can do, and why every verdict is logged.
 - **Probabilities wobble.** Identical requests vary; the gap between `allow`
   (0.2) and `ask` (0.55) is deliberate headroom.
-- **Unknown commands leave your machine** — command text, cwd, and a truncated
+- **Unknown commands leave your machine** - command text, cwd, and a truncated
   task snippet go to the provider you configured. Credential-shaped commands
   are stopped in code before that.
 
 ## Roadmap
 
-- [ ] v0.1 — core + OpenCode plugin (this repo, dogfooding)
-- [ ] `jevvy check` CLI — second adapter + eval harness with labeled commands
+- [ ] v0.1 - core + OpenCode plugin (this repo, dogfooding)
+- [ ] `jevvy check` CLI - second adapter + eval harness with labeled commands
 - [ ] npm publish + Discord post
 - [ ] Provider adapters (OpenRouter, Cloudflare, Vercel Gateway)
 - [ ] Zero-config via OpenCode Zen free Jev
@@ -106,7 +106,7 @@ storage and to the OpenCode server log.
 npm install && npm run typecheck
 ```
 
-Dogfood: point `plugins` at the repo path and edit — OpenCode hot-reloads
+Dogfood: point `plugins` at the repo path and edit - OpenCode hot-reloads
 plugins on save.
 
 MIT.

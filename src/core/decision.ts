@@ -1,4 +1,4 @@
-// Decision types + policy combination — pure, harness-agnostic.
+// Decision types + policy combination - pure, harness-agnostic.
 // Everything here is JSON-serializable so verdicts can be logged as-is.
 
 export type EffectKind = "allow" | "ask"
@@ -10,7 +10,7 @@ export interface CommandInput {
   readonly task?: string
 }
 
-/** Risk axes — one noul each. Max-risk drives the verdict. */
+/** Risk axes - one noul each. Max-risk drives the verdict. */
 export interface RiskAnswers {
   readonly destructive: number
   readonly sensitive: number
@@ -19,7 +19,7 @@ export interface RiskAnswers {
   readonly obfuscated: number
 }
 
-/** Context axes — only judged when `task` is present. */
+/** Context axes - only judged when `task` is present. */
 export interface ContextAnswers {
   readonly authorized: number
   readonly off_task: number
@@ -71,7 +71,7 @@ const maxRisk = (risk: RiskAnswers): number =>
  * - max risk ≥ ask  → ask
  * - every axis < allow → allow (conjunctive)
  * - otherwise → ask
- * - `authorized` (task explicitly calls for this) softens ask → allow — except
+ * - `authorized` (task explicitly calls for this) softens ask → allow - except
  *   when the sensitive axis is at/above the ask threshold: a task can never
  *   authorize secret exposure.
  *
@@ -86,7 +86,7 @@ export const combine = (input: CommandInput, judged: Judged, thresholds: Thresho
 
   if (top >= thresholds.highRisk) {
     effect = "ask"
-    reason = `jev: max risk ${fmt(top)} ≥ high-risk ${fmt(thresholds.highRisk)} (${worstAxis(risk)}) — please look closely`
+    reason = `jev: max risk ${fmt(top)} ≥ high-risk ${fmt(thresholds.highRisk)} (${worstAxis(risk)}) - please look closely`
   } else if (top >= thresholds.ask) {
     effect = "ask"
     reason = `jev: max risk ${fmt(top)} ≥ ask ${fmt(thresholds.ask)} (${worstAxis(risk)})`
@@ -95,10 +95,10 @@ export const combine = (input: CommandInput, judged: Judged, thresholds: Thresho
     reason = `jev: every risk axis < ${fmt(thresholds.allow)} (max ${fmt(top)})`
   } else {
     effect = "ask"
-    reason = `jev: gray zone — max risk ${fmt(top)} between allow ${fmt(thresholds.allow)} and ask ${fmt(thresholds.ask)}`
+    reason = `jev: gray zone - max risk ${fmt(top)} between allow ${fmt(thresholds.allow)} and ask ${fmt(thresholds.ask)}`
   }
 
-  // Authorization soften — capability is not harm, but secrets are never authorizable.
+  // Authorization soften - capability is not harm, but secrets are never authorizable.
   const authorizable =
     context !== undefined &&
     context.authorized >= thresholds.authorized &&
@@ -107,7 +107,7 @@ export const combine = (input: CommandInput, judged: Judged, thresholds: Thresho
 
   if (authorizable && effect === "ask") {
     effect = "allow"
-    reason += ` — softened: task authorizes (authorized ${fmt(context!.authorized)}, off_task ${fmt(context!.off_task)})`
+    reason += ` - softened: task authorizes (authorized ${fmt(context!.authorized)}, off_task ${fmt(context!.off_task)})`
   }
 
   return { effect, reason, source: "jev", judged }

@@ -1,4 +1,4 @@
-// Code tiers that run before any model call — deterministic, private, free.
+// Code tiers that run before any model call - deterministic, private, free.
 // Order matters: floor (deny) → credential shape (ask, never sent to the API) → proven (allow).
 
 export interface FloorRule {
@@ -16,10 +16,10 @@ export const DENY_FLOOR: readonly FloorRule[] = [
 ]
 
 /**
- * Credential-shaped commands are stopped in code and never sent to the API —
+ * Credential-shaped commands are stopped in code and never sent to the API -
  * the privacy tier. `ask`, not `deny`: the user may well mean it.
  */
-export const CREDENTIAL_SHAPE: readonly FloorRule[] = [
+export const CREDENTIAL_PATTERNS: readonly FloorRule[] = [
   { pattern: /\btsk-[A-Za-z0-9_-]{8,}/, reason: "contains a TypeSafe API key shape" },
   { pattern: /-----BEGIN [A-Z ]*PRIVATE KEY-----/, reason: "contains a private key block" },
   { pattern: /AKIA[0-9A-Z]{16}/, reason: "contains an AWS access key shape" },
@@ -28,7 +28,7 @@ export const CREDENTIAL_SHAPE: readonly FloorRule[] = [
 ]
 
 /**
- * Proven allowlist — every segment a listed read-only verb, nothing sent anywhere.
+ * Proven allowlist - every segment a listed read-only verb, nothing sent anywhere.
  * Keep it deliberately tiny; three plain rules beat the model on real traffic.
  */
 export const PROVEN_PREFIXES: readonly string[] = [
@@ -74,7 +74,7 @@ export type CodeTier =
  * Evaluate the code tiers for a compound command. Segments split on statement
  * separators and pipes; every segment must be proven for the proven verdict;
  * any floor/credential hit wins. Known limit: quoted `|`/`&&` characters
- * inside arguments are split too — full bash tokenization is out of scope
+ * inside arguments are split too - full bash tokenization is out of scope
  * (see the design doc's canonicalization section).
  */
 export const classifyCodeTiers = (rawCommand: string): CodeTier => {
@@ -85,7 +85,7 @@ export const classifyCodeTiers = (rawCommand: string): CodeTier => {
     if (pattern.test(command)) return { tier: "floor", reason }
   }
 
-  for (const { pattern, reason } of CREDENTIAL_SHAPE) {
+  for (const { pattern, reason } of CREDENTIAL_PATTERNS) {
     if (pattern.test(command)) return { tier: "credential", reason }
   }
 

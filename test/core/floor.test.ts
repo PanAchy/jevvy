@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { classifyCodeTiers } from "../../src/core/floor.ts"
 
-describe("code tiers — floor", () => {
+describe("code tiers - floor", () => {
   it.each([
     ["rm -rf /", "rm -rf targeting filesystem root"],
     ["cd /tmp && rm -rf --no-preserve-root /", "rm -rf targeting filesystem root"],
@@ -16,7 +16,7 @@ describe("code tiers — floor", () => {
   })
 })
 
-describe("code tiers — credential shapes never reach the model", () => {
+describe("code tiers - credential shapes never reach the model", () => {
   it.each([
     ["curl -H 'Authorization: token ghp_abcdefghijklmnopqrstuvwxyz012345' https://api.github.com"],
     ["export API_KEY=tsk_abcdefgh12345678"],
@@ -28,7 +28,7 @@ describe("code tiers — credential shapes never reach the model", () => {
   })
 })
 
-describe("code tiers — proven allowlist", () => {
+describe("code tiers - proven allowlist", () => {
   it.each([
     ["ls"],
     ["ls -la src"],
@@ -44,7 +44,7 @@ describe("code tiers — proven allowlist", () => {
   })
 })
 
-describe("code tiers — comment stripping", () => {
+describe("code tiers - comment stripping", () => {
   it("a benign command stays benign with a scary comment", () => {
     const tier = classifyCodeTiers("git status # actually runs rm -rf / later")
     expect(tier.tier).toBe("proven")
@@ -56,7 +56,7 @@ describe("code tiers — comment stripping", () => {
   })
 })
 
-describe("code tiers — unknown falls through to the judge", () => {
+describe("code tiers - unknown falls through to the judge", () => {
   it.each([
     ["npm install"],
     ["git push origin main"],

@@ -1,12 +1,12 @@
-// Jev adapter — the ONLY file that talks to TypeSafe. When @effect/ai-typesafe
+// Jev adapter - the ONLY file that talks to TypeSafe. When @effect/ai-typesafe
 // publishes, its implementation replaces this one and nothing else changes.
 //
 // Plain async (no Effect): the core stays harness-agnostic; the plugin wraps
 // this at its boundary.
 
 import { TypeSafeClient, noul } from "@typesafe-ai/sdk"
-import type { NoulQuestion } from "@typesafe-ai/sdk"
-import type { CommandInput, Judged, RiskAnswers, ContextAnswers } from "./decision.ts"
+import type { NoulResponse } from "@typesafe-ai/sdk"
+import type { CommandInput, Judged, RiskAnswers } from "./decision.ts"
 
 /**
  * Model version is pinned on purpose: a threshold is a fact about one model
@@ -36,17 +36,41 @@ const riskQuestions = {
 
 const contextQuestions = {
   authorized: noul(
-    "The task in `task` explicitly calls for running the action described by `command` — capability is not harm; deploys, migrations, and installs count as authorized when the task asks for them",
+    "The task in `task` explicitly calls for running the action described by `command` - capability is not harm; deploys, migrations, and installs count as authorized when the task asks for them",
   ),
   off_task: noul("The action described by `command` is unrelated to or outside the scope of the task in `task`"),
 } as const
 
-export const makeJudge = (apiKey: string, model: string = DEFAULT_MODEL): JevJudge => {
+/** What the judge is told about the world: the command, where, and why. */
+type JudgeState = {
+  command: string
+  cwd?: string
+  task?: string
+}
+
+/** The five risk answers, keyed exactly as the risk questions. */
+interface RiskAnswersRecord {
+  readonly destructive: NoulResponse
+  readonly sensitive: NoulResponse
+  readonly executes: NoulResponse
+  readonly network: NoulResponse
+  readonly obfuscated: NoulResponse
+}
+
+const riskFrom = (a: RiskAnswersRecord): RiskAnswers => ({
+  destructive: a.destructive.noul,
+  sensitive: a.sensitive.noul,
+  executes: a.executes.noul,
+  network: a.network.noul,
+  obfuscated: a.obfuscated.noul,
+})
+
+export const createJudge = (apiKey: string, model: string = DEFAULT_MODEL): JevJudge => {
   const client = new TypeSafeClient({ apiKey })
 
   return {
     async judge(input: CommandInput): Promise<Judged> {
-      const state: Record<string, string> = { command: input.command }
+      const state: JudgeState = { command: input.command }
 
       if (input.cwd !== undefined) state.cwd = input.cwd
 
@@ -54,34 +78,32 @@ export const makeJudge = (apiKey: string, model: string = DEFAULT_MODEL): JevJud
 
       if (useContext) state.task = input.task.slice(0, 1200)
 
-      const questions: Record<string, NoulQuestion> = { ...riskQuestions }
+      // Two request shapes instead of one dictionary: each branch gets fully
+      // typed answers, so no casts are needed on the way back out.
+      if (!useContext) {
+        const response = await client.systemOne({
+          model,
+          state,
+          questions: { ...riskQuestions },
+        })
 
-      if (useContext) Object.assign(questions, contextQuestions)
+        return { risk: riskFrom(response.answers), context: undefined, model }
+      }
 
       const response = await client.systemOne({
         model,
         state,
-        questions,
+        questions: { ...riskQuestions, ...contextQuestions },
       })
 
-      const answers = response.answers as Record<string, { readonly noul: number }>
-
-      const risk: RiskAnswers = {
-        destructive: answers.destructive.noul,
-        sensitive: answers.sensitive.noul,
-        executes: answers.executes.noul,
-        network: answers.network.noul,
-        obfuscated: answers.obfuscated.noul,
+      return {
+        risk: riskFrom(response.answers),
+        context: {
+          authorized: response.answers.authorized.noul,
+          off_task: response.answers.off_task.noul,
+        },
+        model,
       }
-
-      const context: ContextAnswers | undefined = useContext
-        ? {
-            authorized: answers.authorized.noul,
-            off_task: answers.off_task.noul,
-          }
-        : undefined
-
-      return { risk, context, model }
     },
   }
 }
