@@ -60,11 +60,16 @@ export default Plugin.define({
         )
 
       const evaluate = yield* createEvaluate(
-        { thresholds, dryRun },
+        { thresholds, dryRun, notePerAllow: options.notePerAllow === true },
         {
           project,
           sessionTask,
           log: createDecisionLog(ctx.storage, options.noLog !== true),
+          note: (sessionID, text) =>
+            ctx.session.synthetic({ sessionID: Session.ID.descending(sessionID), text }).pipe(
+              Effect.asVoid,
+              Effect.catch((error) => Effect.logWarning("[jevvy] note post failed", { error: String(error) })),
+            ),
         },
       ).pipe(Effect.provide(judgeLayer))
 

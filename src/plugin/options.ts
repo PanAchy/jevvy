@@ -11,6 +11,9 @@ export interface PluginOptions {
   readonly dryRun?: boolean
   /** Disable the persistent decision log. */
   readonly noLog?: boolean
+  /** Post a small session note when Jev allows a command. Notes enter the
+   *  model's context, so this is opt-in. */
+  readonly notePerAllow?: boolean
 }
 
 const isString = (u: unknown): u is string => typeof u === "string"
@@ -24,6 +27,7 @@ interface PluginOptionsInput {
   readonly thresholds?: unknown
   readonly dryRun?: unknown
   readonly noLog?: unknown
+  readonly notePerAllow?: unknown
 }
 
 export const isPluginOptionsInput = (u: unknown): u is PluginOptionsInput => typeof u === "object" && u !== null
@@ -43,6 +47,7 @@ interface MutablePluginOptions {
   thresholds?: Partial<Thresholds>
   dryRun?: boolean
   noLog?: boolean
+  notePerAllow?: boolean
 }
 
 /** Mutable staging type for threshold overrides picked off raw config. */
@@ -61,6 +66,8 @@ export const parseOptions = (raw: PluginOptionsInput): PluginOptions => {
   if (isBoolean(raw.dryRun)) options.dryRun = raw.dryRun
 
   if (isBoolean(raw.noLog)) options.noLog = raw.noLog
+
+  if (isBoolean(raw.notePerAllow)) options.notePerAllow = raw.notePerAllow
 
   if (isThresholdsInput(raw.thresholds)) {
     const record = raw.thresholds

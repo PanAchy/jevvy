@@ -64,6 +64,7 @@ calls the model.
 | `thresholds.authorized` | `0.8` | Task authorization ≥ → soften one step (never `sensitive`) |
 | `dryRun` | `false` | Log verdicts, apply nothing - try it safely |
 | `noLog` | `false` | Disable the persistent decision log |
+| `notePerAllow` | `false` | Post a session note when Jev allows (opt-in: notes enter the model's context) |
 
 Every verdict is logged (command, effect, reason, probabilities) to plugin
 storage and to the OpenCode server log.

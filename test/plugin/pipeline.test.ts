@@ -35,6 +35,7 @@ const makeEvent = (command: string): EvaluationEvent => ({
 interface Harness {
   readonly run: (event: EvaluationEvent) => Promise<void>
   readonly judgeInputs: CommandInput[]
+  readonly notes: string[]
   readonly logged: readonly { readonly sessionID: string; readonly command: string; readonly verdict: Verdict }[]
 }
 
@@ -42,8 +43,10 @@ const makeHarness = (options: {
   readonly answer: Option.Option<Judged>
   readonly task?: string
   readonly dryRun?: boolean
+  readonly notePerAllow?: boolean
 }): Harness => {
   const judgeInputs: CommandInput[] = []
+  const notes: string[] = []
   const logged: { sessionID: string; command: string; verdict: Verdict }[] = []
 
   const judgeLayer = Layer.succeed(
@@ -67,15 +70,17 @@ const makeHarness = (options: {
 
   return {
     judgeInputs,
+    notes,
     logged,
     run: async (event) => {
       const evaluate = await Effect.runPromise(
         createEvaluate(
-          { thresholds: defaultThresholds, dryRun: options.dryRun === true },
+          { thresholds: defaultThresholds, dryRun: options.dryRun === true, notePerAllow: options.notePerAllow === true },
           {
             project: "/project",
             sessionTask: () => Effect.succeed(options.task),
             log,
+            note: (sessionID, text) => Effect.sync(() => notes.push(text)),
           },
         ).pipe(Effect.provide(judgeLayer)),
       )
@@ -171,6 +176,28 @@ describe("pipeline - modes and scope", () => {
 
     expect(event.effect).toBe("allow")
     expect(harness.logged).toHaveLength(1)
+  })
+
+  it("note-per-allow posts for Jev allows only", async () => {
+    const harness = makeHarness({ answer: Option.some(judged()), notePerAllow: true })
+
+    const allowed = makeEvent("npm install")
+    await harness.run(allowed)
+
+    const proven = makeEvent("git status")
+    await harness.run(proven)
+
+    expect(harness.notes).toHaveLength(1)
+    expect(harness.notes[0]).toContain("npm install")
+  })
+
+  it("note-per-allow stays silent in dryRun", async () => {
+    const harness = makeHarness({ answer: Option.some(judged()), notePerAllow: true, dryRun: true })
+    const event = makeEvent("npm install")
+
+    await harness.run(event)
+
+    expect(harness.notes).toHaveLength(0)
   })
 
   it("non-shell actions are ignored entirely", async () => {

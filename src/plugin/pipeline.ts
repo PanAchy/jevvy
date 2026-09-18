@@ -21,12 +21,15 @@ export interface EvaluationEvent {
 export interface PipelineConfig {
   readonly thresholds: Thresholds
   readonly dryRun: boolean
+  readonly notePerAllow: boolean
 }
 
 export interface PipelineHost {
   readonly project: string
   readonly sessionTask: (sessionID: string) => Effect.Effect<string | undefined>
   readonly log: DecisionLog
+  /** Posts a note into the session. Wired to session.synthetic by the host. */
+  readonly note: (sessionID: string, text: string) => Effect.Effect<void>
 }
 
 // Session context is foreign data: every typeof lives inside a named type
@@ -137,6 +140,13 @@ export const createEvaluate = (
         if (Option.isNone(judged)) return
 
         // 3. Policy - plain code over the probabilities.
-        yield* applyVerdict(event, combine(input, judged.value, config.thresholds))
+        const verdict = combine(input, judged.value, config.thresholds)
+        yield* applyVerdict(event, verdict)
+
+        // Notes are opt-in: they enter the model's context, so only
+        // Jev-derived allows post one, never proven-tier noise.
+        if (config.notePerAllow && !config.dryRun && verdict.effect === "allow" && verdict.source === "jev") {
+          yield* host.note(event.sessionID, `jevvy allowed \`${command.slice(0, 80)}\`: ${verdict.reason}`)
+        }
       })
   })
