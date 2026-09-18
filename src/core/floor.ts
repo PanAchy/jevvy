@@ -1,12 +1,12 @@
 // Code tiers that run before any model call - deterministic, private, free.
-// Order matters: floor (deny) → credential shape (ask, never sent to the API) → proven (allow).
+// Order matters: floor (loud ask) -> credential shape (ask, never sent to the API) -> proven (allow).
 
 export interface FloorRule {
   readonly pattern: RegExp
   readonly reason: string
 }
 
-/** Catastrophic commands. Denied without consulting the model. */
+/** Catastrophic commands. Escalated to the user without consulting the model. */
 export const DENY_FLOOR: readonly FloorRule[] = [
   { pattern: /(^|\s)rm\s+(-{1,2}[A-Za-z][A-Za-z-]*\s+)+\/(\s|$)/, reason: "rm -rf targeting filesystem root" },
   { pattern: /:\(\)\{ :\|:& \};:/, reason: "fork bomb" },
@@ -75,7 +75,7 @@ export type CodeTier =
  * separators and pipes; every segment must be proven for the proven verdict;
  * any floor/credential hit wins. Known limit: quoted `|`/`&&` characters
  * inside arguments are split too - full bash tokenization is out of scope
- * (see the design doc's canonicalization section).
+ * (full bash tokenization is out of scope; quoted separators are a known limit).
  */
 export const classifyCodeTiers = (rawCommand: string): CodeTier => {
   const command = stripComments(rawCommand)

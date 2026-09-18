@@ -10,7 +10,15 @@ export interface CommandInput {
   readonly task?: string
 }
 
-/** Risk axes - one noul each. Max-risk drives the verdict. */
+/**
+ * Risk axes - one noul each.
+ *
+ * Gating axes (destructive, sensitive, obfuscated) drive the verdict.
+ * Descriptive axes (executes, network) are recorded and surfaced in reasons
+ * but never decide: field measurement showed `network` fires 0.93 on plain
+ * `git fetch` and `executes` 0.21 on `git status` - "what a command does" is
+ * presence, not risk.
+ */
 export interface RiskAnswers {
   readonly destructive: number
   readonly sensitive: number
@@ -60,8 +68,8 @@ export interface Verdict {
 
 const fmt = (n: number) => n.toFixed(2)
 
-const maxRisk = (risk: RiskAnswers): number =>
-  Math.max(risk.destructive, risk.sensitive, risk.executes, risk.network, risk.obfuscated)
+const maxGatingRisk = (risk: RiskAnswers): number =>
+  Math.max(risk.destructive, risk.sensitive, risk.obfuscated)
 
 /**
  * Combine Jev's answers into a verdict. Policy stays in code so it is auditable
@@ -79,7 +87,7 @@ const maxRisk = (risk: RiskAnswers): number =>
  */
 export const combine = (input: CommandInput, judged: Judged, thresholds: Thresholds = defaultThresholds): Verdict => {
   const { risk, context } = judged
-  const top = maxRisk(risk)
+  const top = maxGatingRisk(risk)
 
   let effect: EffectKind
   let reason: string
@@ -114,11 +122,9 @@ export const combine = (input: CommandInput, judged: Judged, thresholds: Thresho
 }
 
 const worstAxis = (risk: RiskAnswers): string => {
-  const entries: readonly [keyof RiskAnswers, number][] = [
+  const entries: readonly ["destructive" | "sensitive" | "obfuscated", number][] = [
     ["destructive", risk.destructive],
     ["sensitive", risk.sensitive],
-    ["executes", risk.executes],
-    ["network", risk.network],
     ["obfuscated", risk.obfuscated],
   ]
 

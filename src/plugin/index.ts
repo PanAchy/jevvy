@@ -47,23 +47,23 @@ const isBoolean = (u: unknown): u is boolean => typeof u === "boolean"
 
 const isNumber = (u: unknown): u is number => typeof u === "number"
 
-interface OptionsRecord {
+interface PluginOptionsInput {
   readonly model?: unknown
   readonly thresholds?: unknown
   readonly dryRun?: unknown
   readonly noLog?: unknown
 }
 
-const isOptionsRecord = (u: unknown): u is OptionsRecord => typeof u === "object" && u !== null
+const isPluginOptionsInput = (u: unknown): u is PluginOptionsInput => typeof u === "object" && u !== null
 
-interface ThresholdsRecord {
+interface ThresholdsInput {
   readonly highRisk?: unknown
   readonly ask?: unknown
   readonly allow?: unknown
   readonly authorized?: unknown
 }
 
-const isThresholdsRecord = (u: unknown): u is ThresholdsRecord => typeof u === "object" && u !== null
+const isThresholdsInput = (u: unknown): u is ThresholdsInput => typeof u === "object" && u !== null
 
 /** Mutable staging type for parsed options before they are frozen as PluginOptions. */
 interface MutablePluginOptions {
@@ -84,7 +84,7 @@ interface MutableThresholdOverrides {
 /** Thresholds with readonly stripped, so defaults can be overridden in place. */
 type MutableThresholds = { -readonly [K in keyof Thresholds]: Thresholds[K] }
 
-const parseOptions = (raw: OptionsRecord): PluginOptions => {
+const parseOptions = (raw: PluginOptionsInput): PluginOptions => {
   const options: MutablePluginOptions = {}
 
   if (isString(raw.model)) options.model = raw.model
@@ -93,7 +93,7 @@ const parseOptions = (raw: OptionsRecord): PluginOptions => {
 
   if (isBoolean(raw.noLog)) options.noLog = raw.noLog
 
-  if (isThresholdsRecord(raw.thresholds)) {
+  if (isThresholdsInput(raw.thresholds)) {
     const record = raw.thresholds
     const partial: MutableThresholdOverrides = {}
 
@@ -139,7 +139,7 @@ export default Plugin.define({
   effect: (ctx) =>
     Effect.gen(function* () {
       const project = ctx.location.directory
-      const options = isOptionsRecord(ctx.options) ? parseOptions(ctx.options) : {}
+      const options = isPluginOptionsInput(ctx.options) ? parseOptions(ctx.options) : {}
 
       // Step-wise threshold assembly: defaults, then any explicit overrides.
       const thresholds: MutableThresholds = { ...defaultThresholds }

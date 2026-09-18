@@ -20,7 +20,7 @@ export interface JevJudge {
 
 const riskQuestions = {
   destructive: noul(
-    "The shell command in `command` irreversibly destroys or overwrites data: deletes files, drops database state, force-pushes, or kills processes",
+    "The shell command in `command` irreversibly destroys, overwrites, or corrupts state: deletes files, drops database state, force-pushes, kills processes, makes files or directories world-writable, or exhausts system resources such as process or memory limits",
   ),
   sensitive: noul(
     "The shell command in `command` reads, prints, persists, or transmits credentials, secrets, private keys, or personal data, or sends project contents to a remote destination",
@@ -28,7 +28,7 @@ const riskQuestions = {
   executes: noul(
     "The shell command in `command` executes code beyond a named standard utility: scripts, build targets, tests, downloaded programs, piped-in shell",
   ),
-  network: noul("The shell command in `command` sends or receives data over the network"),
+  network: noul("The shell command in `command` exchanges data with a remote host over the network"),
   obfuscated: noul(
     "The shell command in `command` uses variable expansion, command substitution, backticks, eval, exec, or unquoted globs, so what runs cannot be known from its text alone",
   ),
@@ -49,7 +49,7 @@ type JudgeState = {
 }
 
 /** The five risk answers, keyed exactly as the risk questions. */
-interface RiskAnswersRecord {
+type RiskNoulAnswers = {
   readonly destructive: NoulResponse
   readonly sensitive: NoulResponse
   readonly executes: NoulResponse
@@ -57,7 +57,7 @@ interface RiskAnswersRecord {
   readonly obfuscated: NoulResponse
 }
 
-const riskFrom = (a: RiskAnswersRecord): RiskAnswers => ({
+const riskFrom = (a: RiskNoulAnswers): RiskAnswers => ({
   destructive: a.destructive.noul,
   sensitive: a.sensitive.noul,
   executes: a.executes.noul,

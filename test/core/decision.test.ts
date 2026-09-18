@@ -31,14 +31,24 @@ describe("combine - bands", () => {
   })
 
   it("asks in the ask band", () => {
-    const verdict = combine({ command: "npm install" }, judged(risk({ executes: 0.6 })))
+    const verdict = combine({ command: "npm install" }, judged(risk({ obfuscated: 0.6 })))
     expect(verdict.effect).toBe("ask")
   })
 
   it("asks in the gray zone between allow and ask", () => {
-    const verdict = combine({ command: "tar czf out.tgz ." }, judged(risk({ executes: 0.3 })))
+    const verdict = combine({ command: "tar czf out.tgz ." }, judged(risk({ obfuscated: 0.3 })))
     expect(verdict.effect).toBe("ask")
     expect(verdict.reason).toContain("gray zone")
+  })
+
+  it("network alone never gates: git fetch must stay silent", () => {
+    const verdict = combine({ command: "git fetch" }, judged(risk({ network: 0.94 })))
+    expect(verdict.effect).toBe("allow")
+  })
+
+  it("executes alone never gates: git status must stay silent", () => {
+    const verdict = combine({ command: "git status" }, judged(risk({ executes: 0.21 })))
+    expect(verdict.effect).toBe("allow")
   })
 })
 
@@ -46,7 +56,7 @@ describe("combine - softening", () => {
   const context = { authorized: 0.95, off_task: 0.1 }
 
   it("softens ask to allow when the task authorizes", () => {
-    const verdict = combine({ command: "npm install", task: "install deps" }, judged(risk({ executes: 0.6 }), context))
+    const verdict = combine({ command: "npm install", task: "install deps" }, judged(risk({ obfuscated: 0.6 }), context))
     expect(verdict.effect).toBe("allow")
     expect(verdict.reason).toContain("softened")
   })
@@ -57,7 +67,7 @@ describe("combine - softening", () => {
   })
 
   it("leaves verdicts unchanged without task context", () => {
-    const verdict = combine({ command: "npm install" }, judged(risk({ executes: 0.6 })))
+    const verdict = combine({ command: "npm install" }, judged(risk({ obfuscated: 0.6 })))
     expect(verdict.effect).toBe("ask")
   })
 })
@@ -70,7 +80,7 @@ describe("combine - thresholds are the whole policy", () => {
   })
 
   it("a value just under the allow threshold still allows", () => {
-    const verdict = combine({ command: "x" }, judged(risk({ network: defaultThresholds.allow - 0.001 })))
+    const verdict = combine({ command: "x" }, judged(risk({ obfuscated: defaultThresholds.allow - 0.001 })))
     expect(verdict.effect).toBe("allow")
   })
 })
