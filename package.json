@@ -1,0 +1,41 @@
+{
+  "name": "jevvy",
+  "version": "0.1.0-alpha.0",
+  "description": "Judged permissions for coding agents — Jev (TypeSafe System One) verdicts: allow, ask, deny",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PanAchy/jevvy.git"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.0.8",
+    "@typesafe-ai/sdk": "^0.6.0",
+    "dotenv": "^17.4.2",
+    "effect": "4.0.0-rc.112"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^3.0.3",
+    "@oxlint/plugins": "1.83.0",
+    "@types/node": "^22.20.3",
+    "oxlint": "1.83.0",
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.7"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

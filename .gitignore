@@ -1,0 +1,8 @@
+node_modules/
+.env
+dist/
+*.log
+
+# local-only: research, design, decisions — never tracked
+docs/
+CONTEXT.md
