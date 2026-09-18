@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest"
 import { Effect, Layer, Option } from "effect"
-import { createEvaluate } from "../../src/plugin/pipeline.ts"
+import { createEvaluate, extractTask } from "../../src/plugin/pipeline.ts"
 import type { EvaluationEvent } from "../../src/plugin/pipeline.ts"
 import { JudgeService } from "../../src/plugin/judge.ts"
 import type { DecisionLog } from "../../src/plugin/log.ts"
@@ -89,6 +89,51 @@ const makeHarness = (options: {
     },
   }
 }
+
+describe("extractTask - real OpenCode message shapes", () => {
+  interface UserMessageFixture {
+    readonly id: string
+    readonly time: { readonly created: number }
+    readonly text: string
+    readonly files: readonly unknown[]
+    readonly agents: readonly unknown[]
+    readonly type: "user"
+  }
+
+  const userMessage = (text: string): UserMessageFixture => ({
+    id: "msg_test",
+    time: { created: 1 },
+    text,
+    files: [],
+    agents: [],
+    type: "user",
+  })
+
+  it("reads top-level text from the newest user message", () => {
+    const messages = [
+      userMessage("older question"),
+      { id: "a1", type: "assistant", text: "answer" },
+      userMessage("deploy the site"),
+    ]
+
+    expect(extractTask(messages)).toBe("deploy the site")
+  })
+
+  it("skips synthetic and assistant text", () => {
+    const messages = [
+      userMessage("real intent"),
+      { id: "s1", type: "synthetic", text: "jevvy allowed `ls`" },
+      { id: "a1", type: "assistant", text: "working on it" },
+    ]
+
+    expect(extractTask(messages)).toBe("real intent")
+  })
+
+  it("returns undefined when no user text exists", () => {
+    expect(extractTask([{ id: "a1", type: "assistant", text: "hi" }])).toBeUndefined()
+    expect(extractTask([userMessage("   ")])).toBeUndefined()
+  })
+})
 
 describe("pipeline - code tiers never reach the judge", () => {
   it("floor commands ask loudly without a model call", async () => {

@@ -2,7 +2,7 @@
 // the policy. Testable without the plugin SDK through a structural event type.
 
 import { Effect, Option } from "effect"
-import { classifyCodeTiers } from "../core/floor.ts"
+import { classifyCodeTiers, stripComments } from "../core/floor.ts"
 import { combine } from "../core/decision.ts"
 import type { CommandInput, Thresholds, Verdict } from "../core/decision.ts"
 import { JudgeService } from "./judge.ts"
@@ -33,44 +33,32 @@ export interface PipelineHost {
 }
 
 // Session context is foreign data: every typeof lives inside a named type
-// predicate, so each check establishes a contract.
+// predicate, so each check establishes a contract. Shape verified against a
+// live context dump: user messages carry top-level `text`, no `parts`.
 
-interface UserMessage {
+interface UserTextMessage {
   readonly type?: unknown
   readonly role?: unknown
-  readonly parts: readonly unknown[]
-}
-
-const isUserMessage = (u: unknown): u is UserMessage =>
-  typeof u === "object" &&
-  u !== null &&
-  "parts" in u &&
-  Array.isArray(u.parts) &&
-  (("type" in u && u.type === "user") || ("role" in u && u.role === "user"))
-
-interface TextPart {
   readonly text: string
 }
 
-const isTextPart = (u: unknown): u is TextPart =>
-  typeof u === "object" && u !== null && "text" in u && typeof u.text === "string"
+const isUserTextMessage = (u: unknown): u is UserTextMessage =>
+  typeof u === "object" &&
+  u !== null &&
+  "text" in u &&
+  typeof u.text === "string" &&
+  (("type" in u && u.type === "user") || ("role" in u && u.role === "user"))
 
 /** Latest user text from session context, newest message first. */
 export const extractTask = (messages: readonly unknown[]): string | undefined => {
   for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i]
 
-    if (!isUserMessage(message)) continue
+    if (!isUserTextMessage(message)) continue
 
-    const texts: string[] = []
+    const text = message.text.trim()
 
-    for (const part of message.parts) {
-      if (isTextPart(part) && part.text.length > 0) texts.push(part.text)
-    }
-
-    const joined = texts.join("\n").trim()
-
-    if (joined.length > 0) return joined
+    if (text.length > 0) return text
   }
 
   return undefined
@@ -102,8 +90,9 @@ export const createEvaluate = (
       Effect.gen(function* () {
         if (event.action !== "shell") return
 
-        // 1. Code tiers - deterministic, private, free.
-        const command = event.resources.join(" ; ")
+        // Stripped once, up front: comments cannot steer tiers, the judge,
+        // or the log ("nothing a command says about itself can help it").
+        const command = stripComments(event.resources.join(" ; "))
         const tier = classifyCodeTiers(command)
 
         if (tier.tier === "floor") {

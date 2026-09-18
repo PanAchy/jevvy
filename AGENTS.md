@@ -29,27 +29,12 @@ packages" PR accumulates them, and merging it is followed by tagging
 
 ## Plugin dev loop
 
-Saving any file under `src/` hot-reloads the plugin into every running
-OpenCode session at this location (~100 ms, no restarts). Observe verdicts in
-`~/.local/share/opencode/log/opencode.log`; filter for the plugin id. A fresh
-opencode session here dogfoods the current build.
-
-Dogfood wiring lives in `.opencode/plugins/jevvy/index.ts`: a one-line
-re-export of `src/plugin/index.ts`, picked up by auto-discovery within
-seconds. Two dead ends, both recorded in docs/LEARNINGS.md: relative
-`plugins` targets resolve against the server cwd (`..` became
-`/home/package.json`), and `file://` URLs were silently ignored by this
-version. Before testing plugin behavior in a session, confirm it actually
-loaded:
-
-```sh
-opencode api get "/api/plugin?location[directory]=$PWD" \
-  | python3 -c "import json,sys; [print(p.get('id'), p['state']['status']) for p in json.load(sys.stdin)['data'] if p.get('id') == 'jevvy']"
-```
-
-A missing entry means config discovery has not run yet; `failed` carries an
-error ref greppable in the server log. Never declare a plugin working from a
-session test alone.
+Saving any file under `src/` hot-reloads the plugin (~100 ms, no restarts).
+Before testing plugin behavior in a session, confirm it actually loaded:
+load the `opencode-plugin-dev` skill for the status-check command, the wiring,
+and the dead ends already paid for. Verdicts are observable via
+`grep -F "[jevvy]" ~/.local/share/opencode/log/opencode.log`. Never declare
+the plugin working from a session test alone.
 
 ## Commit discipline
 
