@@ -1,29 +1,11 @@
-// Boundary parsing of plugin options. Every typeof lives inside a named type
-// predicate, so each check establishes a contract instead of narrowing raw
-// representations.
+// Plugin options, parsed with Effect Schema at the config boundary: the
+// schema is the single statement of the shape, and decode failure degrades
+// to defaults (all-or-nothing: one bad field drops every override, so a
+// typo never half-applies a safety config).
 
-import type { Thresholds } from "../core/decision.ts"
+import { Schema } from "effect"
 
-export interface PluginOptions {
-  readonly model?: string
-  readonly thresholds?: Partial<Thresholds>
-  /** Log verdicts without applying them - adoption safety. */
-  readonly dryRun?: boolean
-  /** Disable the persistent decision log. */
-  readonly noLog?: boolean
-  /** Post a small session note when Jev allows a command. Notes enter the
-   *  model's context, so this is opt-in. */
-  readonly notePerAllow?: boolean
-  /** Stop calling Jev after this many model requests in a day. */
-  readonly maxRequestsPerDay?: number
-}
-
-const isString = (u: unknown): u is string => typeof u === "string"
-
-const isBoolean = (u: unknown): u is boolean => typeof u === "boolean"
-
-const isNumber = (u: unknown): u is number => typeof u === "number"
-
+/** Raw host config shape as it arrives: keys present, values untyped. */
 interface PluginOptionsInput {
   readonly model?: unknown
   readonly thresholds?: unknown
@@ -35,62 +17,33 @@ interface PluginOptionsInput {
 
 export const isPluginOptionsInput = (u: unknown): u is PluginOptionsInput => typeof u === "object" && u !== null
 
-interface ThresholdsInput {
-  readonly highRisk?: unknown
-  readonly ask?: unknown
-  readonly allow?: unknown
-  readonly authorized?: unknown
-}
+const ThresholdsSchema = Schema.Struct({
+  highRisk: Schema.optional(Schema.Number),
+  ask: Schema.optional(Schema.Number),
+  allow: Schema.optional(Schema.Number),
+  authorized: Schema.optional(Schema.Number),
+})
 
-const isThresholdsInput = (u: unknown): u is ThresholdsInput => typeof u === "object" && u !== null
+const PluginOptionsSchema = Schema.Struct({
+  model: Schema.optional(Schema.String),
+  thresholds: Schema.optional(ThresholdsSchema),
+  /** Log verdicts without applying them - adoption safety. */
+  dryRun: Schema.optional(Schema.Boolean),
+  /** Disable the persistent decision log. */
+  noLog: Schema.optional(Schema.Boolean),
+  /** Post a small session note when Jev allows a command. Notes enter the
+   *  model's context, so this is opt-in. */
+  notePerAllow: Schema.optional(Schema.Boolean),
+  /** Stop calling Jev after this many model requests in a day. */
+  maxRequestsPerDay: Schema.optional(Schema.Number),
+})
 
-/** Mutable staging type for parsed options before they are frozen as PluginOptions. */
-interface MutablePluginOptions {
-  model?: string
-  thresholds?: Partial<Thresholds>
-  dryRun?: boolean
-  noLog?: boolean
-  notePerAllow?: boolean
-  maxRequestsPerDay?: number
-}
-
-/** Mutable staging type for threshold overrides picked off raw config. */
-interface MutableThresholdOverrides {
-  highRisk?: number
-  ask?: number
-  allow?: number
-  authorized?: number
-}
+export interface PluginOptions extends Schema.Schema.Type<typeof PluginOptionsSchema> {}
 
 export const parseOptions = (raw: PluginOptionsInput): PluginOptions => {
-  const options: MutablePluginOptions = {}
-
-  if (isString(raw.model)) options.model = raw.model
-
-  if (isBoolean(raw.dryRun)) options.dryRun = raw.dryRun
-
-  if (isBoolean(raw.noLog)) options.noLog = raw.noLog
-
-  if (isBoolean(raw.notePerAllow)) options.notePerAllow = raw.notePerAllow
-
-  if (isNumber(raw.maxRequestsPerDay)) options.maxRequestsPerDay = raw.maxRequestsPerDay
-
-  if (isThresholdsInput(raw.thresholds)) {
-    const record = raw.thresholds
-    const partial: MutableThresholdOverrides = {}
-
-    if (isNumber(record.highRisk)) partial.highRisk = record.highRisk
-
-    if (isNumber(record.ask)) partial.ask = record.ask
-
-    if (isNumber(record.allow)) partial.allow = record.allow
-
-    if (isNumber(record.authorized)) partial.authorized = record.authorized
-
-    if (partial.highRisk !== undefined || partial.ask !== undefined || partial.allow !== undefined || partial.authorized !== undefined) {
-      options.thresholds = partial
-    }
+  try {
+    return Schema.decodeUnknownSync(PluginOptionsSchema)(raw)
+  } catch {
+    return {}
   }
-
-  return options
 }
