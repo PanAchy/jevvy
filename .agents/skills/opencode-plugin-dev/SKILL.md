@@ -7,9 +7,23 @@ description: Load, verify, and debug the jevvy plugin inside OpenCode. Use when 
 
 ## Wiring
 
-The dogfood entrypoint is `.opencode/plugins/jevvy/index.ts`: a one-line
+The dogfood entrypoint lives at `.opencode/plugins/jevvy/index.ts`: a one-line
 re-export of `../../../src/plugin/index.ts`. Auto-discovery picks it up within
 seconds of any change; edits under `src/` hot-reload (~100 ms, no restarts).
+
+Toggle: the plugin is ON only while its entrypoint dir sits under
+`.opencode/plugins/`. Keep it OFF during development
+(`.opencode/plugins-off/jevvy`) and move it back for live testing:
+
+```sh
+mv .opencode/plugins-off/jevvy .opencode/plugins/   # enable
+mv .opencode/plugins/jevvy .opencode/plugins-off/   # disable
+```
+
+Verify the toggle took effect with the status check below before assuming
+either state. Shadow mode (loaded but never applying verdicts) would need
+options wiring that auto-discovery does not provide; until then, OFF is the
+frictionless state between tests.
 
 Two dead ends, already paid for:
 

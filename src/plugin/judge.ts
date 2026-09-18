@@ -8,7 +8,7 @@
 // entry like everything else.
 
 import { Cache, Context, Effect, Layer, Option, Redacted } from "effect"
-import { createJudge } from "../core/judge.ts"
+import { createJudge, DEFAULT_MODEL, modelAvailable } from "../core/judge.ts"
 import type { JevJudge } from "../core/judge.ts"
 import type { CommandInput, Judged } from "../core/decision.ts"
 import { createBudget } from "./budget.ts"
@@ -71,6 +71,28 @@ export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
   Layer.effect(
     JudgeService,
     Effect.gen(function* () {
+      const resolvedModel = config.model ?? DEFAULT_MODEL
+
+      // Runtime verification: the pinned model must be serving under this
+      // key, else this load degrades to code tiers with a loud log. A
+      // transient failure here costs one plugin reload, not a silent gate.
+      const available = yield* Effect.tryPromise(() =>
+        modelAvailable(Redacted.value(config.apiKey), resolvedModel),
+      ).pipe(
+        Effect.timeout(JUDGMENT_TIMEOUT_MS),
+        Effect.catch((error) =>
+          Effect.logError("[jevvy] model check failed - judge degraded", { error: String(error) }).pipe(Effect.as(false)),
+        ),
+      )
+
+      if (!available) {
+        yield* Effect.logError("[jevvy] pinned model not available - judge degraded", { model: resolvedModel })
+
+        return JudgeService.of({
+          judge: () => Effect.succeed(Option.none<Judged>()),
+        })
+      }
+
       const delegate = createJudge(Redacted.value(config.apiKey), config.model)
       const budget = yield* createBudget(config.budgetStorage, config.maxRequestsPerDay)
 

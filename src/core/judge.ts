@@ -14,6 +14,18 @@ import type { CommandInput, Judged, RiskAnswers } from "./decision.ts"
  */
 export const DEFAULT_MODEL = "jev-1.13.0"
 
+/**
+ * Verify the pinned model is actually serving under this key. A threshold is
+ * a fact about one model version; silently judging with another (or none)
+ * is how a gate dies without anyone noticing.
+ */
+export const modelAvailable = async (apiKey: string, model: string): Promise<boolean> => {
+  const client = new TypeSafeClient({ apiKey })
+  const models = await client.models.list()
+
+  return models.some((card) => card.name === model)
+}
+
 export interface JevJudge {
   judge(input: CommandInput): Promise<Judged>
 }
