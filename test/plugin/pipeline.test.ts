@@ -44,6 +44,7 @@ const makeHarness = (options: {
   readonly task?: string
   readonly dryRun?: boolean
   readonly notePerAllow?: boolean
+  readonly availability?: "live" | "degraded"
 }): Harness => {
   const judgeInputs: CommandInput[] = []
   const notes: string[] = []
@@ -52,6 +53,7 @@ const makeHarness = (options: {
   const judgeLayer = Layer.succeed(
     JudgeService,
     JudgeService.of({
+      availability: options.availability ?? "live",
       judge: (input) =>
         Effect.sync(() => {
           judgeInputs.push(input)
@@ -200,8 +202,8 @@ describe("pipeline - the judge decides the rest", () => {
     expect(harness.judgeInputs[0]?.task).toBe("install the dependencies")
   })
 
-  it("an unavailable judge leaves the event untouched", async () => {
-    const harness = makeHarness({ answer: Option.none<Judged>() })
+  it("a degraded judge (no key) leaves the event untouched", async () => {
+    const harness = makeHarness({ answer: Option.none<Judged>(), availability: "degraded" })
     const event = makeEvent("npm install")
 
     await harness.run(event)
@@ -209,6 +211,16 @@ describe("pipeline - the judge decides the rest", () => {
     expect(event.effect).toBe("allow")
     expect(event.message).toBeUndefined()
     expect(harness.logged).toHaveLength(0)
+  })
+
+  it("a live judge failing mid-session fails closed to ask", async () => {
+    const harness = makeHarness({ answer: Option.none<Judged>(), availability: "live" })
+    const event = makeEvent("npm install")
+
+    await harness.run(event)
+
+    expect(event.effect).toBe("ask")
+    expect(event.message).toContain("failing closed")
   })
 })
 

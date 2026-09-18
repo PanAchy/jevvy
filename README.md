@@ -7,8 +7,8 @@ second. No more hand-maintained allowlists; no rubber-stamping everything.
 jevvy never blocks a command - it answers, or stays quiet. You are the only
 one who can say no.
 
-Ships as a native **OpenCode v2 plugin**. The core is harness-agnostic: a CLI
-and adapters for other agents (Codex, Pi, Claude Code) share it.
+Ships as a native **OpenCode v2 plugin** plus a CLI. The core is
+harness-agnostic: adapters for other agents are on the roadmap, not built.
 
 ```text
 command
@@ -100,25 +100,39 @@ storage and to the OpenCode server log.
   thresholds bound what one axis can do, and why every verdict is logged.
 - **Probabilities wobble.** Identical requests vary; the gap between `allow`
   (0.2) and `ask` (0.55) is deliberate headroom.
-- **Unknown commands leave your machine** - command text, cwd, and a truncated
-  task snippet go to the provider you configured. Credential-shaped commands
-  are stopped in code before that.
+- **Unknown commands leave your machine** - redacted command text, the
+  project's directory name, and a redacted task snippet go to the provider
+  you configured. Credential-shaped commands are stopped in code before that.
+
+## The 30-second trust trial
+
+Not sure this belongs on your machine? `dryRun: true` in the plugin options
+logs every verdict without enforcing anything - grep `[jevvy]` in the OpenCode
+server log and watch it work. A verdict costs about a second and a fraction
+of a cent; repeats are cached for five minutes; the day is capped at 2000
+model calls. No key configured? Code tiers still run - proven commands allow,
+credential-shaped ones ask - and nothing calls the API. Uninstalling is one
+line removed from your config. Or skip installing entirely:
+`npx jevvy check "git push --force"`.
 
 ## Roadmap
 
-- [ ] v0.1 - core + OpenCode plugin (this repo, dogfooding)
-- [ ] `jevvy check` CLI - second adapter + eval harness with labeled commands
+- [x] v0.1 - core + OpenCode plugin (dogfooded on its own repo)
+- [x] `jevvy check` CLI + live eval in the test suite (`eval/commands.json`)
 - [ ] npm publish + Discord post
 - [ ] Provider adapters (OpenRouter, Cloudflare, Vercel Gateway)
-- [ ] Zero-config via OpenCode Zen free Jev
+- [ ] Zero-config via OpenCode Zen, if free Jev ships there
 - [ ] Swap judge internals to `@effect/ai-typesafe` when it releases
 - [ ] Learning loop: your ask-answers become durable rules (`permission.rules`)
+- [ ] Adapters for other agents (Codex, Pi, Claude Code hooks)
 
 ## Development
 
 ```sh
-npm install && npm run typecheck
+npm install && npm run typecheck && npm test
 ```
+
+Live eval (skips without a key): `TYPESAFE_API_KEY=... npm test`.
 
 Dogfood: point `plugins` at the repo path and edit - OpenCode hot-reloads
 plugins on save.

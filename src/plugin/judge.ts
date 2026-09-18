@@ -15,6 +15,9 @@ import { createBudget } from "./budget.ts"
 import type { Budget, BudgetStorage } from "./budget.ts"
 
 export interface Judge {
+  /** "degraded" means no key was configured: stay out of the way entirely.
+   *  "live" means a judge exists, so an unavailable answer fails closed. */
+  readonly availability: "live" | "degraded"
   readonly judge: (input: CommandInput) => Effect.Effect<Option.Option<Judged>>
 }
 
@@ -114,6 +117,7 @@ export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
       )
 
       return JudgeService.of({
+        availability: "live",
         judge: (input) =>
           Effect.gen(function* () {
             if (!verified && Date.now() - probedAt > MODEL_REPROBE_INTERVAL_MS) {
@@ -136,6 +140,7 @@ export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
 export const degraded = Layer.succeed(
   JudgeService,
   JudgeService.of({
+    availability: "degraded",
     judge: () => Effect.succeed(Option.none<Judged>()),
   }),
 )

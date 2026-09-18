@@ -21,6 +21,13 @@ export default Plugin.define({
       const project = ctx.location.directory
       const options = isPluginOptionsInput(ctx.options) ? parseOptions(ctx.options) : {}
 
+      const hasRawOverrides = isPluginOptionsInput(ctx.options) && Object.keys(ctx.options).length > 0
+      const parsedNothing = Object.keys(options).length === 0
+
+      if (hasRawOverrides && parsedNothing) {
+        yield* Effect.logWarning("[jevvy] plugin options failed schema validation - using defaults")
+      }
+
       // Step-wise threshold assembly: defaults, then any explicit overrides.
       const thresholds: MutableThresholds = { ...defaultThresholds }
       const overrides = options.thresholds

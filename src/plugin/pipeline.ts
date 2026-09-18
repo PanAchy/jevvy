@@ -128,15 +128,32 @@ export const createEvaluate = (
           return
         }
 
-        // 2. Judge - cached inside the service; None means unavailable and
-        // jevvy stays out of the way rather than guessing. Redaction here is
-        // defense in depth: today the credential tier catches everything the
-        // redactor knows, so this guards the day the two lists diverge.
+        // 2. Judge - cached inside the service. None from a degraded judge
+        // (no key) means stay out of the way; None from a live judge means
+        // fail closed: no judgment, no silent allow. Task text is redacted
+        // like the command (pasted secrets in chat must not reach the
+        // provider), and only the directory name of the project travels.
         const task = yield* host.sessionTask(event.sessionID)
-        const input: CommandInput = { command: toExternal(command, 2_000), cwd: host.project, task }
+
+        const input: CommandInput = {
+          command: toExternal(command, 2_000),
+          cwd: host.project.split("/").filter(Boolean).pop(),
+          task: task === undefined ? undefined : toExternal(task, 1_200),
+        }
+
         const judged = yield* judge.judge(input)
 
-        if (Option.isNone(judged)) return
+        if (Option.isNone(judged)) {
+          if (judge.availability === "live") {
+            yield* applyVerdict(
+              event,
+              { effect: "ask", reason: "jevvy: judgment unavailable - failing closed", source: "failclosed" },
+              command,
+            )
+          }
+
+          return
+        }
 
         // 3. Policy - plain code over the probabilities.
         const verdict = combine(input, judged.value, config.thresholds)
