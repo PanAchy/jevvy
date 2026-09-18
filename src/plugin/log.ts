@@ -34,11 +34,12 @@ let sequence = 0
 let appends = 0
 
 // Fixed-width base-36 keeps keys lexicographically ordered: time first,
-// then a process-local sequence for same-millisecond decisions.
+// then a process-local sequence for same-millisecond decisions. The random
+// suffix keeps keys unique across hot-reloads, which reset the sequence.
 const nextKey = (): string => {
   sequence += 1
 
-  return `${PREFIX}${Date.now().toString(36).padStart(10, "0")}${sequence.toString(36).padStart(6, "0")}`
+  return `${PREFIX}${Date.now().toString(36).padStart(10, "0")}${sequence.toString(36).padStart(6, "0")}${Math.random().toString(36).slice(2, 6)}`
 }
 
 const trimToKeep = (storage: DecisionStorage): Effect.Effect<void> =>

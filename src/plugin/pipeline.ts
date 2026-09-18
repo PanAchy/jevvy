@@ -2,7 +2,7 @@
 // the policy. Testable without the plugin SDK through a structural event type.
 
 import { Effect, Option } from "effect"
-import { classifyCodeTiers, stripComments } from "../core/floor.ts"
+import { classifyCodeTiers, redactSecrets, stripComments } from "../core/floor.ts"
 import { combine } from "../core/decision.ts"
 import type { CommandInput, Thresholds, Verdict } from "../core/decision.ts"
 import { JudgeService } from "./judge.ts"
@@ -64,6 +64,9 @@ export const extractTask = (messages: readonly unknown[]): string | undefined =>
   return undefined
 }
 
+/** What leaves the machine or lands in plain-text surfaces: redacted, bounded. */
+const toExternal = (command: string, limit: number): string => redactSecrets(command).slice(0, limit)
+
 export const createEvaluate = (
   config: PipelineConfig,
   host: PipelineHost,
@@ -71,7 +74,7 @@ export const createEvaluate = (
   Effect.gen(function* () {
     const judge = yield* JudgeService
 
-    const applyVerdict = (event: EvaluationEvent, verdict: Verdict): Effect.Effect<void> =>
+    const applyVerdict = (event: EvaluationEvent, verdict: Verdict, command: string): Effect.Effect<void> =>
       Effect.gen(function* () {
         if (!config.dryRun) {
           event.effect = verdict.effect
@@ -81,9 +84,9 @@ export const createEvaluate = (
         yield* Effect.logInfo("[jevvy] verdict", {
           effect: verdict.effect,
           source: verdict.source,
-          command: event.resources.join(" ; ").slice(0, 160),
+          command: toExternal(command, 160),
         })
-        yield* host.log.append(event.sessionID, event.resources.join(" ; "), verdict)
+        yield* host.log.append(event.sessionID, command, verdict)
       })
 
     return (event) =>
@@ -100,7 +103,7 @@ export const createEvaluate = (
             effect: "ask",
             reason: `jevvy floor: ${tier.reason} - certain danger, please look closely`,
             source: "floor",
-          })
+          }, command)
 
           return
         }
@@ -110,7 +113,7 @@ export const createEvaluate = (
             effect: "ask",
             reason: `jevvy: ${tier.reason} - not sent to the model`,
             source: "credential",
-          })
+          }, command)
 
           return
         }
@@ -120,27 +123,29 @@ export const createEvaluate = (
             effect: "allow",
             reason: `jevvy: ${tier.reason}`,
             source: "proven",
-          })
+          }, command)
 
           return
         }
 
         // 2. Judge - cached inside the service; None means unavailable and
-        // jevvy stays out of the way rather than guessing.
+        // jevvy stays out of the way rather than guessing. Redaction here is
+        // defense in depth: today the credential tier catches everything the
+        // redactor knows, so this guards the day the two lists diverge.
         const task = yield* host.sessionTask(event.sessionID)
-        const input: CommandInput = { command, cwd: host.project, task }
+        const input: CommandInput = { command: toExternal(command, 2_000), cwd: host.project, task }
         const judged = yield* judge.judge(input)
 
         if (Option.isNone(judged)) return
 
         // 3. Policy - plain code over the probabilities.
         const verdict = combine(input, judged.value, config.thresholds)
-        yield* applyVerdict(event, verdict)
+        yield* applyVerdict(event, verdict, command)
 
         // Notes are opt-in: they enter the model's context, so only
         // Jev-derived allows post one, never proven-tier noise.
         if (config.notePerAllow && !config.dryRun && verdict.effect === "allow" && verdict.source === "jev") {
-          yield* host.note(event.sessionID, `jevvy allowed \`${command.slice(0, 80)}\`: ${verdict.reason}`)
+          yield* host.note(event.sessionID, `jevvy allowed \`${toExternal(command, 80)}\`: ${verdict.reason}`)
         }
       })
   })

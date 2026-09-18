@@ -28,6 +28,8 @@ const JUDGMENT_TIMEOUT_MS = 5_000
 
 export const DEFAULT_MAX_REQUESTS_PER_DAY = 2_000
 
+const MODEL_REPROBE_INTERVAL_MS = 60_000
+
 // Commands are judge keys as plain strings: object keys fall back to
 // reference equality in the cache and would never hit.
 const KEY_SEPARATOR = "\u0000"
@@ -53,7 +55,9 @@ const lookupJudged = (delegate: JevJudge, cwd: string, budget: Budget, key: stri
       ),
     )
 
-    yield* budget.record
+    // Count successful model calls only: an outage that answers None must
+    // not burn quota on every retry.
+    if (judged !== undefined && judged !== null) yield* budget.record
 
     return judged === undefined || judged === null ? Option.none<Judged>() : Option.some(judged)
   })
@@ -76,21 +80,21 @@ export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
       // Runtime verification: the pinned model must be serving under this
       // key, else this load degrades to code tiers with a loud log. A
       // transient failure here costs one plugin reload, not a silent gate.
-      const available = yield* Effect.tryPromise(() =>
-        modelAvailable(Redacted.value(config.apiKey), resolvedModel),
-      ).pipe(
+      const probe = Effect.tryPromise(() => modelAvailable(Redacted.value(config.apiKey), resolvedModel)).pipe(
         Effect.timeout(JUDGMENT_TIMEOUT_MS),
         Effect.catch((error) =>
           Effect.logError("[jevvy] model check failed - judge degraded", { error: String(error) }).pipe(Effect.as(false)),
         ),
       )
 
-      if (!available) {
-        yield* Effect.logError("[jevvy] pinned model not available - judge degraded", { model: resolvedModel })
+      // A failed probe latches degraded, but only for a bounded window: a
+      // transient error at load must not kill the judge until a manual
+      // reload. Lazy re-probe, at most once per interval.
+      let verified = yield* probe
+      let probedAt = Date.now()
 
-        return JudgeService.of({
-          judge: () => Effect.succeed(Option.none<Judged>()),
-        })
+      if (!verified) {
+        yield* Effect.logError("[jevvy] pinned model not available - judge degraded, will re-probe", { model: resolvedModel })
       }
 
       const delegate = createJudge(Redacted.value(config.apiKey), config.model)
@@ -105,6 +109,17 @@ export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
       return JudgeService.of({
         judge: (input) =>
           Effect.gen(function* () {
+            if (!verified && Date.now() - probedAt > MODEL_REPROBE_INTERVAL_MS) {
+              verified = yield* probe
+              probedAt = Date.now()
+
+              if (verified) {
+                yield* Effect.logInfo("[jevvy] model available again - judge live", { model: resolvedModel })
+              }
+            }
+
+            if (!verified) return Option.none<Judged>()
+
             const key = keyOf(input)
             const answer = yield* Cache.get(cache, key)
 

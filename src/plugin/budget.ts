@@ -58,13 +58,14 @@ export const createBudget = (
     let requests = seed.requests
 
     // Midnight rollover: a plugin that stays loaded for days must not stay
-    // exhausted forever.
+    // exhausted forever, and the cap warning must fire again each day.
     const rollover = Effect.sync(() => {
       const today = currentDay()
 
       if (today !== day) {
         day = today
         requests = 0
+        warned = false
       }
     })
 
