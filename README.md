@@ -65,6 +65,7 @@ calls the model.
 | `dryRun` | `false` | Log verdicts, apply nothing - try it safely |
 | `noLog` | `false` | Disable the persistent decision log |
 | `notePerAllow` | `false` | Post a session note when Jev allows (opt-in: notes enter the model's context) |
+| `maxRequestsPerDay` | `2000` | Stop calling Jev after this many model requests per day (runaway-loop guard) |
 
 Every verdict is logged (command, effect, reason, probabilities) to plugin
 storage and to the OpenCode server log.

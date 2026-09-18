@@ -34,6 +34,34 @@ OpenCode session at this location (~100 ms, no restarts). Observe verdicts in
 `~/.local/share/opencode/log/opencode.log`; filter for the plugin id. A fresh
 opencode session here dogfoods the current build.
 
+Dogfood wiring lives in `.opencode/plugins/jevvy/index.ts`: a one-line
+re-export of `src/plugin/index.ts`, picked up by auto-discovery within
+seconds. Two dead ends, both recorded in docs/LEARNINGS.md: relative
+`plugins` targets resolve against the server cwd (`..` became
+`/home/package.json`), and `file://` URLs were silently ignored by this
+version. Before testing plugin behavior in a session, confirm it actually
+loaded:
+
+```sh
+opencode api get "/api/plugin?location[directory]=$PWD" \
+  | python3 -c "import json,sys; [print(p.get('id'), p['state']['status']) for p in json.load(sys.stdin)['data'] if p.get('id') == 'jevvy']"
+```
+
+A missing entry means config discovery has not run yet; `failed` carries an
+error ref greppable in the server log. Never declare a plugin working from a
+session test alone.
+
+## Commit discipline
+
+Never gate a commit on grep of test output: grep matches the summary line of
+a failing run too. Gate on exit codes (`npm test > /dev/null 2>&1`), and
+amend immediately if a red commit slips through.
+
+## Writing style
+
+No em dashes anywhere: replies, code strings, docs, commits. They read as
+machine-written and the project is explicit about handcrafted work.
+
 ## Test surface
 
 `src/core` is the test surface: pure, no API key, plain values in and out.

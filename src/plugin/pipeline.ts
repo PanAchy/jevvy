@@ -90,6 +90,11 @@ export const createEvaluate = (
           event.message = verdict.reason
         }
 
+        yield* Effect.logInfo("[jevvy] verdict", {
+          effect: verdict.effect,
+          source: verdict.source,
+          command: event.resources.join(" ; ").slice(0, 160),
+        })
         yield* host.log.append(event.sessionID, event.resources.join(" ; "), verdict)
       })
 
