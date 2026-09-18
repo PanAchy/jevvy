@@ -11,8 +11,12 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "bin": {
+    "jevvy": "./bin/jevvy.mjs"
+  },
   "files": [
     "src",
+    "bin",
     "README.md",
     "LICENSE"
   ],
@@ -36,6 +40,6 @@
     "vitest": "^3.2.7"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   }
 }

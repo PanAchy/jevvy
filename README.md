@@ -53,6 +53,18 @@ in the OpenCode server environment, or in the project's `.env`. Without a key,
 jevvy stays active on code tiers only - floor, credential, proven - and never
 calls the model.
 
+## CLI
+
+```sh
+npx jevvy check "git push --force" --task "deploy to production"
+echo $?   # 0 allow · 1 ask · 2 usage/no judge
+```
+
+Same tiers, same questions, same thresholds as the plugin, from the terminal.
+`--json` for machine-readable output, `--no-model` to exercise code tiers
+only. Requires Node 24+ (native TypeScript stripping) and `TYPESAFE_API_KEY`
+in the environment for model verdicts.
+
 ## Options
 
 | Option | Default | Meaning |
