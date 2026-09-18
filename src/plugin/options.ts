@@ -14,6 +14,8 @@ export interface PluginOptions {
   /** Post a small session note when Jev allows a command. Notes enter the
    *  model's context, so this is opt-in. */
   readonly notePerAllow?: boolean
+  /** Stop calling Jev after this many model requests in a day. */
+  readonly maxRequestsPerDay?: number
 }
 
 const isString = (u: unknown): u is string => typeof u === "string"
@@ -28,6 +30,7 @@ interface PluginOptionsInput {
   readonly dryRun?: unknown
   readonly noLog?: unknown
   readonly notePerAllow?: unknown
+  readonly maxRequestsPerDay?: unknown
 }
 
 export const isPluginOptionsInput = (u: unknown): u is PluginOptionsInput => typeof u === "object" && u !== null
@@ -48,6 +51,7 @@ interface MutablePluginOptions {
   dryRun?: boolean
   noLog?: boolean
   notePerAllow?: boolean
+  maxRequestsPerDay?: number
 }
 
 /** Mutable staging type for threshold overrides picked off raw config. */
@@ -68,6 +72,8 @@ export const parseOptions = (raw: PluginOptionsInput): PluginOptions => {
   if (isBoolean(raw.noLog)) options.noLog = raw.noLog
 
   if (isBoolean(raw.notePerAllow)) options.notePerAllow = raw.notePerAllow
+
+  if (isNumber(raw.maxRequestsPerDay)) options.maxRequestsPerDay = raw.maxRequestsPerDay
 
   if (isThresholdsInput(raw.thresholds)) {
     const record = raw.thresholds

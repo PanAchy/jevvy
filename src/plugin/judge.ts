@@ -11,6 +11,8 @@ import { Cache, Context, Effect, Layer, Option, Redacted } from "effect"
 import { createJudge } from "../core/judge.ts"
 import type { JevJudge } from "../core/judge.ts"
 import type { CommandInput, Judged } from "../core/decision.ts"
+import { createBudget } from "./budget.ts"
+import type { Budget, BudgetStorage } from "./budget.ts"
 
 export interface Judge {
   readonly judge: (input: CommandInput) => Effect.Effect<Option.Option<Judged>>
@@ -24,14 +26,18 @@ const CACHE_TTL_MS = 300_000
 
 const JUDGMENT_TIMEOUT_MS = 5_000
 
+export const DEFAULT_MAX_REQUESTS_PER_DAY = 2_000
+
 // Commands are judge keys as plain strings: object keys fall back to
 // reference equality in the cache and would never hit.
 const KEY_SEPARATOR = "\u0000"
 
 const keyOf = (input: CommandInput): string => `${input.command}${KEY_SEPARATOR}${input.task ?? ""}`
 
-const lookupJudged = (delegate: JevJudge, cwd: string, key: string): Effect.Effect<Option.Option<Judged>> =>
+const lookupJudged = (delegate: JevJudge, cwd: string, budget: Budget, key: string): Effect.Effect<Option.Option<Judged>> =>
   Effect.gen(function* () {
+    if (!(yield* budget.allow)) return Option.none<Judged>()
+
     const separatorIndex = key.indexOf(KEY_SEPARATOR)
     const command = key.slice(0, separatorIndex)
     const task = key.slice(separatorIndex + 1)
@@ -47,19 +53,31 @@ const lookupJudged = (delegate: JevJudge, cwd: string, key: string): Effect.Effe
       ),
     )
 
+    yield* budget.record
+
     return judged === undefined || judged === null ? Option.none<Judged>() : Option.some(judged)
   })
 
-export const live = (apiKey: Redacted.Redacted<string>, model: string | undefined, cwd: string): Layer.Layer<JudgeService> =>
+/** Construction inputs for the Live judge layer. */
+export interface LiveConfig {
+  readonly apiKey: Redacted.Redacted<string>
+  readonly model: string | undefined
+  readonly cwd: string
+  readonly maxRequestsPerDay: number
+  readonly budgetStorage: BudgetStorage
+}
+
+export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
   Layer.effect(
     JudgeService,
     Effect.gen(function* () {
-      const delegate = createJudge(Redacted.value(apiKey), model)
+      const delegate = createJudge(Redacted.value(config.apiKey), config.model)
+      const budget = yield* createBudget(config.budgetStorage, config.maxRequestsPerDay)
 
       const cache = yield* Cache.make({
         capacity: CACHE_CAPACITY,
         timeToLive: CACHE_TTL_MS,
-        lookup: (key: string) => lookupJudged(delegate, cwd, key),
+        lookup: (key: string) => lookupJudged(delegate, config.cwd, budget, key),
       })
 
       return JudgeService.of({
@@ -75,9 +93,22 @@ export const degraded = Layer.succeed(
   }),
 )
 
-export const layerFor = (
-  apiKey: Option.Option<Redacted.Redacted<string>>,
-  model: string | undefined,
-  cwd: string,
-): Layer.Layer<JudgeService> =>
-  Option.isNone(apiKey) ? degraded : live(apiKey.value, model, cwd)
+/** Construction inputs for choosing between the Live and Degraded layers. */
+export interface LayerConfig {
+  readonly apiKey: Option.Option<Redacted.Redacted<string>>
+  readonly model: string | undefined
+  readonly cwd: string
+  readonly maxRequestsPerDay: number
+  readonly budgetStorage: BudgetStorage
+}
+
+export const layerFor = (config: LayerConfig): Layer.Layer<JudgeService> =>
+  Option.isNone(config.apiKey)
+    ? degraded
+    : live({
+        apiKey: config.apiKey.value,
+        model: config.model,
+        cwd: config.cwd,
+        maxRequestsPerDay: config.maxRequestsPerDay,
+        budgetStorage: config.budgetStorage,
+      })

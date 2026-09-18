@@ -6,7 +6,7 @@ import { config as loadEnv } from "dotenv"
 import { defaultThresholds } from "../core/decision.ts"
 import type { Thresholds } from "../core/decision.ts"
 import { Session } from "@opencode/schema/session"
-import { layerFor } from "./judge.ts"
+import { layerFor, DEFAULT_MAX_REQUESTS_PER_DAY } from "./judge.ts"
 import { createDecisionLog } from "./log.ts"
 import { isPluginOptionsInput, parseOptions } from "./options.ts"
 import { extractTask, createEvaluate } from "./pipeline.ts"
@@ -47,7 +47,13 @@ export default Plugin.define({
         yield* Effect.logWarning("[jevvy] TYPESAFE_API_KEY not set - code tiers only, no model calls")
       }
 
-      const judgeLayer = layerFor(apiKey, options.model, project)
+      const judgeLayer = layerFor({
+        apiKey,
+        model: options.model,
+        cwd: project,
+        maxRequestsPerDay: options.maxRequestsPerDay ?? DEFAULT_MAX_REQUESTS_PER_DAY,
+        budgetStorage: ctx.storage,
+      })
 
       // Fail closed on task context: if the session cannot be read, judge
       // without context axes rather than dying mid-evaluation. The id was
