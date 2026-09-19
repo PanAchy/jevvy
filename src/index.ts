@@ -9,3 +9,5 @@ export * from "./core/floor.ts"
 export { createJudge, DEFAULT_MODEL } from "./core/judge.ts"
 
 export type { JevJudge } from "./core/judge.ts"
+
+export { createOpenRouterJudge } from "./core/openrouter.ts"

@@ -7,7 +7,7 @@
 // commands cost one judgment, not many; cached misses (None) expire with the
 // entry like everything else.
 
-import { Cache, Context, Effect, Exit, Layer, Option, Redacted } from "effect"
+import { Cache, Context, Effect, Exit, Layer, Option, Redacted, SynchronizedRef } from "effect"
 import { createJudge, DEFAULT_MODEL, modelAvailable } from "../core/judge.ts"
 import type { JevJudge } from "../core/judge.ts"
 import type { CommandInput, Judged } from "../core/decision.ts"
@@ -36,6 +36,11 @@ const JUDGMENT_TIMEOUT_MS = 5_000
 export const DEFAULT_MAX_REQUESTS_PER_DAY = 2_000
 
 const MODEL_REPROBE_INTERVAL_MS = 60_000
+
+interface ProbeState {
+  readonly verified: boolean
+  readonly probedAt: number
+}
 
 // Commands are judge keys as plain strings: object keys fall back to
 // reference equality in the cache and would never hit.
@@ -98,11 +103,16 @@ export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
 
       // A failed probe latches degraded, but only for a bounded window: a
       // transient error at load must not kill the judge until a manual
-      // reload. Lazy re-probe, at most once per interval.
-      let verified = yield* probe
-      let probedAt = Date.now()
+      // reload. The latch is one SynchronizedRef so concurrent verdicts
+      // re-probe at most once per interval.
+      const initialVerified = yield* probe
 
-      if (!verified) {
+      const probeState = yield* SynchronizedRef.make<ProbeState>({
+        verified: initialVerified,
+        probedAt: Date.now(),
+      })
+
+      if (!initialVerified) {
         yield* Effect.logError("[jevvy] pinned model not available - judge degraded, will re-probe", { model: resolvedModel })
       }
 
@@ -118,20 +128,33 @@ export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
         },
       )
 
+      const nextState = (verified: boolean): ProbeState => ({ verified, probedAt: Date.now() })
+
+      const reprobeIfDue = SynchronizedRef.modifyEffect(probeState, (current) => {
+        if (current.verified || Date.now() - current.probedAt <= MODEL_REPROBE_INTERVAL_MS) {
+          return Effect.succeed([undefined, current] as const)
+        }
+
+        return probe.pipe(
+          Effect.flatMap((verified) =>
+            verified
+              ? Effect.logInfo("[jevvy] model available again - judge live", { model: resolvedModel }).pipe(
+                  Effect.as([undefined, nextState(true)] as const),
+                )
+              : Effect.succeed([undefined, nextState(false)] as const),
+          ),
+        )
+      })
+
       return JudgeService.of({
         availability: "live",
         judge: (input) =>
           Effect.gen(function* () {
-            if (!verified && Date.now() - probedAt > MODEL_REPROBE_INTERVAL_MS) {
-              verified = yield* probe
-              probedAt = Date.now()
+            yield* reprobeIfDue
 
-              if (verified) {
-                yield* Effect.logInfo("[jevvy] model available again - judge live", { model: resolvedModel })
-              }
-            }
+            const state = yield* SynchronizedRef.get(probeState)
 
-            if (!verified) return Option.none<Judged>()
+            if (!state.verified) return Option.none<Judged>()
 
             return yield* Cache.get(cache, keyOf(input))
           }),

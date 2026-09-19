@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { classifyCodeTiers, redactSecrets } from "../../src/core/floor.ts"
+import { classifyCodeTiers, classifySegments, redactSecrets } from "../../src/core/floor.ts"
 
 describe("code tiers - floor", () => {
   it.each([
@@ -83,14 +83,12 @@ describe("code tiers - proven means read-only", () => {
   })
 })
 
-describe("code tiers - resource join characterization", () => {
-  // pipeline.ts joins independent resources with " ; " before stripping comments.
-  // These assertions record current discrepancies, not the desired classification.
-  it("creates a credential value from the inserted semicolon", () => {
-    const resources = ["echo password=", "git status"]
-
-    expect(resources.map((resource) => classifyCodeTiers(resource).tier)).toEqual(["proven", "proven"])
-    expect(classifyCodeTiers(resources.join(" ; ")).tier).toBe("credential")
+describe("classifySegments - resources are judged independently", () => {
+  // The host scanner pre-splits compound commands; joining with a separator
+  // before classification was a bug (semicolon posing as a credential value,
+  // a comment in one resource hiding another's danger).
+  it("an inserted semicolon does not pose as a credential value", () => {
+    expect(classifySegments(["echo password=", "git status"]).tier).toBe("proven")
   })
 
   it.each([
@@ -99,25 +97,23 @@ describe("code tiers - resource join characterization", () => {
     ["echo pwned > package.json", "unknown"],
     ["echo $(touch marker)", "unknown"],
     ["echo `touch marker`", "unknown"],
-  ])("an earlier resource's comment hides %s (%s)", (resource, independentTier) => {
-    const resources = ["git status # inspection only", resource]
+  ])("a comment in a sibling cannot hide %s (%s)", (resource, independentTier) => {
+    const tier = classifySegments(["git status # inspection only", resource])
 
-    expect(resources.map((command) => classifyCodeTiers(command).tier)).toEqual(["proven", independentTier])
-    expect(classifyCodeTiers(resources.join(" ; ")).tier).toBe("proven")
-    // Reversing the resources keeps the significant command ahead of the comment.
-    expect(classifyCodeTiers([resource, resources[0]].join(" ; ")).tier).toBe(independentTier)
+    expect(tier.tier).toBe(independentTier)
   })
 
   it.each([
     ["echo pwned > package.json"],
     ["echo $(touch marker)"],
     ["echo `touch marker`"],
-  ])("without comments, a blocker in either resource prevents proven: %s", (resource) => {
-    const resources = ["git status", resource]
+  ])("a blocker in any resource prevents proven: %s", (resource) => {
+    expect(classifySegments(["git status", resource]).tier).toBe("unknown")
+    expect(classifySegments([resource, "git status"]).tier).toBe("unknown")
+  })
 
-    expect(resources.map((command) => classifyCodeTiers(command).tier)).toEqual(["proven", "unknown"])
-    expect(classifyCodeTiers(resources.join(" ; ")).tier).toBe("unknown")
-    expect(classifyCodeTiers([resource, resources[0]].join(" ; ")).tier).toBe("unknown")
+  it("empty resources are ignored", () => {
+    expect(classifySegments(["", "ls", "  "]).tier).toBe("proven")
   })
 })
 

@@ -2,7 +2,7 @@
 // the policy. Testable without the plugin SDK through a structural event type.
 
 import { Effect, Option } from "effect"
-import { classifyCodeTiers, redactSecrets, stripComments } from "../core/floor.ts"
+import { classifySegments, joinForJudge, redactSecrets } from "../core/floor.ts"
 import { combine } from "../core/decision.ts"
 import type { CommandInput, Thresholds, Verdict } from "../core/decision.ts"
 import { JudgeService } from "./judge.ts"
@@ -95,8 +95,11 @@ export const createEvaluate = (
 
         // Stripped once, up front: comments cannot steer tiers, the judge,
         // or the log ("nothing a command says about itself can help it").
-        const command = stripComments(event.resources.join(" ; "))
-        const tier = classifyCodeTiers(command)
+        // Resources are classified independently (strictest tier wins) so
+        // one resource's comment can never hide another's danger; the
+        // joined form exists only for the judge and the logs.
+        const command = joinForJudge(event.resources)
+        const tier = classifySegments(event.resources)
 
         if (tier.tier === "floor") {
           yield* applyVerdict(event, {

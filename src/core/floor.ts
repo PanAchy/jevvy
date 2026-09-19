@@ -111,6 +111,48 @@ export const redactSecrets = (command: string): string =>
 
 const withGlobal = (pattern: RegExp): string => (pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`)
 
+/**
+ * Classify a command whose resources arrive pre-split by the host scanner.
+ * Each resource is classified independently (per-resource comment stripping
+ * cannot eat its siblings) and the strictest tier wins: floor > credential >
+ * unknown > proven. Joining with a separator first was a bug: an inserted
+ * semicolon could pose as a credential value, and a comment in an early
+ * resource could hide a later dangerous one.
+ */
+const TIER_STRICTNESS = { floor: 3, credential: 2, unknown: 1, proven: 0 } as const
+
+export const classifySegments = (segments: readonly string[]): CodeTier => {
+  let strictest: CodeTier = { tier: "proven", reason: "every segment is a listed read-only verb" }
+
+  for (const segment of segments) {
+    if (segment.trim().length === 0) continue
+
+    const tier = classifyCodeTiers(segment)
+
+    if (tier.tier === "floor") return tier
+
+    if (TIER_STRICTNESS[tier.tier] > TIER_STRICTNESS[strictest.tier]) strictest = tier
+  }
+
+  return strictest
+}
+
+/**
+ * What the judge and the logs see: each resource stripped of its own
+ * comments, then joined. Order preserved, comments per-segment.
+ */
+export const joinForJudge = (segments: readonly string[]): string => {
+  const stripped: string[] = []
+
+  for (const segment of segments) {
+    const cleaned = stripComments(segment)
+
+    if (cleaned.length > 0) stripped.push(cleaned)
+  }
+
+  return stripped.join(" ; ")
+}
+
 export type CodeTier =
   | { readonly tier: "floor"; readonly reason: string }
   | { readonly tier: "credential"; readonly reason: string }
