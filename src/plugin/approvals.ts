@@ -9,11 +9,29 @@ export interface SavedApproval {
 
 const escapeRegex = (text: string): string => text.replace(/[|\\{}()[\]^$+?.]/g, "\\$&")
 
-/** OpenCode save patterns use `*`; matching stays anchored and conservative. */
-export const matchesApprovalPattern = (pattern: string, resource: string): boolean => {
-  const expression = pattern.split("*").map(escapeRegex).join("[\\s\\S]*")
+const wildcardFragment = (character: string): string => {
+  switch (character) {
+    case "*":
+      return "[\\s\\S]*"
+    case "?":
+      return "[\\s\\S]"
+    default:
+      return escapeRegex(character)
+  }
+}
 
-  return new RegExp(`^${expression}$`, "u").test(resource)
+/** Match OpenCode's whole-value `*` and `?` wildcards. Shell prefixes ending
+ *  in ` *` also cover the command without arguments. */
+export const matchesApprovalPattern = (pattern: string, resource: string, shell = false): boolean => {
+  const optionalArguments = shell && pattern.endsWith(" *")
+
+  const body = optionalArguments ? pattern.slice(0, -2) : pattern
+
+  const expression = [...body].map(wildcardFragment).join("")
+
+  const suffix = optionalArguments ? "(?: [\\s\\S]*)?" : ""
+
+  return new RegExp(`^${expression}${suffix}$`, "u").test(resource)
 }
 
 /** Every scanner resource must be covered by a saved approval for the action. */
@@ -24,5 +42,7 @@ export const isRememberedApproval = (
 ): boolean =>
   resources.length > 0 &&
   resources.every((resource) =>
-    approvals.some((approval) => approval.action === action && matchesApprovalPattern(approval.resource, resource)),
+    approvals.some((approval) =>
+      approval.action === action && matchesApprovalPattern(approval.resource, resource, action === "shell"),
+    ),
   )
