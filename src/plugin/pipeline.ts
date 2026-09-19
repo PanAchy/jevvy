@@ -95,12 +95,18 @@ export const createEvaluate = (
 
     return (event) =>
       Effect.gen(function* () {
+        // OpenCode treats a configured deny as final and currently does not
+        // invoke permission hooks for it. Keep the same invariant here so a
+        // host deny remains final if that hook contract ever changes.
+        if (event.effect === "deny") return
+
         if (event.action !== "shell") return
 
-        // The user is the final authority. OpenCode applies remembered
-        // "always" approvals before this hook, so never turn one back into an
-        // ask. Require both the host allow and a saved pattern match: ordinary
-        // default allows still receive Jevvy review.
+        // OpenCode applies remembered "always" approvals before this hook, so
+        // never turn one back into an ask. Configured denies remain final and
+        // take precedence over saved approvals. Require both the host allow
+        // and a saved pattern match: ordinary default allows still receive
+        // Jevvy review.
         if (event.effect === "allow" && (yield* host.isRememberedApproval(event.action, event.resources))) {
           yield* Effect.logInfo("[jevvy] remembered approval", {
             effect: event.effect,

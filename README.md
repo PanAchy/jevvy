@@ -66,10 +66,16 @@ command
        max risk ≥ 0.85 → loud ask · < 0.2 → allow · else → ask
 ```
 
+The runtime effects are only `allow` and `ask`. "Loud" is the same ask with
+a stronger explanation, not a third outcome. Execution and network access are
+descriptive because their presence alone does not make commands such as
+`npm install` or `git fetch` harmful.
+
 Every verdict is logged. A task that explicitly asks for a command can
 soften one ask, never secret exposure. Dead judge: your agent's own
 permission flow. No key: code tiers still run, nothing calls the API.
-OpenCode's saved "always allow" patterns remain final and are not re-asked.
+OpenCode's configured denies remain final and never reach Jevvy. Saved
+"always allow" patterns are respected after deny rules and are not re-asked.
 
 <details>
 <summary><b>Options</b> (defaults are the product)</summary>
@@ -120,7 +126,7 @@ Same tiers and thresholds as the plugin. Exit codes: `0` allow, `1` ask,
 <summary><b>Roadmap</b></summary>
 
 - [x] v0.1: core + OpenCode plugin, dogfooded on its own repo
-- [x] CLI + live eval in the test suite (`eval/commands.json`)
+- [x] CLI + explicit maintainer calibration harness (`eval/commands.json`)
 - [ ] Provider adapters (OpenRouter, Cloudflare, Vercel Gateway)
 - [x] Zero-config via OpenCode Zen, including browser OAuth login
 - [ ] Judge internals to `@effect/ai-typesafe` on release
@@ -133,10 +139,11 @@ Same tiers and thresholds as the plugin. Exit codes: `0` allow, `1` ask,
 <summary><b>Development</b></summary>
 
 ```bash
-npm install && npm run typecheck && npm test
+npm install && npm run check
 ```
 
-Live eval (skips without a key): `TYPESAFE_API_KEY=... npm test`.
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for architecture, test boundaries,
+provider requirements, and the maintainer-only live calibration workflow.
 
 ### OpenRouter adapter
 

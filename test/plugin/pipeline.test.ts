@@ -227,6 +227,18 @@ describe("pipeline - the judge decides the rest", () => {
 })
 
 describe("pipeline - modes and scope", () => {
+  it("never weakens a host deny", async () => {
+    const harness = makeHarness({ answer: Option.some(judged()) })
+    const event = { ...makeEvent("git push origin main"), effect: "deny" as const, message: "blocked by OpenCode" }
+
+    await harness.run(event)
+
+    expect(event.effect).toBe("deny")
+    expect(event.message).toBe("blocked by OpenCode")
+    expect(harness.judgeInputs).toHaveLength(0)
+    expect(harness.logged).toHaveLength(0)
+  })
+
   it("does not re-ask a remembered host approval", async () => {
     const judgeInputs: CommandInput[] = []
 

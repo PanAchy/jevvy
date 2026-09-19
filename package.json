@@ -38,6 +38,9 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "calibrate": "npm run build && node eval/calibrate.mjs",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "eval:analyze": "node eval/analyze.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "test": "vitest run"

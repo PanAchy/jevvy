@@ -18,7 +18,7 @@ src/core/    harness-free judgment engine (tests live in test/core)
   openrouter   adapter, synthetic-tested only, UNWIRED pending live verify
 src/plugin/  the OpenCode Effect adapter (tests in test/plugin)
   credentials  zen-first resolution: integrations, then env, then degraded
-  approvals    respects OpenCode saved "always" patterns before judgment
+  approvals    respects OpenCode deny precedence and saved "always" patterns
   judge        JudgeService layer: cache, budget, probe latch, fail-closed
   budget       atomic spend/refund reservation per day
   log          append-only decision log, redacted before storage
@@ -26,7 +26,7 @@ src/plugin/  the OpenCode Effect adapter (tests in test/plugin)
   options      Schema-parsed plugin options
   index        wiring: integration registration, layer assembly
 bin/         jevvy CLI (check command; exit 0 allow / 1 ask / 2 no judge)
-eval/        labeled command set for the live eval (key-gated tests)
+eval/        explicit maintainer-only live calibration and offline analysis
 ```
 
 Providers: zen (free, default) or TypeSafe key, via opencode integrations
