@@ -85,9 +85,8 @@ export type CodeTier =
 /**
  * Evaluate the code tiers for a compound command. Segments split on statement
  * separators and pipes; every segment must be proven for the proven verdict;
- * any floor/credential hit wins. Known limit: quoted `|`/`&&` characters
- * inside arguments are split too - full bash tokenization is out of scope
- * (full bash tokenization is out of scope; quoted separators are a known limit).
+ * any floor/credential hit wins. Quoted separators inside arguments are split
+ * too: full bash tokenization is out of scope.
  */
 export const classifyCodeTiers = (rawCommand: string): CodeTier => {
   const command = stripComments(rawCommand)

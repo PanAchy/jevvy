@@ -7,7 +7,7 @@ second. No more hand-maintained allowlists; no rubber-stamping everything.
 jevvy never blocks a command - it answers, or stays quiet. You are the only
 one who can say no.
 
-Ships as a native **OpenCode v2 plugin** plus a CLI. The core is
+Ships as a native OpenCode v2 plugin plus a CLI. The core is
 harness-agnostic: adapters for other agents are on the roadmap, not built.
 
 ```text
@@ -60,7 +60,7 @@ npx jevvy check "git push --force" --task "deploy to production"
 echo $?   # 0 allow · 1 ask · 2 usage/no judge
 ```
 
-Same tiers, same questions, same thresholds as the plugin, from the terminal.
+Same tiers and thresholds as the plugin, from the terminal.
 `--json` for machine-readable output, `--no-model` to exercise code tiers
 only. Requires Node 24+ (native TypeScript stripping) and `TYPESAFE_API_KEY`
 in the environment for model verdicts.
@@ -86,7 +86,7 @@ storage and to the OpenCode server log.
 
 | Provider | Status | Credential |
 |---|---|---|
-| TypeSafe direct | **v0.1** | `TYPESAFE_API_KEY` |
+| TypeSafe direct | v0.1 | `TYPESAFE_API_KEY` |
 | OpenRouter | planned | `OPENROUTER_API_KEY` |
 | Cloudflare | planned | `CLOUDFLARE_API_TOKEN` |
 | Vercel AI Gateway | planned | `AI_GATEWAY_API_KEY` |
@@ -106,14 +106,11 @@ storage and to the OpenCode server log.
 
 ## The 30-second trust trial
 
-Not sure this belongs on your machine? `dryRun: true` in the plugin options
-logs every verdict without enforcing anything - grep `[jevvy]` in the OpenCode
-server log and watch it work. A verdict costs about a second and a fraction
-of a cent; repeats are cached for five minutes; the day is capped at 2000
-model calls. No key configured? Code tiers still run - proven commands allow,
-credential-shaped ones ask - and nothing calls the API. Uninstalling is one
-line removed from your config. Or skip installing entirely:
-`npx jevvy check "git push --force"`.
+Not sure yet? `dryRun: true` logs every verdict without enforcing anything -
+grep `[jevvy]` in the OpenCode server log. Verdicts cost a second and a
+fraction of a cent, cached for five minutes, capped at 2000 calls a day.
+Without a key, code tiers still run and nothing calls the API. Uninstalling
+removes one line. Or skip installing: `npx jevvy check "git push --force"`.
 
 ## Roadmap
 
