@@ -1,137 +1,124 @@
+<div align="center">
+
 # jevvy
 
-Judged permissions for coding agents. Before your agent runs a shell command,
-jevvy returns a **verdict** - *allow* or *ask* - from deterministic
-code tiers first and [Jev](https://typesafe.ai) (a calibrated decision model)
-second. No more hand-maintained allowlists; no rubber-stamping everything.
-jevvy never blocks a command - it answers, or stays quiet. You are the only
-one who can say no.
+[![npm version](https://img.shields.io/npm/v/jevvy)](https://www.npmjs.com/package/jevvy)
+[![license](https://img.shields.io/npm/l/jevvy)](./LICENSE)
+[![node](https://img.shields.io/node/v/jevvy)](./package.json)
 
-Ships as a native OpenCode v2 plugin plus a CLI. The core is
-harness-agnostic: adapters for other agents are on the roadmap, not built.
+Judged permissions for coding agents.
 
-```text
-command
-  │
-  ├─ 1. Code tiers (deterministic, private, ~0ms)
-  │     floor       rm -rf / · curl|sh · fork bomb · mkfs      → loud ask
-  │     credential  key-shaped values                          → ask, never sent to the API
-  │     proven      every segment a listed read-only verb      → allow
-  │
-  ├─ 2. Judge (one Jev call, ~1s, fractions of a cent)
-  │     risk axes     destructive · sensitive · executes · network · obfuscated
-  │     context axes  authorized · off_task   (when task context exists)
-  │
-  └─ 3. Policy (plain code, auditable)
-        max risk ≥ 0.85 → loud ask   every axis < 0.2 → allow
-        in between      → ask       task authorizes → soften one step
-        Judge offline   → ask       (fail closed, never a silent allow)
+</div>
+
+> Your agent asks before `git status` and rubber-stamps nothing else. jevvy
+> judges every command: boring ones run silently, dangerous ones come to you
+> with the reason and the numbers attached. **It never blocks. You decide.**
+
+## Quick start
+
+Taste it first, nothing installed:
+
+```bash
+npx jevvy check "git push --force"
 ```
 
-Borrowed wisdom, with credit: the allowlist often beats the model
-([jevgate](https://github.com/thevibeworks/jevgate)); "capability is not harm"
-([toolgate](https://github.com/RiskAverseTech/toolgate)); classifier-gated auto
-mode at scale ([fx](https://github.com/vercel-labs/fx)).
-
-## Install (OpenCode)
+Then in OpenCode, one line in `opencode.json(c)` plus a key from
+[console.typesafe.ai](https://console.typesafe.ai/settings/keys):
 
 ```jsonc
-// opencode.json(c)
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": [
-    {
-      "package": "jevvy",
-      "options": { "dryRun": false }
-    }
-  ]
+  "plugins": [{ "package": "jevvy" }]
 }
 ```
 
-Set `TYPESAFE_API_KEY` (from [console.typesafe.ai](https://console.typesafe.ai/settings/keys))
-in the OpenCode server environment, or in the project's `.env`. Without a key,
-jevvy stays active on code tiers only - floor, credential, proven - and never
-calls the model.
+Set `TYPESAFE_API_KEY` in the OpenCode server environment. That's it:
+boring commands go silent, dangerous ones ask, nothing gets blocked.
 
-## CLI
+## How it decides
 
-```sh
-npx jevvy check "git push --force" --task "deploy to production"
-echo $?   # 0 allow · 1 ask · 2 usage/no judge
+```text
+command
+  ├─ code tiers (free, instant, certain)
+  │    proven read-only verbs      → allow
+  │    credential-shaped values    → ask, never sent to the model
+  │    catastrophic patterns       → loud ask
+  └─ Jev, a judgment model (~1s, fraction of a cent)
+       destructive · sensitive · obfuscated      (gate the verdict)
+       executes · network                        (recorded, never decisive)
+       max risk ≥ 0.85 → loud ask · < 0.2 → allow · else → ask
 ```
 
-Same tiers and thresholds as the plugin, from the terminal.
-`--json` for machine-readable output, `--no-model` to exercise code tiers
-only. Requires Node 24+ (native TypeScript stripping) and `TYPESAFE_API_KEY`
-in the environment for model verdicts.
+Every verdict is logged. A task that explicitly asks for a command can
+soften one ask, never secret exposure. Dead judge: your agent's own
+permission flow. No key: code tiers still run, nothing calls the API.
 
-## Options
+<details>
+<summary><b>Options</b> (defaults are the product)</summary>
 
 | Option | Default | Meaning |
 |---|---|---|
+| `dryRun` | `false` | Log verdicts, apply nothing |
 | `model` | `jev-1.13.0` | Pinned on purpose: thresholds are facts about one version |
-| `thresholds.highRisk` | `0.85` | Max risk ≥ → loud ask |
-| `thresholds.ask` | `0.55` | Max risk ≥ → ask |
-| `thresholds.allow` | `0.2` | Every axis < → allow (conjunctive) |
-| `thresholds.authorized` | `0.8` | Task authorization ≥ → soften one step (never `sensitive`) |
-| `dryRun` | `false` | Log verdicts, apply nothing - try it safely |
+| `thresholds.highRisk` | `0.85` | Max gating risk at or above this asks loudly |
+| `thresholds.ask` | `0.55` | Max gating risk at or above this asks |
+| `thresholds.allow` | `0.2` | Every axis below this allows |
+| `thresholds.authorized` | `0.8` | Task authorization at or above this softens one ask |
+| `notePerAllow` | `false` | Session note per Jev allow (opt-in: notes enter model context) |
+| `maxRequestsPerDay` | `2000` | Model-call cap per day |
 | `noLog` | `false` | Disable the persistent decision log |
-| `notePerAllow` | `false` | Post a session note when Jev allows (opt-in: notes enter the model's context) |
-| `maxRequestsPerDay` | `2000` | Stop calling Jev after this many model requests per day (runaway-loop guard) |
 
-Every verdict is logged (command, effect, reason, probabilities) to plugin
-storage and to the OpenCode server log.
+</details>
 
-## Providers
+<details>
+<summary><b>Safety</b></summary>
 
-| Provider | Status | Credential |
-|---|---|---|
-| TypeSafe direct | v0.1 | `TYPESAFE_API_KEY` |
-| OpenRouter | planned | `OPENROUTER_API_KEY` |
-| Cloudflare | planned | `CLOUDFLARE_API_TOKEN` |
-| Vercel AI Gateway | planned | `AI_GATEWAY_API_KEY` |
-| OpenCode Zen | planned - free Jev announced | none (zero-config milestone) |
+- Not a sandbox. It shrinks blast radius; containers and least privilege
+  still do the real work.
+- A classifier can be fooled, which is why code tiers run first, thresholds
+  bound what one axis can do, and every verdict is logged.
+- What leaves your machine on the model path: redacted command text, the
+  project's directory name, a redacted task snippet. Nothing else.
+- Costs: about a second and a fraction of a cent per verdict, cached five
+  minutes, capped at 2000 calls a day.
+- Uninstall removes one line.
 
-## Honest limits
+</details>
 
-- **Not a sandbox.** jevvy shrinks the blast radius of mistakes and prompt
-  injection; it does not replace containers or least-privilege credentials.
-- **A classifier can be fooled.** That is why code tiers run first, why
-  thresholds bound what one axis can do, and why every verdict is logged.
-- **Probabilities wobble.** Identical requests vary; the gap between `allow`
-  (0.2) and `ask` (0.55) is deliberate headroom.
-- **Unknown commands leave your machine** - redacted command text, the
-  project's directory name, and a redacted task snippet go to the provider
-  you configured. Credential-shaped commands are stopped in code before that.
+<details>
+<summary><b>CLI</b></summary>
 
-## The 30-second trust trial
+```bash
+jevvy check "<command>" [--task <text>] [--json] [--no-model]
+```
 
-Not sure yet? `dryRun: true` logs every verdict without enforcing anything -
-grep `[jevvy]` in the OpenCode server log. Verdicts cost a second and a
-fraction of a cent, cached for five minutes, capped at 2000 calls a day.
-Without a key, code tiers still run and nothing calls the API. Uninstalling
-removes one line. Or skip installing: `npx jevvy check "git push --force"`.
+Same tiers and thresholds as the plugin. Exit codes: `0` allow, `1` ask,
+`2` usage or no judge. Requires Node 24+.
 
-## Roadmap
+</details>
 
-- [x] v0.1 - core + OpenCode plugin (dogfooded on its own repo)
-- [x] `jevvy check` CLI + live eval in the test suite (`eval/commands.json`)
-- [ ] npm publish + Discord post
+<details>
+<summary><b>Roadmap</b></summary>
+
+- [x] v0.1: core + OpenCode plugin, dogfooded on its own repo
+- [x] CLI + live eval in the test suite (`eval/commands.json`)
 - [ ] Provider adapters (OpenRouter, Cloudflare, Vercel Gateway)
 - [ ] Zero-config via OpenCode Zen, if free Jev ships there
-- [ ] Swap judge internals to `@effect/ai-typesafe` when it releases
-- [ ] Learning loop: your ask-answers become durable rules (`permission.rules`)
+- [ ] Judge internals to `@effect/ai-typesafe` on release
+- [ ] Learning loop: your ask-answers become durable rules
 - [ ] Adapters for other agents (Codex, Pi, Claude Code hooks)
 
-## Development
+</details>
 
-```sh
+<details>
+<summary><b>Development</b></summary>
+
+```bash
 npm install && npm run typecheck && npm test
 ```
 
 Live eval (skips without a key): `TYPESAFE_API_KEY=... npm test`.
 
-Dogfood: point `plugins` at the repo path and edit - OpenCode hot-reloads
-plugins on save.
+</details>
 
 MIT.
