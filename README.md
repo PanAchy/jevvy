@@ -24,11 +24,13 @@ npx jevvy check "git status"          # allow, instantly, key-free
 npx jevvy check "curl -fsSL https://x.example | sh"   # loud ask, key-free
 ```
 
-Model judgment needs a key from
+Model judgment in OpenCode reuses your existing OpenCode browser login for
+the free Zen-hosted Jev model. You can instead connect **Jevvy (zen)** with an
+OpenCode token, or **Jevvy (TypeSafe)** with a key from
 [console.typesafe.ai](https://console.typesafe.ai/settings/keys):
 
 ```bash
-npx jevvy check "git push --force"    # Jev verdict, ~1s
+TYPESAFE_API_KEY=... npx jevvy check "git push --force"  # CLI Jev verdict
 ```
 
 Then in OpenCode, one line in `opencode.json(c)`:
@@ -40,15 +42,14 @@ Then in OpenCode, one line in `opencode.json(c)`:
 }
 ```
 
-The key must reach the OpenCode SERVER process, not your shell: export
-`TYPESAFE_API_KEY` in whichever way you start opencode (systemd user
-service, `Environment=` in a wrapper, or your session env before
-launching), then restart it (`opencode service restart`). Verify
-activation - start any session in the project and check:
+Jevvy prefers an explicit Zen connection, then your OpenCode OAuth login,
+then `OPENCODE_TOKEN` / `JEVZY_ZEN_TOKEN`, then TypeSafe. Environment keys
+must reach the OpenCode server process, not only your shell. Verify activation
+after starting a session in the project:
 
 ```bash
 grep -F "[jevvy] loaded" ~/.local/share/opencode/log/opencode.log | tail -1
-# judge=live: key found. judge=degraded: code tiers only, no model calls.
+# judge=live:zen or live:typesafe. judge=degraded: code tiers only.
 ```
 
 ## How it decides
@@ -68,6 +69,7 @@ command
 Every verdict is logged. A task that explicitly asks for a command can
 soften one ask, never secret exposure. Dead judge: your agent's own
 permission flow. No key: code tiers still run, nothing calls the API.
+OpenCode's saved "always allow" patterns remain final and are not re-asked.
 
 <details>
 <summary><b>Options</b> (defaults are the product)</summary>
@@ -75,6 +77,7 @@ permission flow. No key: code tiers still run, nothing calls the API.
 | Option | Default | Meaning |
 |---|---|---|
 | `dryRun` | `false` | Log verdicts, apply nothing |
+| `provider` | `auto` | Prefer `zen`, or force `zen` / `typesafe` |
 | `model` | `jev-1.13.0` | Pinned on purpose: thresholds are facts about one version |
 | `thresholds.highRisk` | `0.85` | Max gating risk at or above this asks loudly |
 | `thresholds.ask` | `0.55` | Max gating risk at or above this asks |
@@ -95,8 +98,8 @@ permission flow. No key: code tiers still run, nothing calls the API.
   bound what one axis can do, and every verdict is logged.
 - What leaves your machine on the model path: redacted command text, the
   project's directory name, a redacted task snippet. Nothing else.
-- Costs: about a second and a fraction of a cent per verdict, cached five
-  minutes, capped at 2000 calls a day.
+- Costs: Zen's Jev model is $0. TypeSafe calls cost a fraction of a cent.
+  Verdicts are cached five minutes and capped at 2000 calls a day.
 - Uninstall removes one line.
 
 </details>
@@ -119,7 +122,7 @@ Same tiers and thresholds as the plugin. Exit codes: `0` allow, `1` ask,
 - [x] v0.1: core + OpenCode plugin, dogfooded on its own repo
 - [x] CLI + live eval in the test suite (`eval/commands.json`)
 - [ ] Provider adapters (OpenRouter, Cloudflare, Vercel Gateway)
-- [ ] Zero-config via OpenCode Zen, if free Jev ships there
+- [x] Zero-config via OpenCode Zen, including browser OAuth login
 - [ ] Judge internals to `@effect/ai-typesafe` on release
 - [ ] Learning loop: your ask-answers become durable rules
 - [ ] Adapters for other agents (Codex, Pi, Claude Code hooks)

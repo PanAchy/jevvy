@@ -10,26 +10,30 @@ export const TYPESAFE_INTEGRATION = "jevvy-typesafe"
 
 export const ZEN_INTEGRATION = "jevvy-zen"
 
+export const OPENCODE_INTEGRATION = "opencode"
+
 export const DEFAULT_ZEN_MODEL = "jev-1.13-free"
 
 export type ProviderPreference = "auto" | "zen" | "typesafe"
 
 export type JudgeCredential =
-  | { readonly kind: "zen"; readonly key: string; readonly model: string; readonly origin: "integration" | "env" }
+  | { readonly kind: "zen"; readonly key: string; readonly model: string; readonly origin: "integration" | "opencode" | "env" }
   | { readonly kind: "typesafe"; readonly key: string; readonly origin: "integration" | "env" }
   | { readonly kind: "degraded" }
 
-/** The key credential as resolved from the store. */
-export interface StoredKeyCredential {
-  readonly type: "key"
-  readonly key: string
-  readonly configuration?: Readonly<Record<string, string | number | boolean | readonly string[]>>
-}
+/** Credential shapes jevvy can use from opencode's integration store. */
+export type StoredCredential =
+  | {
+      readonly type: "key"
+      readonly key: string
+      readonly configuration?: Readonly<Record<string, string | number | boolean | readonly string[]>>
+    }
+  | { readonly type: "oauth"; readonly access: string }
 
 /** Everything resolution needs, injectable for tests. */
 export interface CredentialPorts<C> {
   readonly activeIntegration: (id: string) => Effect.Effect<C | undefined>
-  readonly resolveIntegration: (connection: C) => Effect.Effect<StoredKeyCredential | undefined>
+  readonly resolveIntegration: (connection: C) => Effect.Effect<StoredCredential | undefined>
   readonly readEnv: (name: string) => string | undefined
 }
 
@@ -40,14 +44,17 @@ export interface ConnectionLike {
   readonly envName?: string
 }
 
-const isStoredKey = (credential: StoredKeyCredential | undefined): credential is StoredKeyCredential =>
-  credential !== undefined && credential.type === "key" && credential.key.trim().length > 0
+export const credentialToken = (credential: StoredCredential | undefined): string | undefined => {
+  const token = credential?.type === "key" ? credential.key : credential?.access
 
-const integrationKey = <C>(
+  return token !== undefined && token.trim().length > 0 ? token : undefined
+}
+
+const integrationCredential = <C>(
   ports: CredentialPorts<C>,
   id: string,
   describe: (connection: C) => ConnectionLike,
-): Effect.Effect<StoredKeyCredential | undefined> =>
+): Effect.Effect<StoredCredential | undefined> =>
   Effect.gen(function* () {
     const connection = yield* ports.activeIntegration(id)
 
@@ -63,7 +70,7 @@ const integrationKey = <C>(
 
     const resolved = yield* ports.resolveIntegration(connection)
 
-    return isStoredKey(resolved) ? resolved : undefined
+    return credentialToken(resolved) === undefined ? undefined : resolved
   })
 
 const firstEnv = <C>(ports: CredentialPorts<C>, names: readonly string[]): string | undefined => {
@@ -81,12 +88,19 @@ const isModelName = (value: string | number | boolean | readonly string[] | unde
 
 const zenCandidate = <C>(ports: CredentialPorts<C>, describe: (connection: C) => ConnectionLike): Effect.Effect<JudgeCredential> =>
   Effect.gen(function* () {
-    const stored = yield* integrationKey(ports, ZEN_INTEGRATION, describe)
+    const stored = yield* integrationCredential(ports, ZEN_INTEGRATION, describe)
 
-    if (stored !== undefined) {
+    if (stored?.type === "key") {
       const model = isModelName(stored.configuration?.model) ? stored.configuration.model : DEFAULT_ZEN_MODEL
 
       return { kind: "zen", key: stored.key, model, origin: "integration" }
+    }
+
+    const opencode = yield* integrationCredential(ports, OPENCODE_INTEGRATION, describe)
+    const opencodeToken = credentialToken(opencode)
+
+    if (opencodeToken !== undefined) {
+      return { kind: "zen", key: opencodeToken, model: DEFAULT_ZEN_MODEL, origin: "opencode" }
     }
 
     const fromEnv = firstEnv(ports, ["JEVZY_ZEN_TOKEN", "OPENCODE_TOKEN"])
@@ -101,9 +115,9 @@ const typesafeCandidate = <C>(
   describe: (connection: C) => ConnectionLike,
 ): Effect.Effect<JudgeCredential> =>
   Effect.gen(function* () {
-    const stored = yield* integrationKey(ports, TYPESAFE_INTEGRATION, describe)
+    const stored = yield* integrationCredential(ports, TYPESAFE_INTEGRATION, describe)
 
-    if (stored !== undefined) return { kind: "typesafe", key: stored.key, origin: "integration" }
+    if (stored?.type === "key") return { kind: "typesafe", key: stored.key, origin: "integration" }
 
     const fromEnv = firstEnv(ports, ["TYPESAFE_API_KEY"])
 

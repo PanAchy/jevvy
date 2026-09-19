@@ -44,6 +44,7 @@
   },
   "prepublishOnly": "npm run build",
   "dependencies": {
+    "@opencode/client": "2.0.8",
     "@opencode/plugin": "2.0.8",
     "@opencode/schema": "^2.0.8",
     "@typesafe-ai/sdk": "^0.6.0",

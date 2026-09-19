@@ -27,6 +27,7 @@ export interface PipelineConfig {
 export interface PipelineHost {
   readonly project: string
   readonly sessionTask: (sessionID: string) => Effect.Effect<string | undefined>
+  readonly isRememberedApproval: (action: string, resources: readonly string[]) => Effect.Effect<boolean>
   readonly log: DecisionLog
   /** Posts a note into the session. Wired to session.synthetic by the host. */
   readonly note: (sessionID: string, text: string) => Effect.Effect<void>
@@ -76,6 +77,8 @@ export const createEvaluate = (
 
     const applyVerdict = (event: EvaluationEvent, verdict: Verdict, command: string): Effect.Effect<void> =>
       Effect.gen(function* () {
+        const hostEffect = event.effect
+
         if (!config.dryRun) {
           event.effect = verdict.effect
           event.message = verdict.reason
@@ -83,6 +86,7 @@ export const createEvaluate = (
 
         yield* Effect.logInfo("[jevvy] verdict", {
           effect: verdict.effect,
+          hostEffect,
           source: verdict.source,
           command: toExternal(command, 160),
         })
@@ -92,6 +96,19 @@ export const createEvaluate = (
     return (event) =>
       Effect.gen(function* () {
         if (event.action !== "shell") return
+
+        // The user is the final authority. OpenCode applies remembered
+        // "always" approvals before this hook, so never turn one back into an
+        // ask. Require both the host allow and a saved pattern match: ordinary
+        // default allows still receive Jevvy review.
+        if (event.effect === "allow" && (yield* host.isRememberedApproval(event.action, event.resources))) {
+          yield* Effect.logInfo("[jevvy] remembered approval", {
+            effect: event.effect,
+            command: toExternal(joinForJudge(event.resources), 160),
+          })
+
+          return
+        }
 
         // Stripped once, up front: comments cannot steer tiers, the judge,
         // or the log ("nothing a command says about itself can help it").

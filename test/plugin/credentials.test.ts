@@ -4,11 +4,11 @@
 import { describe, expect, it } from "vitest"
 import { Effect } from "effect"
 import { resolveCredential } from "../../src/plugin/credentials.ts"
-import type { ConnectionLike, CredentialPorts, StoredKeyCredential } from "../../src/plugin/credentials.ts"
+import type { ConnectionLike, CredentialPorts, StoredCredential } from "../../src/plugin/credentials.ts"
 
 interface HarnessSetup {
   readonly integrations?: Readonly<Record<string, ConnectionLike>>
-  readonly stored?: Readonly<Record<string, StoredKeyCredential>>
+  readonly stored?: Readonly<Record<string, StoredCredential>>
   readonly env?: Readonly<Record<string, string>>
 }
 
@@ -58,6 +58,44 @@ describe("resolveCredential", () => {
     })
 
     expect(await resolve(harness)).toMatchObject({ kind: "zen", model: "jev-1.13" })
+  })
+
+  it("reuses an opencode OAuth login for zen", async () => {
+    const harness = makeHarness({
+      integrations: { opencode: { kind: "credential", credentialID: "opencode-login" } },
+      stored: { "opencode-login": { type: "oauth", access: "oauth-access" } },
+    })
+
+    expect(await resolve(harness)).toEqual({
+      kind: "zen",
+      key: "oauth-access",
+      model: "jev-1.13-free",
+      origin: "opencode",
+    })
+  })
+
+  it("accepts an opencode token login for zen", async () => {
+    const harness = makeHarness({
+      integrations: { opencode: { kind: "credential", credentialID: "opencode-login" } },
+      stored: { "opencode-login": { type: "key", key: "opencode-token" } },
+    })
+
+    expect(await resolve(harness)).toMatchObject({ kind: "zen", key: "opencode-token", origin: "opencode" })
+  })
+
+  it("prefers an explicit jevvy zen credential over the opencode login", async () => {
+    const harness = makeHarness({
+      integrations: {
+        "jevvy-zen": { kind: "credential", credentialID: "zen-conn" },
+        opencode: { kind: "credential", credentialID: "opencode-login" },
+      },
+      stored: {
+        "zen-conn": { type: "key", key: "explicit-zen-token" },
+        "opencode-login": { type: "oauth", access: "oauth-access" },
+      },
+    })
+
+    expect(await resolve(harness)).toMatchObject({ kind: "zen", key: "explicit-zen-token", origin: "integration" })
   })
 
   it("falls back to the typesafe integration", async () => {

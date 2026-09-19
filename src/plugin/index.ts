@@ -2,29 +2,45 @@
 
 import { Effect } from "effect"
 import { Plugin } from "@opencode/plugin/effect"
+import { OpenCode } from "@opencode/client"
+import { discover, headers as serviceHeaders } from "@opencode/client/service"
 import { config as loadEnv } from "dotenv"
 import { defaultThresholds } from "../core/decision.ts"
 import type { Thresholds } from "../core/decision.ts"
 import { Session } from "@opencode/schema/session"
 import { createJudge, DEFAULT_MODEL, modelAvailable } from "../core/judge.ts"
+import type { JevJudge } from "../core/judge.ts"
 import { createZenJudge } from "../core/zen.ts"
 import { degraded, live, DEFAULT_MAX_REQUESTS_PER_DAY } from "./judge.ts"
-import { resolveCredential, TYPESAFE_INTEGRATION, ZEN_INTEGRATION } from "./credentials.ts"
-import type { ConnectionLike, StoredKeyCredential } from "./credentials.ts"
+import { credentialToken, OPENCODE_INTEGRATION, resolveCredential, TYPESAFE_INTEGRATION, ZEN_INTEGRATION } from "./credentials.ts"
+import type { ConnectionLike, StoredCredential } from "./credentials.ts"
 import { createDecisionLog } from "./log.ts"
 import { isPluginOptionsInput, parseOptions } from "./options.ts"
 import { extractTask, createEvaluate } from "./pipeline.ts"
+import { isRememberedApproval } from "./approvals.ts"
 
 /** Thresholds with readonly stripped, so defaults can be overridden in place. */
 type MutableThresholds = { -readonly [K in keyof Thresholds]: Thresholds[K] }
 
-/** Narrow the SDK's credential union to the key shape jevvy understands. */
-const isStoredKeyRecord = (u: unknown): u is { type: "key"; key: string } =>
-  typeof u === "object" && u !== null && "type" in u && u.type === "key" && "key" in u && typeof u.key === "string"
-
 /** Describe the SDK's connection to the pure resolution logic. */
 const describeConnection = (info: { type: string; id?: string; name?: string }): ConnectionLike =>
   info.type === "env" ? { kind: "env", envName: info.name } : { kind: "credential", credentialID: info.id }
+
+/** Keep only the provider credential fields jevvy needs. */
+const storedCredentialFrom = (value: {
+  readonly type: "key" | "oauth"
+  readonly key?: string
+  readonly access?: string
+  readonly configuration?: Readonly<Record<string, string | number | boolean | readonly string[]>>
+} | undefined): StoredCredential | undefined => {
+  if (value?.type === "key" && value.key !== undefined) {
+    return { type: "key", key: value.key, configuration: value.configuration }
+  }
+
+  if (value?.type === "oauth" && value.access !== undefined) return { type: "oauth", access: value.access }
+
+  return undefined
+}
 
 export default Plugin.define({
   id: "jevvy",
@@ -32,6 +48,18 @@ export default Plugin.define({
     Effect.gen(function* () {
       const project = ctx.location.directory
       const options = isPluginOptionsInput(ctx.options) ? parseOptions(ctx.options) : {}
+
+      const service = yield* Effect.tryPromise(() => discover()).pipe(
+        Effect.catch((error) =>
+          Effect.logWarning("[jevvy] could not discover opencode service - remembered approvals unavailable", {
+            error: String(error),
+          }).pipe(Effect.as(undefined)),
+        ),
+      )
+
+      const client = service === undefined
+        ? undefined
+        : OpenCode.make({ baseUrl: service.url, headers: serviceHeaders(service) })
 
       const hasRawOverrides = isPluginOptionsInput(ctx.options) && Object.keys(ctx.options).length > 0
       const parsedNothing = Object.keys(options).length === 0
@@ -120,7 +148,7 @@ export default Plugin.define({
           activeIntegration: (id) => ctx.integration.connection.active(id),
           resolveIntegration: (connection) =>
             ctx.integration.connection.resolve(connection).pipe(
-              Effect.map((value): StoredKeyCredential | undefined => (isStoredKeyRecord(value) ? { type: "key", key: value.key } : undefined)),
+              Effect.map(storedCredentialFrom),
               Effect.catch(() => Effect.succeed(undefined)),
             ),
           readEnv: (name) => process.env[name],
@@ -129,12 +157,35 @@ export default Plugin.define({
         describeConnection,
       )
 
+      const opencodeZenJudge: JevJudge = {
+        judge: async (input, signal) => {
+          const token = await Effect.runPromise(
+            ctx.integration.connection.active(OPENCODE_INTEGRATION).pipe(
+              Effect.flatMap((connection) =>
+                connection === undefined
+                  ? Effect.succeed(undefined)
+                  : ctx.integration.connection.resolve(connection).pipe(Effect.map(storedCredentialFrom)),
+              ),
+              Effect.map(credentialToken),
+            ),
+          )
+
+          if (token === undefined) throw new Error("opencode login is unavailable")
+
+          return createZenJudge(token, credential.kind === "zen" ? credential.model : undefined).judge(input, signal)
+        },
+      }
+
       const judgeLayer =
         credential.kind === "degraded"
           ? degraded
           : live({
               delegate:
-                credential.kind === "zen" ? createZenJudge(credential.key, credential.model) : createJudge(credential.key),
+                credential.kind === "zen"
+                  ? credential.origin === "opencode"
+                    ? opencodeZenJudge
+                    : createZenJudge(credential.key, credential.model)
+                  : createJudge(credential.key),
               probe:
                 credential.kind === "typesafe"
                   ? Effect.tryPromise(() => modelAvailable(credential.key, options.model ?? DEFAULT_MODEL)).pipe(
@@ -169,6 +220,13 @@ export default Plugin.define({
         {
           project,
           sessionTask,
+          isRememberedApproval: (action, resources) =>
+            client === undefined
+              ? Effect.succeed(false)
+              : Effect.tryPromise(() => client.permission.saved.list({ projectID: ctx.location.project.id })).pipe(
+                  Effect.map((approvals) => isRememberedApproval(approvals, action, resources)),
+                  Effect.catch(() => Effect.succeed(false)),
+                ),
           log: createDecisionLog(ctx.storage, options.noLog !== true),
           note: (sessionID, text) =>
             ctx.session.synthetic({ sessionID: Session.ID.descending(sessionID), text }).pipe(
