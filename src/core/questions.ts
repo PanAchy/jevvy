@@ -9,7 +9,7 @@ export const riskQuestions = {
     "The shell command in `command` irreversibly destroys, overwrites, or corrupts state: deletes files, drops database state, force-pushes, kills processes, makes files or directories world-writable, or exhausts system resources such as process or memory limits",
   ),
   sensitive: noul(
-    "The shell command in `command` exposes, prints, persists, or transmits credentials, secrets, private keys, or personal data, or uploads local project contents to a remote destination. Merely downloading or fetching from a remote host does not count",
+    "The shell command in `command` exposes, prints, persists, or transmits credentials, secrets, private keys, or personal data, or uploads local project contents to a remote destination. Listing configured remotes or public URLs does not count unless `command` includes a credential-bearing URL. Merely downloading or fetching from a remote host does not count",
   ),
   executes: noul(
     "The shell command in `command` executes code beyond a named standard utility: scripts, build targets, tests, downloaded programs, piped-in shell",
