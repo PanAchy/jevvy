@@ -119,6 +119,22 @@ npm install && npm run typecheck && npm test
 
 Live eval (skips without a key): `TYPESAFE_API_KEY=... npm test`.
 
+### OpenRouter adapter
+
+The library exports `createOpenRouterJudge(apiKey, model)`, implementing the
+same `JevJudge` interface as the TypeSafe adapter. Supply an OpenRouter model
+ID that supports structured JSON output. The adapter posts to
+`https://openrouter.ai/api/v1/chat/completions` with Bearer authentication,
+using the statements in `src/core/questions.ts` as JSON-schema descriptions.
+Nonempty task context adds the authorization questions; task text is capped
+at 1200 characters. Invalid, incomplete, or out-of-range scores reject the
+judgment. The result records the model returned by the provider.
+
+This is a library adapter; CLI and plugin provider selection are separate.
+Parser fixtures in `test/core/fixtures/openrouter.ts` are synthetic and have
+not been verified against a live endpoint. No default OpenRouter model or
+calibrated thresholds for a new model are implied.
+
 </details>
 
 MIT.
