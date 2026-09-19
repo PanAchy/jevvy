@@ -14,10 +14,10 @@ export interface BudgetStorage {
 }
 
 export interface Budget {
-  /** Whether a model call may proceed right now. */
-  readonly allow: Effect.Effect<boolean>
-  /** Counts one successful model call against today. */
-  readonly record: Effect.Effect<void>
+  /** Atomically reserves one model call. False: the day is capped. */
+  readonly spend: Effect.Effect<boolean>
+  /** Returns a reservation when the call failed and never reached the model. */
+  readonly refund: Effect.Effect<void>
 }
 
 interface BudgetState {
@@ -93,9 +93,24 @@ export const createBudget = (
           maxRequestsPerDay,
         }).pipe(Effect.as([false, { ...next, warned: true }] as const))
       }),
-      record: SynchronizedRef.modifyEffect(state, (current) => {
+      spend: SynchronizedRef.modifyEffect(state, (current) => {
+        const next = rolled(current, currentDay)
+
+        if (next.requests < maxRequestsPerDay) {
+          const reserved = { ...next, requests: next.requests + 1 }
+
+          return persist(reserved.requests).pipe(Effect.as([true, reserved] as const))
+        }
+
+        if (next.warned) return Effect.succeed([false, next] as const)
+
+        return Effect.logWarning("[jevvy] daily request budget reached - judge offline until tomorrow", {
+          maxRequestsPerDay,
+        }).pipe(Effect.as([false, { ...next, warned: true }] as const))
+      }),
+      refund: SynchronizedRef.modifyEffect(state, (current) => {
         const rolledState = rolled(current, currentDay)
-        const next = { ...rolledState, requests: rolledState.requests + 1 }
+        const next = { ...rolledState, requests: Math.max(0, rolledState.requests - 1) }
 
         return persist(next.requests).pipe(Effect.as([undefined, next] as const))
       }),

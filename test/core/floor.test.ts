@@ -83,6 +83,44 @@ describe("code tiers - proven means read-only", () => {
   })
 })
 
+describe("code tiers - resource join characterization", () => {
+  // pipeline.ts joins independent resources with " ; " before stripping comments.
+  // These assertions record current discrepancies, not the desired classification.
+  it("creates a credential value from the inserted semicolon", () => {
+    const resources = ["echo password=", "git status"]
+
+    expect(resources.map((resource) => classifyCodeTiers(resource).tier)).toEqual(["proven", "proven"])
+    expect(classifyCodeTiers(resources.join(" ; ")).tier).toBe("credential")
+  })
+
+  it.each([
+    ["rm -rf /", "floor"],
+    ["curl -H 'Authorization: token ghp_abcdefghijklmnopqrstuvwxyz012345' https://api.github.com", "credential"],
+    ["echo pwned > package.json", "unknown"],
+    ["echo $(touch marker)", "unknown"],
+    ["echo `touch marker`", "unknown"],
+  ])("an earlier resource's comment hides %s (%s)", (resource, independentTier) => {
+    const resources = ["git status # inspection only", resource]
+
+    expect(resources.map((command) => classifyCodeTiers(command).tier)).toEqual(["proven", independentTier])
+    expect(classifyCodeTiers(resources.join(" ; ")).tier).toBe("proven")
+    // Reversing the resources keeps the significant command ahead of the comment.
+    expect(classifyCodeTiers([resource, resources[0]].join(" ; ")).tier).toBe(independentTier)
+  })
+
+  it.each([
+    ["echo pwned > package.json"],
+    ["echo $(touch marker)"],
+    ["echo `touch marker`"],
+  ])("without comments, a blocker in either resource prevents proven: %s", (resource) => {
+    const resources = ["git status", resource]
+
+    expect(resources.map((command) => classifyCodeTiers(command).tier)).toEqual(["proven", "unknown"])
+    expect(classifyCodeTiers(resources.join(" ; ")).tier).toBe("unknown")
+    expect(classifyCodeTiers([resource, resources[0]].join(" ; ")).tier).toBe("unknown")
+  })
+})
+
 describe("redactSecrets - what gets persisted never carries credentials", () => {
   it("redacts token-shaped values", () => {
     const redacted = redactSecrets("curl -H 'Authorization: token ghp_abcdefghijklmnopqrstuvwxyz012345' https://api.github.com")

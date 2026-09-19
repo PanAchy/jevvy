@@ -45,7 +45,9 @@ const keyOf = (input: CommandInput): string => `${input.command}${KEY_SEPARATOR}
 
 const lookupJudged = (delegate: JevJudge, cwd: string, budget: Budget, key: string): Effect.Effect<Option.Option<Judged>> =>
   Effect.gen(function* () {
-    if (!(yield* budget.allow)) return Option.none<Judged>()
+    // Reserve before the call: check-and-count is one atomic step, so
+    // concurrent verdicts cannot jointly exceed the cap.
+    if (!(yield* budget.spend)) return Option.none<Judged>()
 
     const separatorIndex = key.indexOf(KEY_SEPARATOR)
     const command = key.slice(0, separatorIndex)
@@ -63,9 +65,8 @@ const lookupJudged = (delegate: JevJudge, cwd: string, budget: Budget, key: stri
       ),
     )
 
-    // Count successful model calls only: an outage that answers None must
-    // not burn quota on every retry.
-    if (judged !== undefined && judged !== null) yield* budget.record
+    // The call failed or timed out: give the reservation back.
+    if (judged === undefined || judged === null) yield* budget.refund
 
     return judged === undefined || judged === null ? Option.none<Judged>() : Option.some(judged)
   })
