@@ -18,9 +18,11 @@ sharp in `CONTEXT.md`.
 two together; installing `effect` alone creates a second copy and breaks
 service-tag identity across the seam.
 
-## Branches & PRs
+## Branches & PRs (starts at first release)
 
-`main` gets changes only through PRs with green CI. Branches: `feat/x`,
+Nothing is released yet: until the v0 publish, work lands as direct local
+commits. From the first release onward: `main` gets changes only through
+PRs with green CI. Branches: `feat/x`,
 `fix/x`, `chore/x`. Squash-merge - one clean commit per PR, no half-done
 states on main. Every user-visible change ships with a changeset file
 (`npx changeset`) describing it for the changelog; the bot's "version
