@@ -1,8 +1,36 @@
 # jevvy
 
 Judgment layer for coding agents: Jev (TypeSafe System One) verdicts -
-allow / ask. jevvy never blocks; the user is the only "no". The core (`src/core`) is harness-agnostic; `src/plugin`
-is the OpenCode v2 Effect adapter.
+allow / ask. jevvy never blocks; the user is the only "no". The core may
+use Effect freely; "agnostic" means no harness imports, not no Effect.
+
+## Architecture
+
+```text
+src/core/    harness-free judgment engine (tests live in test/core)
+  floor        code tiers: strip comments per resource, classify segments
+               strictest-wins, credential redaction
+  decision     verdict policy over gating axes (destructive/sensitive/
+               obfuscated gate; executes/network record only)
+  questions    the noul question texts - any edit triggers recalibration
+  judge        TypeSafe adapter (createJudge, modelAvailable probe)
+  zen          zen adapter (x-api-key, same wire format, $0 model)
+  openrouter   adapter, synthetic-tested only, UNWIRED pending live verify
+src/plugin/  the OpenCode Effect adapter (tests in test/plugin)
+  credentials  zen-first resolution: integrations, then env, then degraded
+  judge        JudgeService layer: cache, budget, probe latch, fail-closed
+  budget       atomic spend/refund reservation per day
+  log          append-only decision log, redacted before storage
+  pipeline     tiers -> judge -> policy -> event mutation
+  options      Schema-parsed plugin options
+  index        wiring: integration registration, layer assembly
+bin/         jevvy CLI (check command; exit 0 allow / 1 ask / 2 no judge)
+eval/        labeled command set for the live eval (key-gated tests)
+```
+
+Providers: zen (free, default) or TypeSafe key, via opencode integrations
+(`jevvy-zen`, `jevvy-typesafe`) or env (`OPENCODE_TOKEN`/`JEVZY_ZEN_TOKEN`,
+`TYPESAFE_API_KEY`). Never keys in config files.
 
 ## Repo policy
 
