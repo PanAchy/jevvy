@@ -19,7 +19,7 @@ npm run check
 - `src/plugin` adapts the core to OpenCode and owns credentials, budgets, caching, logs, and permission events.
 - Provider and persistence boundaries decode data they do not own.
 - Credentials belong in OpenCode integrations or environment variables, never configuration files, fixtures, logs, or commits.
-- `effect` stays pinned to the exact version used by `@opencode/plugin`. A second Effect version needs an explicit runtime boundary and may exchange only promises, cancellation signals, and plain data with the plugin runtime.
+- Root `effect` stays pinned to the exact version used by `@opencode/plugin`. `packages/typesafe-runtime` owns its separate Effect version and is bundled into `dist`; only promises, cancellation signals, and plain data may cross that boundary.
 - OpenCode permission policy has precedence. Configured denies remain final, and saved approvals are respected before Jevvy judges an otherwise eligible shell command.
 
 See `AGENTS.md` for the current architecture map and repository-specific implementation rules.
@@ -29,6 +29,8 @@ See `AGENTS.md` for the current architecture map and repository-specific impleme
 Pure core behavior belongs in `test/core`. Plugin behavior uses Effect layers and fake services in `test/plugin`. Real provider calls belong in the explicit calibration harness, not Vitest.
 
 A behavior change should include a regression test. A provider adapter needs synthetic boundary tests before live verification.
+
+`npm run build` first emits the root TypeScript build, then replaces the TypeSafe runtime module with its isolated bundle. `npm run smoke:package` packs and installs the artifact to verify that no workspace dependency or second visible Effect tree escapes into the published package.
 
 ## Calibration
 

@@ -191,6 +191,8 @@ for (let index = 0; index < plan.length; index++) {
   if (index + 1 < plan.length && spacing > 0) await sleep(spacing)
 }
 
+await judge.dispose?.()
+
 console.log(`\n${plan.length} calls, ${errors} errors`)
 
 console.log(`raw: ${output}`)

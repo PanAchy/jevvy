@@ -48,6 +48,7 @@
     "eval:analyze": "node eval/analyze.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
+    "smoke:package": "node scripts/package-smoke.mjs",
     "test": "vitest run",
     "prepack": "npm run build"
   },

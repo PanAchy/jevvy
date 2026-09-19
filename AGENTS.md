@@ -12,8 +12,9 @@ src/core/    harness-free judgment engine (tests live in test/core)
                strictest-wins, credential redaction
   decision     verdict policy over gating axes (destructive/sensitive/
                obfuscated gate; executes/network record only)
-  questions    the noul question texts - any edit triggers recalibration
-  judge        TypeSafe adapter (createJudge, modelAvailable probe)
+  questions    the noul question texts - wording edits trigger recalibration
+  judge        plain TypeSafe port over the isolated runtime bundle
+  typesafe-runtime  source adapter to the private rc.116 workspace
   zen          zen adapter (x-api-key, same wire format, $0 model)
   openrouter   adapter, synthetic-tested only, UNWIRED pending live verify
 src/plugin/  the OpenCode Effect adapter (tests in test/plugin)
@@ -27,6 +28,7 @@ src/plugin/  the OpenCode Effect adapter (tests in test/plugin)
   index        wiring: integration registration, layer assembly
 bin/         jevvy CLI (check command; exit 0 allow / 1 ask / 2 no judge)
 eval/        explicit maintainer-only live calibration and offline analysis
+packages/typesafe-runtime/  private rc.116 build workspace, never published
 ```
 
 Providers: zen (free, default) or TypeSafe key, via opencode integrations
@@ -43,9 +45,11 @@ sharp in `CONTEXT.md`.
 
 ## Effect pinning
 
-`effect` is pinned to the exact version `@opencode/plugin` bundles. Bump the
-two together; installing `effect` alone creates a second copy and breaks
-service-tag identity across the seam.
+Root `effect` is pinned to the exact version `@opencode/plugin` bundles. Bump
+those two together. `packages/typesafe-runtime` deliberately owns a separate
+Effect version for `@effect/ai-typesafe`; its build is bundled into one module.
+Only promises, AbortSignals, and plain data cross that boundary. Never pass an
+Effect, Layer, Context tag, service, or Runtime between the two versions.
 
 ## Branches & PRs (starts at first release)
 

@@ -129,7 +129,7 @@ Same tiers and thresholds as the plugin. Exit codes: `0` allow, `1` ask,
 - [x] CLI + explicit maintainer calibration harness (`eval/commands.json`)
 - [ ] Post-v0 provider wiring (OpenRouter, Cloudflare, Vercel Gateway)
 - [x] Zero-config via OpenCode Zen, including browser OAuth login
-- [ ] Judge internals to `@effect/ai-typesafe` on release
+- [x] Isolated `@effect/ai-typesafe` runtime behind the plain judge port
 - [ ] Learning loop: your ask-answers become durable rules
 - [ ] Post-v0 adapters for other agents (Codex, Pi, Claude Code hooks)
 

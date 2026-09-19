@@ -10,7 +10,7 @@ Either changing means the old numbers are unproven. Re-run before trusting.
 
 ## Trigger points
 
-- Any edit to `riskQuestions` / `contextQuestions` in `src/core/questions.ts`
+- Any wording edit to `riskQuestions` / `contextQuestions` in `src/core/questions.ts`
 - Any change to `defaultThresholds` in `src/core/decision.ts`
 - A TypeSafe or Zen model pin bump
 
