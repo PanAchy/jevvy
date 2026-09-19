@@ -7,8 +7,7 @@
 // commands cost one judgment, not many; cached misses (None) expire with the
 // entry like everything else.
 
-import { Cache, Context, Effect, Exit, Layer, Option, Redacted, SynchronizedRef } from "effect"
-import { createJudge, DEFAULT_MODEL, modelAvailable } from "../core/judge.ts"
+import { Cache, Context, Effect, Exit, Layer, Option, SynchronizedRef } from "effect"
 import type { JevJudge } from "../core/judge.ts"
 import type { CommandInput, Judged } from "../core/decision.ts"
 import { createBudget } from "./budget.ts"
@@ -76,10 +75,13 @@ const lookupJudged = (delegate: JevJudge, cwd: string, budget: Budget, key: stri
     return judged === undefined || judged === null ? Option.none<Judged>() : Option.some(judged)
   })
 
-/** Construction inputs for the Live judge layer. */
+/** Construction inputs for the Live judge layer. The delegate is the
+ *  provider adapter (TypeSafe or zen); the probe verifies the provider is
+ *  serving before the first verdict. */
 export interface LiveConfig {
-  readonly apiKey: Redacted.Redacted<string>
-  readonly model: string | undefined
+  readonly delegate: JevJudge
+  readonly probe: Effect.Effect<boolean>
+  readonly model: string
   readonly cwd: string
   readonly maxRequestsPerDay: number
   readonly budgetStorage: BudgetStorage
@@ -89,23 +91,13 @@ export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
   Layer.effect(
     JudgeService,
     Effect.gen(function* () {
-      const resolvedModel = config.model ?? DEFAULT_MODEL
-
-      // Runtime verification: the pinned model must be serving under this
-      // key, else this load degrades to code tiers with a loud log. A
-      // transient failure here costs one plugin reload, not a silent gate.
-      const probe = Effect.tryPromise(() => modelAvailable(Redacted.value(config.apiKey), resolvedModel)).pipe(
-        Effect.timeout(JUDGMENT_TIMEOUT_MS),
-        Effect.catch((error) =>
-          Effect.logError("[jevvy] model check failed - judge degraded", { error: String(error) }).pipe(Effect.as(false)),
-        ),
-      )
+      const resolvedModel = config.model
 
       // A failed probe latches degraded, but only for a bounded window: a
       // transient error at load must not kill the judge until a manual
       // reload. The latch is one SynchronizedRef so concurrent verdicts
       // re-probe at most once per interval.
-      const initialVerified = yield* probe
+      const initialVerified = yield* config.probe
 
       const probeState = yield* SynchronizedRef.make<ProbeState>({
         verified: initialVerified,
@@ -116,7 +108,7 @@ export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
         yield* Effect.logError("[jevvy] pinned model not available - judge degraded, will re-probe", { model: resolvedModel })
       }
 
-      const delegate = createJudge(Redacted.value(config.apiKey), config.model)
+      const delegate = config.delegate
       const budget = yield* createBudget(config.budgetStorage, config.maxRequestsPerDay)
 
       const cache = yield* Cache.makeWith(
@@ -135,7 +127,7 @@ export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
           return Effect.succeed([undefined, current] as const)
         }
 
-        return probe.pipe(
+        return config.probe.pipe(
           Effect.flatMap((verified) =>
             verified
               ? Effect.logInfo("[jevvy] model available again - judge live", { model: resolvedModel }).pipe(
@@ -169,23 +161,3 @@ export const degraded = Layer.succeed(
     judge: () => Effect.succeed(Option.none<Judged>()),
   }),
 )
-
-/** Construction inputs for choosing between the Live and Degraded layers. */
-export interface LayerConfig {
-  readonly apiKey: Option.Option<Redacted.Redacted<string>>
-  readonly model: string | undefined
-  readonly cwd: string
-  readonly maxRequestsPerDay: number
-  readonly budgetStorage: BudgetStorage
-}
-
-export const layerFor = (config: LayerConfig): Layer.Layer<JudgeService> =>
-  Option.isNone(config.apiKey)
-    ? degraded
-    : live({
-        apiKey: config.apiKey.value,
-        model: config.model,
-        cwd: config.cwd,
-        maxRequestsPerDay: config.maxRequestsPerDay,
-        budgetStorage: config.budgetStorage,
-      })

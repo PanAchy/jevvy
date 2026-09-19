@@ -36,6 +36,8 @@ const PluginOptionsSchema = Schema.Struct({
   notePerAllow: Schema.optional(Schema.Boolean),
   /** Stop calling Jev after this many model requests in a day. */
   maxRequestsPerDay: Schema.optional(Schema.Number),
+  /** Force one provider: "zen" (free, default when available) or "typesafe". */
+  provider: Schema.optional(Schema.Literals(["auto", "zen", "typesafe"])),
 })
 
 export interface PluginOptions extends Schema.Schema.Type<typeof PluginOptionsSchema> {}
