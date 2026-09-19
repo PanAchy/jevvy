@@ -4,27 +4,37 @@
   "description": "Judged permissions for coding agents: Jev (TypeSafe System One) verdicts, allow or ask, never deny",
   "type": "module",
   "license": "MIT",
+  "keywords": ["opencode", "plugin", "permissions", "agent", "jev", "typesafe", "ai-safety"],
+  "homepage": "https://github.com/PanAchy/jevvy#readme",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/PanAchy/jevvy.git"
   },
+  "bugs": {
+    "url": "https://github.com/PanAchy/jevvy/issues"
+  },
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "bin": {
     "jevvy": "./bin/jevvy.mjs"
   },
   "files": [
-    "src",
+    "dist",
     "bin",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "test": "vitest run"
   },
+  "prepublishOnly": "npm run build",
   "dependencies": {
     "@opencode/plugin": "2.0.8",
     "@opencode/schema": "^2.0.8",

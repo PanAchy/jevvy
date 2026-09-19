@@ -2,9 +2,9 @@
 // jevvy check "<command>" - one-off judgment from the command line.
 // Exit codes: 0 allow, 1 ask, 2 usage error or judge unavailable.
 
-import { classifyCodeTiers, stripComments } from "../src/core/floor.ts"
-import { combine } from "../src/core/decision.ts"
-import { createJudge } from "../src/core/judge.ts"
+import { classifyCodeTiers, redactSecrets, stripComments } from "../dist/index.js"
+import { combine } from "../dist/index.js"
+import { createJudge } from "../dist/index.js"
 
 const usage = 'usage: jevvy check "<command>" [--task <text>] [--json] [--no-model]'
 
@@ -38,6 +38,8 @@ if (command === undefined) {
 
 const stripped = stripComments(command)
 
+const cwdName = process.cwd().split("/").filter(Boolean).pop()
+
 const tierVerdicts = {
   floor: { effect: "ask", reason: "floor: certain danger", source: "floor" },
   credential: { effect: "ask", reason: "credential-shaped, not sent to the model", source: "credential" },
@@ -59,8 +61,14 @@ if (verdict === undefined) {
   } else {
     try {
       const judge = createJudge(apiKey)
-      const judged = await judge.judge({ command: stripped, cwd: process.cwd(), task })
-      verdict = combine({ command: stripped, cwd: process.cwd(), task }, judged)
+
+      const judged = await judge.judge({
+        command: redactSecrets(stripped),
+        cwd: cwdName,
+        task: task === undefined ? undefined : redactSecrets(task),
+      })
+
+      verdict = combine({ command: stripped, cwd: cwdName, task }, judged)
     } catch (error) {
       verdict = { effect: "ask", reason: `judge unavailable: ${String(error).slice(0, 160)}`, source: "nojudge" }
       exitCode = 2

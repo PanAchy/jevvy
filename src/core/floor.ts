@@ -35,7 +35,6 @@ export const PROVEN_PREFIXES: readonly string[] = [
   "cd",
   "ls",
   "pwd",
-  "cat ",
   "head ",
   "tail ",
   "echo ",
@@ -55,13 +54,49 @@ export const PROVEN_PREFIXES: readonly string[] = [
 ]
 
 /**
- * Strip bash comments before any tier or the judge sees the command:
- * "nothing a command says about itself can help it" (jevgate). A comment moved
- * a destructive score 0.91 → 0.37 in the field. Conservative: `#` at a token
- * boundary only; quoted `#` (as in grep "# x") is left alone when glued to a word.
+ * A segment carrying any of these is not proven read-only, whatever its
+ * first word: redirections write files, substitution and backticks run
+ * nested commands the scanner never sees.
  */
-export const stripComments = (command: string): string =>
-  command.replace(/(^|[\s;|&])#[^\n]*/g, "$1").trim()
+const PROVEN_BLOCKERS = /[>$`]|\$\(/
+
+/**
+ * Strip bash comments before any tier or the judge sees the command:
+ * "nothing a command says about itself can help it" (jevgate). Quote-aware
+ * by scanning, not regex: a `#` inside quotes is text and must survive, or
+ * a quoted hash could swallow a dangerous tail into an apparent no-op.
+ */
+export const stripComments = (command: string): string => {
+  let result = ""
+  let quote: '"' | "'" | undefined
+
+  for (let index = 0; index < command.length; index++) {
+    const char = command[index]
+
+    if (quote !== undefined) {
+      result += char
+
+      if (char === quote) quote = undefined
+
+      continue
+    }
+
+    if (char === '"' || char === "'") {
+      quote = char
+      result += char
+
+      continue
+    }
+
+    const startsComment = char === "#" && (index === 0 || /\s/.test(command[index - 1] ?? ""))
+
+    if (startsComment) return result.trimEnd()
+
+    result += char
+  }
+
+  return result.trim()
+}
 
 /**
  * Redact credential-shaped substrings before a command is persisted or shown.
@@ -102,7 +137,11 @@ export const classifyCodeTiers = (rawCommand: string): CodeTier => {
 
   const allProven =
     segments.length > 0 &&
-    segments.every((segment) => PROVEN_PREFIXES.some((prefix) => segment === prefix.trim() || segment.startsWith(prefix)))
+    segments.every(
+      (segment) =>
+        !PROVEN_BLOCKERS.test(segment) &&
+        PROVEN_PREFIXES.some((prefix) => segment === prefix.trim() || segment.startsWith(prefix)),
+    )
 
   if (allProven) {
     return { tier: "proven", reason: "every segment is a listed read-only verb" }

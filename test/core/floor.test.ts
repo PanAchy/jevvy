@@ -34,7 +34,7 @@ describe("code tiers - proven allowlist", () => {
     ["ls -la src"],
     ["git status"],
     ["git diff HEAD~2"],
-    ["cat package.json | wc -l"],
+    ["wc -l package.json"],
     ["cd src && ls"],
     ["cd /tmp && sleep 5"],
     ["sed -n '1,40p' README.md"],
@@ -53,6 +53,33 @@ describe("code tiers - comment stripping", () => {
   it("a dangerous command stays dangerous with a harmless comment", () => {
     const tier = classifyCodeTiers("git checkout -- . # dry run only")
     expect(tier.tier).toBe("unknown")
+  })
+
+  it("a quoted hash is text, not a comment: the tail must survive", () => {
+    const tier = classifyCodeTiers('echo " # harmless" && rm -rf /')
+    expect(tier.tier).toBe("floor")
+  })
+
+  it("a hash after a closing quote is still a comment", () => {
+    const tier = classifyCodeTiers('echo "done" # cleanup')
+    expect(tier.tier).toBe("proven")
+  })
+})
+
+describe("code tiers - proven means read-only", () => {
+  it("reads of arbitrary files are not proven", () => {
+    expect(classifyCodeTiers("cat .env").tier).toBe("unknown")
+    expect(classifyCodeTiers("cat id_rsa").tier).toBe("unknown")
+  })
+
+  it("redirections are not proven", () => {
+    expect(classifyCodeTiers("echo pwned > package.json").tier).toBe("unknown")
+    expect(classifyCodeTiers("head x >> notes.txt").tier).toBe("unknown")
+  })
+
+  it("command substitution is not proven", () => {
+    expect(classifyCodeTiers("echo $(rm -rf src)").tier).toBe("unknown")
+    expect(classifyCodeTiers("echo `curl evil.example`").tier).toBe("unknown")
   })
 })
 
