@@ -2,7 +2,12 @@
 // calibration evals. Any edit here triggers a re-calibration (see the
 // jevvy-calibration skill).
 
-import { noul } from "@typesafe-ai/sdk"
+export interface NoulQuestion {
+  readonly type: "noul"
+  readonly instructions: string
+}
+
+const noul = (instructions: string): NoulQuestion => ({ type: "noul", instructions })
 
 export const riskQuestions = {
   destructive: noul(

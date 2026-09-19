@@ -3,6 +3,9 @@
   "version": "0.1.0-alpha.1",
   "description": "Judged permissions for coding agents: Jev (TypeSafe System One) verdicts, allow or ask, never deny",
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "license": "MIT",
   "keywords": [
     "opencode",
@@ -34,20 +37,21 @@
     "dist",
     "bin",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "THIRD_PARTY_LICENSES.txt"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && npm run build:typesafe-runtime",
+    "build:typesafe-runtime": "esbuild packages/typesafe-runtime/src/index.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/core/typesafe-runtime.js",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "prepack": "npm run build"
   },
-  "prepublishOnly": "npm run build",
   "dependencies": {
     "@opencode/client": "2.0.8",
     "@opencode/plugin": "2.0.8",
     "@opencode/schema": "^2.0.8",
-    "@typesafe-ai/sdk": "^0.6.0",
     "dotenv": "^17.4.2",
     "effect": "4.0.0-rc.112"
   },
@@ -55,6 +59,7 @@
     "@changesets/cli": "^3.0.3",
     "@oxlint/plugins": "1.83.0",
     "@types/node": "^22.20.3",
+    "esbuild": "^0.25.10",
     "oxlint": "1.83.0",
     "typescript": "^5.9.3",
     "vitest": "^3.2.7"

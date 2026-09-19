@@ -62,13 +62,17 @@ if (verdict === undefined) {
     try {
       const judge = createJudge(apiKey)
 
-      const judged = await judge.judge({
-        command: redactSecrets(stripped),
-        cwd: cwdName,
-        task: task === undefined ? undefined : redactSecrets(task),
-      })
+      try {
+        const judged = await judge.judge({
+          command: redactSecrets(stripped),
+          cwd: cwdName,
+          task: task === undefined ? undefined : redactSecrets(task),
+        })
 
-      verdict = combine({ command: stripped, cwd: cwdName, task }, judged)
+        verdict = combine({ command: stripped, cwd: cwdName, task }, judged)
+      } finally {
+        await judge.dispose?.()
+      }
     } catch (error) {
       verdict = { effect: "ask", reason: `judge unavailable: ${String(error).slice(0, 160)}`, source: "nojudge" }
       exitCode = 2
