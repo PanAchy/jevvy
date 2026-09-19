@@ -7,7 +7,7 @@ is the OpenCode v2 Effect adapter.
 ## Repo policy
 
 Source-only tracking: source, workflows, README, AGENTS.md, LICENSE are
-committed. Agent artifacts - ADRs, research reports, design specs, the
+committed. Agent artifacts - research reports, design specs, the
 CONTEXT.md glossary - stay local and untracked under `docs/` (gitignored
 already). Write decisions to `docs/adr/NNNN-slug.md`; keep domain language
 sharp in `CONTEXT.md`.
