@@ -3,9 +3,9 @@
 // zen wants the token in x-api-key (or bare Authorization) and rejects the
 // Bearer prefix, which is why the shared SDK could not simply be reused.
 
-import type { EntryType } from "@typesafe-ai/sdk"
 import type { CommandInput, ContextAnswers, Judged, RiskAnswers } from "./decision.ts"
 import { contextQuestions, riskQuestions } from "./questions.ts"
+import type { NoulQuestion } from "./questions.ts"
 import type { JevJudge } from "./judge.ts"
 
 export const ZEN_SYSTEMONE_URL = "https://opencode.ai/zen/v1/systemone"
@@ -14,11 +14,6 @@ export const DEFAULT_ZEN_MODEL = "jev-1.13-free"
 
 // Request and response mirror the TypeSafe shapes; both sides are parsed
 // with named predicates because this is a foreign boundary.
-
-interface NoulQuestionBody {
-  readonly type: "noul"
-  readonly instructions: string
-}
 
 interface ZenNoulAnswer {
   readonly type: "noul"
@@ -69,13 +64,6 @@ const riskFrom = (answers: Readonly<Record<string, ZenNoulAnswer>>): RiskAnswers
   obfuscated: answers.obfuscated?.noul ?? 1,
 })
 
-const isEntryString = (u: EntryType | undefined): u is string => typeof u === "string"
-
-const noulQuestion = (instructions: EntryType | undefined): NoulQuestionBody => ({
-  type: "noul",
-  instructions: isEntryString(instructions) ? instructions : "",
-})
-
 /** What the judge is told about the world, on the wire. */
 type ZenState = {
   command: string
@@ -87,19 +75,19 @@ type ZenState = {
 interface ZenRequestBody {
   readonly model: string
   readonly state: ZenState
-  readonly questions: Record<string, NoulQuestionBody>
+  readonly questions: Record<string, NoulQuestion>
 }
 
 const requestFor = (model: string, input: CommandInput, useContext: boolean): ZenRequestBody => {
-  const questions: Record<string, NoulQuestionBody> = {}
+  const questions: Record<string, NoulQuestion> = {}
 
   for (const [key, question] of Object.entries(riskQuestions)) {
-    questions[key] = noulQuestion(question.instructions)
+    questions[key] = question
   }
 
   if (useContext) {
     for (const [key, question] of Object.entries(contextQuestions)) {
-      questions[key] = noulQuestion(question.instructions)
+      questions[key] = question
     }
   }
 

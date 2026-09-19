@@ -92,6 +92,9 @@ export const live = (config: LiveConfig): Layer.Layer<JudgeService> =>
     JudgeService,
     Effect.gen(function* () {
       const resolvedModel = config.model
+      const dispose = config.delegate.dispose
+
+      if (dispose !== undefined) yield* Effect.addFinalizer(() => Effect.promise(dispose))
 
       // A failed probe latches degraded, but only for a bounded window: a
       // transient error at load must not kill the judge until a manual

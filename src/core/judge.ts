@@ -1,12 +1,9 @@
-// Jev adapter - the ONLY file that talks to TypeSafe. When @effect/ai-typesafe
-// publishes, its implementation replaces this one and nothing else changes.
-//
-// Plain async (no Effect): the core stays harness-agnostic; the plugin wraps
-// this at its boundary.
+// Jev adapter. The TypeSafe implementation runs in a bundled Effect rc.116
+// runtime, while this public seam stays Promise, AbortSignal, and plain data.
 
-import { TypeSafeClient, noul } from "@typesafe-ai/sdk"
-import type { NoulResponse } from "@typesafe-ai/sdk"
-import type { CommandInput, Judged, RiskAnswers } from "./decision.ts"
+import type { CommandInput, Judged } from "./decision.ts"
+import { contextQuestions, riskQuestions } from "./questions.ts"
+import { createTypeSafeRuntime } from "./typesafe-runtime.ts"
 
 /**
  * Model version is pinned on purpose: a threshold is a fact about one model
@@ -14,96 +11,35 @@ import type { CommandInput, Judged, RiskAnswers } from "./decision.ts"
  */
 export const DEFAULT_MODEL = "jev-1.13.0"
 
-/**
- * Verify the pinned model is actually serving under this key. The models
- * catalog lists aliases only (jev-latest, jev-preview), so the check is a
- * minimal real call: any answer means serving, any throw means not.
- */
-export const modelAvailable = async (apiKey: string, model: string): Promise<boolean> => {
-  const client = new TypeSafeClient({ apiKey })
-
-  await client.systemOne({
-    model,
-    state: { probe: "availability check" },
-    questions: { ready: noul("The word `ready` appears in `probe`") },
-  })
-
-  return true
-}
-
 export interface JevJudge {
   /** signal: cooperative cancellation, honored by the adapter's transport. */
   judge(input: CommandInput, signal?: AbortSignal): Promise<Judged>
+  /** Release provider runtime resources when the owning harness unloads. */
+  readonly dispose?: () => Promise<void>
 }
 
-import { riskQuestions, contextQuestions } from "./questions.ts"
+const questions = { risk: riskQuestions, context: contextQuestions }
 
-/** What the judge is told about the world: the command, where, and why. */
-type JudgeState = {
-  command: string
-  cwd?: string
-  task?: string
+/** Verify the pinned model with one minimal System One decision. */
+export const modelAvailable = async (
+  apiKey: string,
+  model: string,
+  signal?: AbortSignal,
+): Promise<boolean> => {
+  const runtime = createTypeSafeRuntime(apiKey, model, questions)
+
+  try {
+    return await runtime.modelAvailable(signal)
+  } finally {
+    await runtime.dispose()
+  }
 }
-
-/** The five risk answers, keyed exactly as the risk questions. */
-type RiskNoulAnswers = {
-  readonly destructive: NoulResponse
-  readonly sensitive: NoulResponse
-  readonly executes: NoulResponse
-  readonly network: NoulResponse
-  readonly obfuscated: NoulResponse
-}
-
-const riskFrom = (a: RiskNoulAnswers): RiskAnswers => ({
-  destructive: a.destructive.noul,
-  sensitive: a.sensitive.noul,
-  executes: a.executes.noul,
-  network: a.network.noul,
-  obfuscated: a.obfuscated.noul,
-})
 
 export const createJudge = (apiKey: string, model: string = DEFAULT_MODEL): JevJudge => {
-  const client = new TypeSafeClient({ apiKey })
+  const runtime = createTypeSafeRuntime(apiKey, model, questions)
 
   return {
-    async judge(input: CommandInput, signal?: AbortSignal): Promise<Judged> {
-      const state: JudgeState = { command: input.command }
-
-      if (input.cwd !== undefined) state.cwd = input.cwd
-
-      const useContext = input.task !== undefined && input.task.length > 0
-
-      if (useContext) state.task = input.task.slice(0, 1200)
-
-      // Two request shapes instead of one dictionary: each branch gets fully
-      // typed answers, so no casts are needed on the way back out.
-      if (!useContext) {
-        const response = await client.systemOne({
-          model,
-          state,
-          questions: { ...riskQuestions },
-        })
-
-        return { risk: riskFrom(response.answers), context: undefined, model }
-      }
-
-      const response = await client.systemOne(
-        {
-          model,
-          state,
-          questions: { ...riskQuestions, ...contextQuestions },
-        },
-        { signal },
-      )
-
-      return {
-        risk: riskFrom(response.answers),
-        context: {
-          authorized: response.answers.authorized.noul,
-          off_task: response.answers.off_task.noul,
-        },
-        model,
-      }
-    },
+    judge: (input, signal) => runtime.judge(input, signal),
+    dispose: runtime.dispose,
   }
 }

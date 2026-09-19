@@ -188,7 +188,7 @@ export default Plugin.define({
                   : createJudge(credential.key),
               probe:
                 credential.kind === "typesafe"
-                  ? Effect.tryPromise(() => modelAvailable(credential.key, options.model ?? DEFAULT_MODEL)).pipe(
+                  ? Effect.tryPromise((signal) => modelAvailable(credential.key, options.model ?? DEFAULT_MODEL, signal)).pipe(
                       Effect.timeout(5_000),
                       Effect.catch((error) =>
                         Effect.logError("[jevvy] model check failed", { error: String(error) }).pipe(Effect.as(false)),
