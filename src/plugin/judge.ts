@@ -55,7 +55,8 @@ const lookupJudged = (delegate: JevJudge, cwd: string, budget: Budget, key: stri
 
     // Infallible by design: errors and timeouts answer None so failure exits
     // never poison the cache, and unavailable stays a value, not an error.
-    const judged = yield* Effect.tryPromise(() => delegate.judge(input)).pipe(
+    // The signal makes Effect timeouts real: the HTTP call dies with them.
+    const judged = yield* Effect.tryPromise((signal) => delegate.judge(input, signal)).pipe(
       Effect.timeout(JUDGMENT_TIMEOUT_MS),
       Effect.catch((error) =>
         Effect.logWarning("[jevvy] judge unavailable", { error: String(error) }).pipe(Effect.as(undefined)),
