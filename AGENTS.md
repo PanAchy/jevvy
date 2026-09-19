@@ -9,7 +9,7 @@ is the OpenCode v2 Effect adapter.
 Source-only tracking: source, workflows, README, AGENTS.md, LICENSE are
 committed. Agent artifacts - research reports, design specs, the
 CONTEXT.md glossary - stay local and untracked under `docs/` (gitignored
-already). Write decisions to `docs/adr/NNNN-slug.md`; keep domain language
+already). Record decisions in commit messages; keep domain language
 sharp in `CONTEXT.md`.
 
 ## Effect pinning
