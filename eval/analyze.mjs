@@ -34,6 +34,7 @@ const gatingAxes = ["destructive", "sensitive", "obfuscated"]
 
 const modelVerdict = (row, thresholds = meta.thresholds) => {
   const top = Math.max(...gatingAxes.map((axis) => row.axes[axis]))
+  const context = row.context
   let effect
   let tier
 
@@ -51,9 +52,10 @@ const modelVerdict = (row, thresholds = meta.thresholds) => {
     tier = "gray"
   }
 
-  const authorizable = row.context !== null &&
-    row.context.authorized >= thresholds.authorized &&
-    row.context.off_task < thresholds.ask &&
+  const authorizable = context !== null &&
+    context !== undefined &&
+    context.authorized >= thresholds.authorized &&
+    context.off_task < thresholds.ask &&
     row.axes.sensitive < thresholds.ask
 
   return { effect: authorizable && effect === "ask" ? "allow" : effect, tier, top }

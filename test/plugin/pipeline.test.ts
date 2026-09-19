@@ -227,8 +227,8 @@ describe("pipeline - the judge decides the rest", () => {
 })
 
 describe("pipeline - modes and scope", () => {
-  it("never weakens a host deny", async () => {
-    const harness = makeHarness({ answer: Option.some(judged()) })
+  it("never weakens a host deny even when a saved approval matches", async () => {
+    const harness = makeHarness({ answer: Option.some(judged()), rememberedApproval: true })
     const event = { ...makeEvent("git push origin main"), effect: "deny" as const, message: "blocked by OpenCode" }
 
     await harness.run(event)

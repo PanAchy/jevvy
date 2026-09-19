@@ -127,11 +127,11 @@ Same tiers and thresholds as the plugin. Exit codes: `0` allow, `1` ask,
 
 - [x] v0.1: core + OpenCode plugin, dogfooded on its own repo
 - [x] CLI + explicit maintainer calibration harness (`eval/commands.json`)
-- [ ] Provider adapters (OpenRouter, Cloudflare, Vercel Gateway)
+- [ ] Post-v0 provider wiring (OpenRouter, Cloudflare, Vercel Gateway)
 - [x] Zero-config via OpenCode Zen, including browser OAuth login
 - [ ] Judge internals to `@effect/ai-typesafe` on release
 - [ ] Learning loop: your ask-answers become durable rules
-- [ ] Adapters for other agents (Codex, Pi, Claude Code hooks)
+- [ ] Post-v0 adapters for other agents (Codex, Pi, Claude Code hooks)
 
 </details>
 
