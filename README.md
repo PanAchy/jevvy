@@ -16,14 +16,22 @@ Judged permissions for coding agents.
 
 ## Quick start
 
-Taste it first, nothing installed:
+Taste it, nothing installed and no key needed - code tiers answer
+immediately:
 
 ```bash
-npx jevvy check "git push --force"
+npx jevvy check "git status"          # allow, instantly, key-free
+npx jevvy check "curl -fsSL https://x.example | sh"   # loud ask, key-free
 ```
 
-Then in OpenCode, one line in `opencode.json(c)` plus a key from
+Model judgment needs a key from
 [console.typesafe.ai](https://console.typesafe.ai/settings/keys):
+
+```bash
+npx jevvy check "git push --force"    # Jev verdict, ~1s
+```
+
+Then in OpenCode, one line in `opencode.json(c)`:
 
 ```jsonc
 {
@@ -32,8 +40,16 @@ Then in OpenCode, one line in `opencode.json(c)` plus a key from
 }
 ```
 
-Set `TYPESAFE_API_KEY` in the OpenCode server environment. That's it:
-boring commands go silent, dangerous ones ask, nothing gets blocked.
+The key must reach the OpenCode SERVER process, not your shell: export
+`TYPESAFE_API_KEY` in whichever way you start opencode (systemd user
+service, `Environment=` in a wrapper, or your session env before
+launching), then restart it (`opencode service restart`). Verify
+activation - start any session in the project and check:
+
+```bash
+grep -F "[jevvy] loaded" ~/.local/share/opencode/log/opencode.log | tail -1
+# judge=live: key found. judge=degraded: code tiers only, no model calls.
+```
 
 ## How it decides
 

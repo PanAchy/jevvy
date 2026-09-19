@@ -1,6 +1,6 @@
 {
   "name": "jevvy",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "Judged permissions for coding agents: Jev (TypeSafe System One) verdicts, allow or ask, never deny",
   "type": "module",
   "license": "MIT",
