@@ -60,24 +60,24 @@ Jevvy reads one optional global file at `~/.config/jevvy/jevvy.jsonc`. Project r
 
 ### Provider
 
-| Setting                     | Default                 | Options                   | Purpose                              |
-| --------------------------- | ----------------------- | ------------------------- | ------------------------------------ |
-| `provider`                  | `auto`                  | `auto`, `zen`, `typesafe` | Select a provider                    |
-| `providers.zen.apiKey`      | none                    | OpenCode API key          | Use Zen without an OpenCode login    |
-| `providers.typesafe.apiKey` | none                    | TypeSafe API key          | Use TypeSafe AI                      |
+| Setting                       | Default | Options                                 | Purpose                           |
+| ----------------------------- | ------- | --------------------------------------- | --------------------------------- |
+| `provider`                    | `auto`  | `auto`, `zen`, `typesafe`, `openrouter` | Select a provider                 |
+| `providers.zen.apiKey`        | none    | OpenCode API key                        | Use Zen without an OpenCode login |
+| `providers.typesafe.apiKey`   | none    | TypeSafe API key                        | Use TypeSafe AI                   |
+| `providers.openrouter.apiKey` | none    | OpenRouter API key                      | Use OpenRouter                    |
 
 With `provider` set to `auto`, Jevvy uses the first available credential:
 
-| Priority | Credential source                             | Provider |
-| -------: | --------------------------------------------- | -------- |
-|        1 | OpenCode login                                | Zen      |
-|        2 | Global JSON field `providers.zen.apiKey`      | Zen      |
-|        3 | `OPENCODE_API_KEY`                            | Zen      |
-|        4 | Global JSON field `providers.typesafe.apiKey` | TypeSafe |
-|        5 | `TYPESAFE_API_KEY`                            | TypeSafe |
-
-> [!TIP]
-> Join the [TypeSafe AI waitlist](https://typesafe.ai/) for $5 in credit.
+| Priority | Credential source                               | Provider   |
+| -------: | ----------------------------------------------- | ---------- |
+|        1 | OpenCode login                                  | Zen        |
+|        2 | Global JSON field `providers.zen.apiKey`        | Zen        |
+|        3 | `OPENCODE_API_KEY`                              | Zen        |
+|        4 | Global JSON field `providers.typesafe.apiKey`   | TypeSafe   |
+|        5 | `TYPESAFE_API_KEY`                              | TypeSafe   |
+|        6 | Global JSON field `providers.openrouter.apiKey` | OpenRouter |
+|        7 | `OPENROUTER_API_KEY`                            | OpenRouter |
 
 ### Approval policy
 

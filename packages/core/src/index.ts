@@ -3,6 +3,12 @@ export { JevRequest, JevResult, Json, NoulAnswer, NoulQuestion } from "./types.t
 export type { JevClient, JsonPrimitive } from "./types.ts"
 
 export {
+  createOpenRouterClient,
+  DEFAULT_OPENROUTER_MODEL,
+  OPENROUTER_SYSTEMONE_URL,
+} from "./openrouter.ts"
+
+export {
   isJevProviderError,
   JevProvider,
   JevProviderError,

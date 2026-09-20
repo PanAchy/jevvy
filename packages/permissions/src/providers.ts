@@ -1,6 +1,8 @@
 import {
+  createOpenRouterClient,
   createTypeSafeClient,
   createZenClient,
+  DEFAULT_OPENROUTER_MODEL,
   DEFAULT_TYPESAFE_MODEL,
   DEFAULT_ZEN_MODEL,
   JevProvider,
@@ -32,6 +34,11 @@ const providerDefinitions = {
     automaticPriority: 1,
     model: DEFAULT_TYPESAFE_MODEL,
     createClient: createTypeSafeClient,
+  },
+  openrouter: {
+    automaticPriority: 2,
+    model: DEFAULT_OPENROUTER_MODEL,
+    createClient: createOpenRouterClient,
   },
 } satisfies Readonly<Record<JevProviderType, ProviderDefinition>>
 

@@ -10,7 +10,7 @@
     },
     "provider": {
       "type": "string",
-      "enum": ["auto", "zen", "typesafe"],
+      "enum": ["auto", "zen", "typesafe", "openrouter"],
       "default": "auto"
     },
     "providers": {
@@ -21,6 +21,9 @@
           "$ref": "#/$defs/providerCredential"
         },
         "typesafe": {
+          "$ref": "#/$defs/providerCredential"
+        },
+        "openrouter": {
           "$ref": "#/$defs/providerCredential"
         }
       }
