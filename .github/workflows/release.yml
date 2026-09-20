@@ -83,6 +83,7 @@ jobs:
       - run: npm install --global npm@${{ env.NPM_VERSION }}
       - run: npm ci --no-audit --no-fund
       - run: npm run check
+      - run: git diff --exit-code
       - run: npm run smoke:package
       - id: pack
         uses: changesets/action/pack@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2

@@ -4,7 +4,7 @@
 // both internal workspaces remain implementation details.
 
 import { execFileSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -88,8 +88,14 @@ try {
 
   const permissionsRoot = join(consumer, "node_modules", "@jevvy", "permissions")
   const coreBundle = join(permissionsRoot, "dist", "core.js")
+  const readme = readFileSync(join(permissionsRoot, "README.md"), "utf8")
 
   ensure(existsSync(coreBundle), "permissions is missing its bundled core")
+  ensure(
+    readme.includes("https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-demo.gif"),
+    "permissions README is missing its public demo URL",
+  )
+  ensure(!readme.includes("](./"), "permissions README contains repository-relative links")
   ensure(existsSync(join(permissionsRoot, "THIRD_PARTY_LICENSES.txt")), "permissions is missing bundled-code notices")
   ensure(existsSync(join(permissionsRoot, "bin", "jevvy-calibrate.mjs")), "permissions is missing its calibration command")
   ensure(existsSync(join(permissionsRoot, "dist", "calibration", "commands.json")), "permissions is missing its calibration baseline")
@@ -201,6 +207,11 @@ try {
       "ES2024",
     ],
     { cwd: consumer, stdio: "pipe" },
+  )
+
+  ensure(
+    !existsSync(join(repo, "packages", "permissions", "README.md")),
+    "package left its generated README in the workspace",
   )
 
   console.log(`package smoke passed: ${tarballs.map((tarball) => `${statSync(tarball).size} bytes`).join(", ")}`)

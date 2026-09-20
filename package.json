@@ -16,7 +16,7 @@
     "changeset:status": "changeset status",
     "changeset:version": "changeset version",
     "check": "npm run typecheck && npm run lint && npm test && npm run build",
-    "lint": "oxlint",
+    "lint": "oxlint --fix",
     "pretest": "npm run build:core",
     "pretypecheck": "npm run build:core",
     "smoke:package": "node scripts/package-smoke.mjs",

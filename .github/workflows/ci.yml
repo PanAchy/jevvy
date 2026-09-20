@@ -1,8 +1,6 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
 
 permissions:
@@ -24,6 +22,7 @@ jobs:
       - run: npm install --global npm@${{ env.NPM_VERSION }}
       - run: npm ci --no-audit --no-fund
       - run: npm run check
+      - run: git diff --exit-code
 
   package-smoke:
     name: Package smoke (${{ matrix.name }})
