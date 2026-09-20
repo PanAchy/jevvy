@@ -10,6 +10,7 @@ packages/core/                 private provider-neutral judgment module
   src/system-one               shared System One HTTP adapter and wire schemas
   src/openrouter               OpenRouter provider configuration
   src/typesafe                 TypeSafe provider configuration
+  src/vercel                   Vercel AI Gateway provider configuration
   src/zen                      Zen provider configuration and compatibility parser
 packages/permissions/          public `@jevvy/permissions` product
   src/config                   global provider credentials and permission policy
@@ -21,7 +22,7 @@ packages/permissions/          public `@jevvy/permissions` product
 eval/                          explicit maintainer-only live calibration
 ```
 
-Providers and harnesses are independent dimensions inside the product. OpenRouter, TypeSafe, and Zen belong to the private core module. OpenCode belongs to the permissions adapter. Future Claude Code and Codex adapters belong in `@jevvy/permissions`.
+Providers and harnesses are independent dimensions inside the product. OpenRouter, TypeSafe, Vercel, and Zen belong to the private core module. OpenCode belongs to the permissions adapter. Future Claude Code and Codex adapters belong in `@jevvy/permissions`.
 
 ## Permission contract
 
@@ -34,7 +35,7 @@ Providers and harnesses are independent dimensions inside the product. OpenRoute
 - Read user configuration only from the global Jevvy path. Repositories must not control provider credentials, questions, or thresholds.
 - Cache valid allow and ask judgments for the owning process lifetime. Do not cache unavailable results.
 
-Question wording, thresholds, and pinned model versions are one calibrated policy. Custom questions are supported, but only shipped defaults can carry Jevvy calibration evidence.
+Question wording, thresholds, and model identity are one calibrated policy. A provider-specific model ID may reuse calibration only when its route is verified to serve the same model. Custom questions are supported, but only shipped defaults can carry Jevvy calibration evidence.
 
 ## Repo policy
 

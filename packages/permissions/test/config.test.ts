@@ -89,6 +89,7 @@ describe("Jevvy configuration", () => {
       OPENCODE_API_KEY: "environment-zen-key",
       TYPESAFE_API_KEY: "environment-typesafe-key",
       OPENROUTER_API_KEY: "environment-openrouter-key",
+      AI_GATEWAY_API_KEY: "environment-vercel-key",
     })
 
     const raw = JSON.stringify({
@@ -96,6 +97,7 @@ describe("Jevvy configuration", () => {
         zen: { apiKey: "file-zen-key" },
         typesafe: { apiKey: "file-typesafe-key" },
         openrouter: { apiKey: "file-openrouter-key" },
+        vercel: { apiKey: "file-vercel-key" },
       },
     })
 
@@ -108,22 +110,24 @@ describe("Jevvy configuration", () => {
     const zen = config.apiKeys.zen
     const typesafe = config.apiKeys.typesafe
     const openrouter = config.apiKeys.openrouter
+    const vercel = config.apiKeys.vercel
 
-    if (zen === undefined || typesafe === undefined || openrouter === undefined) {
+    if (zen === undefined || typesafe === undefined || openrouter === undefined || vercel === undefined) {
       throw new Error("expected all provider keys")
     }
 
     expect(Redacted.value(zen)).toBe("file-zen-key")
     expect(Redacted.value(typesafe)).toBe("file-typesafe-key")
     expect(Redacted.value(openrouter)).toBe("file-openrouter-key")
+    expect(Redacted.value(vercel)).toBe("file-vercel-key")
   })
 
   it("loads the provider preference from the global file", async () => {
-    const raw = JSON.stringify({ provider: "openrouter" })
+    const raw = JSON.stringify({ provider: "vercel" })
 
     await expect(withConfigFile(raw, load)).resolves.toEqual({
       kind: "default",
-      provider: "openrouter",
+      provider: "vercel",
       apiKeys: {},
     })
   })
@@ -146,6 +150,7 @@ describe("Jevvy configuration", () => {
       OPENCODE_API_KEY: "environment-zen-key",
       TYPESAFE_API_KEY: "environment-typesafe-key",
       OPENROUTER_API_KEY: "environment-openrouter-key",
+      AI_GATEWAY_API_KEY: "environment-vercel-key",
     })
 
     const directory = await mkdtemp(join(tmpdir(), "jevvy-config-"))
@@ -160,14 +165,16 @@ describe("Jevvy configuration", () => {
       const zen = config.apiKeys.zen
       const typesafe = config.apiKeys.typesafe
       const openrouter = config.apiKeys.openrouter
+      const vercel = config.apiKeys.vercel
 
-      if (zen === undefined || typesafe === undefined || openrouter === undefined) {
+      if (zen === undefined || typesafe === undefined || openrouter === undefined || vercel === undefined) {
         throw new Error("expected all provider keys")
       }
 
       expect(Redacted.value(zen)).toBe("environment-zen-key")
       expect(Redacted.value(typesafe)).toBe("environment-typesafe-key")
       expect(Redacted.value(openrouter)).toBe("environment-openrouter-key")
+      expect(Redacted.value(vercel)).toBe("environment-vercel-key")
     } finally {
       await rm(directory, { recursive: true })
     }

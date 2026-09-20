@@ -44,7 +44,7 @@ const loadCorpus = Effect.fn("JevvyCalibration.loadCorpus")(function*(path: stri
 const timestamp = (milliseconds: number): string =>
   new Date(milliseconds).toISOString().replaceAll(":", "-").replace(".", "-")
 
-const missingProviderMessage = (preference: ProviderPreference): string => {
+export const missingProviderMessage = (preference: ProviderPreference): string => {
   if (preference === "zen") {
     return "Zen calibration needs providers.zen.apiKey or OPENCODE_API_KEY; OpenCode login is unavailable to the standalone calibration command"
   }
@@ -55,6 +55,10 @@ const missingProviderMessage = (preference: ProviderPreference): string => {
 
   if (preference === "openrouter") {
     return "OpenRouter calibration needs providers.openrouter.apiKey or OPENROUTER_API_KEY"
+  }
+
+  if (preference === "vercel") {
+    return "Vercel calibration needs providers.vercel.apiKey or AI_GATEWAY_API_KEY"
   }
 
   return "calibration needs a global or environment provider credential"

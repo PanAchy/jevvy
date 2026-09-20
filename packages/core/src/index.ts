@@ -19,4 +19,6 @@ export {
 
 export { createTypeSafeClient, DEFAULT_TYPESAFE_MODEL, TYPESAFE_SYSTEMONE_URL } from "./typesafe.ts"
 
+export { createVercelClient, DEFAULT_VERCEL_MODEL, VERCEL_SYSTEMONE_URL } from "./vercel.ts"
+
 export { createZenClient, DEFAULT_ZEN_MODEL, isZenBody, parseZenResponse, ZEN_SYSTEMONE_URL } from "./zen.ts"

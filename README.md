@@ -60,12 +60,13 @@ Jevvy reads one optional global file at `~/.config/jevvy/jevvy.jsonc`. Project r
 
 ### Provider
 
-| Setting                       | Default | Options                                 | Purpose                           |
-| ----------------------------- | ------- | --------------------------------------- | --------------------------------- |
-| `provider`                    | `auto`  | `auto`, `zen`, `typesafe`, `openrouter` | Select a provider                 |
-| `providers.zen.apiKey`        | none    | OpenCode API key                        | Use Zen without an OpenCode login |
-| `providers.typesafe.apiKey`   | none    | TypeSafe API key                        | Use TypeSafe AI                   |
-| `providers.openrouter.apiKey` | none    | OpenRouter API key                      | Use OpenRouter                    |
+| Setting                       | Default | Options                                           | Purpose                           |
+| ----------------------------- | ------- | ------------------------------------------------- | --------------------------------- |
+| `provider`                    | `auto`  | `auto`, `zen`, `typesafe`, `openrouter`, `vercel` | Select a provider                 |
+| `providers.zen.apiKey`        | none    | OpenCode API key                                  | Use Zen without an OpenCode login |
+| `providers.typesafe.apiKey`   | none    | TypeSafe API key                                  | Use TypeSafe AI                   |
+| `providers.openrouter.apiKey` | none    | OpenRouter API key                                | Use OpenRouter                    |
+| `providers.vercel.apiKey`     | none    | Vercel AI Gateway key                             | Use Vercel AI Gateway             |
 
 With `provider` set to `auto`, Jevvy uses the first available credential:
 
@@ -78,6 +79,8 @@ With `provider` set to `auto`, Jevvy uses the first available credential:
 |        5 | `TYPESAFE_API_KEY`                              | TypeSafe   |
 |        6 | Global JSON field `providers.openrouter.apiKey` | OpenRouter |
 |        7 | `OPENROUTER_API_KEY`                            | OpenRouter |
+|        8 | Global JSON field `providers.vercel.apiKey`     | Vercel     |
+|        9 | `AI_GATEWAY_API_KEY`                            | Vercel     |
 
 ### Approval policy
 
@@ -94,7 +97,7 @@ Without `permissions.questions`, Jevvy requires all four shipped questions to pa
 | Untrusted | Does the command execute newly obtained, installed, generated, or concealed code?         | score ≤ `0.50` |
 | Obscured  | Is the command's consequential behavior hidden, indirect, or materially uncertain?        | score ≤ `0.50` |
 
-The four questions, thresholds, and pinned models were calibrated together against [`eval/commands.json`](./eval/commands.json). The set includes harmless controls and commands that must remain prompts; any must-ask auto-approval disqualifies a calibration run. Replacing `permissions.questions` creates a custom policy that is not covered by this evidence.
+The four questions, thresholds, and model identities were calibrated together against [`eval/commands.json`](./eval/commands.json). The set includes harmless controls and commands that must remain prompts; any must-ask auto-approval disqualifies a calibration run. Replacing `permissions.questions` creates a custom policy that is not covered by this evidence.
 
 ### Calibrate custom questions
 
