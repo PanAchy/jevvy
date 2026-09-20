@@ -1,4 +1,4 @@
-import { createTypeSafeClient, createZenClient, DEFAULT_TYPESAFE_MODEL, JevProviderError } from "../core.ts"
+import { createZenClient, JevProviderError } from "../core.ts"
 import type { JevClient } from "../core.ts"
 import { Credential, Plugin } from "@opencode/plugin/effect"
 import type { ConnectionInfo } from "@opencode/client"
@@ -9,7 +9,7 @@ import { createEvaluate } from "./evaluate.ts"
 import {
   credentialToken,
   OPENCODE_INTEGRATION,
-  resolveCredential,
+  selectOpenCodeProvider,
 } from "./credentials.ts"
 import type { StoredCredential } from "./credentials.ts"
 
@@ -49,18 +49,16 @@ export default Plugin.define({
     }
 
     const apiKeys = permissionConfig.kind === "invalid" ? {} : permissionConfig.apiKeys
-    const provider = permissionConfig.kind === "invalid" ? "auto" : permissionConfig.provider
-    const credential = yield* resolveCredential(ports, provider, describeConnection, apiKeys)
+    const preference = permissionConfig.kind === "invalid" ? "auto" : permissionConfig.provider
 
-    let client: JevClient | undefined
-
-    if (credential.kind === "typesafe") {
-      client = createTypeSafeClient(credential.key)
-    }
-
-    if (credential.kind === "zen") {
-      if (credential.origin === "opencode") {
-        client = {
+    const selected = permissionConfig.kind === "invalid"
+      ? undefined
+      : yield* selectOpenCodeProvider(
+        ports,
+        preference,
+        describeConnection,
+        apiKeys,
+        (): JevClient => ({
           evaluate: Effect.fn("JevvyPlugin.evaluateWithOpenCodeCredential")(function*(request) {
             const connection = yield* ctx.integration.connection.active(OPENCODE_INTEGRATION)
 
@@ -81,21 +79,18 @@ export default Plugin.define({
               })
             }
 
-            return yield* createZenClient(token, credential.model).evaluate(request)
+            return yield* createZenClient(token).evaluate(request)
           }),
-        }
-      } else {
-        client = createZenClient(credential.key, credential.model)
-      }
-    }
+        }),
+      )
 
     const questions = permissionConfig.kind === "custom" ? permissionConfig.questions : undefined
 
-    const reviewer = client === undefined || permissionConfig.kind === "invalid"
+    const reviewer = selected === undefined || permissionConfig.kind === "invalid"
       ? undefined
-      : yield* createPermissionReviewer(client, { questions }).pipe(Effect.orDie)
+      : yield* createPermissionReviewer(selected.client, { questions }).pipe(Effect.orDie)
 
-    if (client === undefined && permissionConfig.kind !== "invalid") {
+    if (selected === undefined && permissionConfig.kind !== "invalid") {
       yield* Effect.sync(() => {
         console.warn("[jevvy] no provider credential, native permission prompts remain unchanged")
       })
@@ -115,16 +110,10 @@ export default Plugin.define({
 
     yield* ctx.permission.hook("evaluate", evaluate)
 
-    let model: string | undefined
-
-    if (credential.kind === "zen") model = credential.model
-
-    if (credential.kind === "typesafe") model = DEFAULT_TYPESAFE_MODEL
-
     yield* Effect.sync(() => {
       console.info("[jevvy] loaded", {
-        provider: credential.kind,
-        model,
+        provider: selected?.provider ?? "unavailable",
+        model: selected?.model,
         questions: permissionConfig.kind === "custom" ? "custom" : "calibrated-defaults",
         autoApproval: reviewer === undefined ? "disabled" : "enabled",
       })

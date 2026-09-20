@@ -2,15 +2,8 @@ import { createHash } from "node:crypto"
 import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
-import { Clock, Effect, Option, Redacted, Schema } from "effect"
+import { Clock, Effect, Option, Schema } from "effect"
 import { Command, Flag } from "effect/unstable/cli"
-import {
-  createTypeSafeClient,
-  createZenClient,
-  DEFAULT_TYPESAFE_MODEL,
-  DEFAULT_ZEN_MODEL,
-} from "./core.ts"
-import type { JevClient } from "./core.ts"
 import {
   calibrationMetaRecord,
   buildCalibrationPlan,
@@ -24,6 +17,8 @@ import type {
 } from "./calibration.ts"
 import { loadJevvyConfig } from "./config.ts"
 import { permissionEffectOf } from "./engine.ts"
+import { selectConfiguredProvider } from "./providers.ts"
+import type { ProviderPreference } from "./providers.ts"
 import { toNoulQuestions } from "./questions.ts"
 
 export interface CalibrationCliOptions {
@@ -49,38 +44,16 @@ const loadCorpus = Effect.fn("JevvyCalibration.loadCorpus")(function*(path: stri
 const timestamp = (milliseconds: number): string =>
   new Date(milliseconds).toISOString().replaceAll(":", "-").replace(".", "-")
 
-interface SelectedProvider {
-  readonly provider: "typesafe" | "zen"
-  readonly model: string
-  readonly key: string
-  readonly client: JevClient
-}
-
-const selectProvider = (
-  preference: "auto" | "typesafe" | "zen",
-  keys: { readonly typesafe?: Redacted.Redacted<string>; readonly zen?: Redacted.Redacted<string> },
-): SelectedProvider => {
-  if ((preference === "auto" || preference === "zen") && keys.zen !== undefined) {
-    const key = Redacted.value(keys.zen)
-
-    return { provider: "zen", model: DEFAULT_ZEN_MODEL, key, client: createZenClient(key) }
-  }
-
-  if ((preference === "auto" || preference === "typesafe") && keys.typesafe !== undefined) {
-    const key = Redacted.value(keys.typesafe)
-
-    return { provider: "typesafe", model: DEFAULT_TYPESAFE_MODEL, key, client: createTypeSafeClient(key) }
-  }
-
+const missingProviderMessage = (preference: ProviderPreference): string => {
   if (preference === "zen") {
-    throw new Error("Zen calibration needs providers.zen.apiKey or OPENCODE_API_KEY; OpenCode login is unavailable to the standalone calibration command")
+    return "Zen calibration needs providers.zen.apiKey or OPENCODE_API_KEY; OpenCode login is unavailable to the standalone calibration command"
   }
 
   if (preference === "typesafe") {
-    throw new Error("TypeSafe calibration needs providers.typesafe.apiKey or TYPESAFE_API_KEY")
+    return "TypeSafe calibration needs providers.typesafe.apiKey or TYPESAFE_API_KEY"
   }
 
-  throw new Error("calibration needs a global or environment provider credential")
+  return "calibration needs a global or environment provider credential"
 }
 
 const run = Effect.fn("JevvyCalibration.runPlan")(function*(
@@ -103,7 +76,10 @@ const run = Effect.fn("JevvyCalibration.runPlan")(function*(
       return yield* Effect.fail(new Error("calibration requires permissions.questions in jevvy.jsonc"))
     }
 
-    const selected = yield* Effect.try(() => selectProvider(config.provider, config.apiKeys))
+    const selected = selectConfiguredProvider(config.provider, config.apiKeys)
+
+    if (selected === undefined) return yield* Effect.fail(new Error(missingProviderMessage(config.provider)))
+
     const questionHash = hash(JSON.stringify(toNoulQuestions(config.questions)))
     const createdAt = yield* Clock.currentTimeMillis
 
@@ -167,7 +143,7 @@ const run = Effect.fn("JevvyCalibration.runPlan")(function*(
           : {
               ...entry,
               status: "error",
-              error: String(outcome.error).replaceAll(selected.key, "[redacted]").slice(0, 500),
+              error: selected.redact(String(outcome.error)).slice(0, 500),
               ...timing,
             }
 
