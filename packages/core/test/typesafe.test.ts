@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "@effect/vitest"
 import { Effect } from "effect"
+import { FetchHttpClient } from "effect/unstable/http"
 import { createTypeSafeClient } from "../src/typesafe.ts"
 
 afterEach(() => vi.restoreAllMocks())
@@ -14,12 +15,12 @@ describe("TypeSafe client", () => {
       usage: { input_tokens: 10, output_tokens: 2 },
     }))
 
-    const client = createTypeSafeClient("test-key", "jev-test", transport)
+    const client = createTypeSafeClient("test-key", "jev-test")
 
     const result = yield* client.evaluate({
       state: { command: "pwd" },
       questions: { harmless: { type: "noul", instructions: "Is it harmless?" } },
-    })
+    }).pipe(Effect.provideService(FetchHttpClient.Fetch, transport))
 
     expect(result).toEqual({
       model: "jev-served",
@@ -36,17 +37,71 @@ describe("TypeSafe client", () => {
       answers: {},
     }))
 
-    const client = createTypeSafeClient("test-key", "jev-test", transport)
+    const client = createTypeSafeClient("test-key", "jev-test")
 
     const error = yield* Effect.flip(client.evaluate({
       state: null,
       questions: { harmless: { type: "noul", instructions: "Is it harmless?" } },
-    }))
+    }).pipe(Effect.provideService(FetchHttpClient.Fetch, transport)))
 
     expect(error).toMatchObject({
       name: "JevProviderError",
       provider: "typesafe",
       kind: "invalid-response",
+    })
+  }))
+
+  it.effect("rejects request state that cannot be encoded as JSON", () => Effect.gen(function*() {
+    const transport = vi.fn<typeof fetch>()
+    const client = createTypeSafeClient("test-key", "jev-test")
+
+    const error = yield* Effect.flip(client.evaluate({
+      state: Number.NaN,
+      questions: { harmless: { type: "noul", instructions: "Is it harmless?" } },
+    }).pipe(Effect.provideService(FetchHttpClient.Fetch, transport)))
+
+    expect(error).toMatchObject({
+      name: "JevProviderError",
+      provider: "typesafe",
+      kind: "invalid-request",
+    })
+    expect(transport).not.toHaveBeenCalled()
+  }))
+
+  it.effect("maps HTTP transport failures to provider unavailability", () => Effect.gen(function*() {
+    const transport = vi.fn<typeof fetch>().mockRejectedValue(new Error("offline"))
+    const client = createTypeSafeClient("test-key", "jev-test")
+
+    const error = yield* Effect.flip(client.evaluate({
+      state: null,
+      questions: { harmless: { type: "noul", instructions: "Is it harmless?" } },
+    }).pipe(Effect.provideService(FetchHttpClient.Fetch, transport)))
+
+    expect(error).toMatchObject({
+      name: "JevProviderError",
+      provider: "typesafe",
+      kind: "unavailable",
+    })
+  }))
+
+  it.effect("maps malformed success bodies to invalid responses", () => Effect.gen(function*() {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(new Response("not-json", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    }))
+
+    const client = createTypeSafeClient("test-key", "jev-test")
+
+    const error = yield* Effect.flip(client.evaluate({
+      state: null,
+      questions: { harmless: { type: "noul", instructions: "Is it harmless?" } },
+    }).pipe(Effect.provideService(FetchHttpClient.Fetch, transport)))
+
+    expect(error).toMatchObject({
+      name: "JevProviderError",
+      provider: "typesafe",
+      kind: "invalid-response",
+      status: 200,
     })
   }))
 
@@ -56,12 +111,12 @@ describe("TypeSafe client", () => {
       type: "insufficient_quota",
     }, { status: 402 }))
 
-    const client = createTypeSafeClient("empty", "jev-test", transport)
+    const client = createTypeSafeClient("empty", "jev-test")
 
     const error = yield* Effect.flip(client.evaluate({
       state: null,
       questions: { harmless: { type: "noul", instructions: "Is it harmless?" } },
-    }))
+    }).pipe(Effect.provideService(FetchHttpClient.Fetch, transport)))
 
     expect(error).toMatchObject({
       name: "JevProviderError",
@@ -78,12 +133,12 @@ describe("TypeSafe client", () => {
       type: "rate_limit_error",
     }, { status: 429, headers: { "retry-after": "3" } }))
 
-    const client = createTypeSafeClient("busy", "jev-test", transport)
+    const client = createTypeSafeClient("busy", "jev-test")
 
     const error = yield* Effect.flip(client.evaluate({
       state: null,
       questions: { harmless: { type: "noul", instructions: "Is it harmless?" } },
-    }))
+    }).pipe(Effect.provideService(FetchHttpClient.Fetch, transport)))
 
     expect(error).toMatchObject({
       name: "JevProviderError",
