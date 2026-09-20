@@ -1,5 +1,7 @@
-import { describe, expect, it, vi } from "vitest"
-import type { JevClient, JevRequest, JevResult } from "@jevvy/core"
+import { describe, expect, it, vi } from "@effect/vitest"
+import { Cause, Effect, Exit, Fiber } from "effect"
+import { JevProviderError } from "@jevvy/core"
+import type { JevClient, JevProviderError as JevProviderErrorType, JevRequest, JevResult } from "@jevvy/core"
 import { createPermissionReviewer } from "../src/engine.ts"
 import type { ApprovalQuestions } from "../src/questions.ts"
 
@@ -13,84 +15,116 @@ const answer = (value: number): JevResult => ({
   },
 })
 
-const fakeClient = (evaluate: (request: JevRequest, signal?: AbortSignal) => Promise<JevResult>): JevClient => ({ evaluate })
+const fakeClient = (
+  evaluate: (request: JevRequest) => Effect.Effect<JevResult, JevProviderErrorType>,
+): JevClient => ({ evaluate })
 
 describe("permission reviewer", () => {
-  it("allows only when every resource independently passes every question", async () => {
+  it.effect("allows only when every resource independently passes every question", () => Effect.gen(function*() {
     const requests: JevRequest[] = []
 
-    const reviewer = await createPermissionReviewer(fakeClient(async (request) => {
+    const reviewer = yield* createPermissionReviewer(fakeClient((request) => Effect.sync(() => {
       requests.push(request)
 
       return answer(0.01)
-    }))
+    })))
 
-    const review = await reviewer.review({ action: "shell", resources: ["git status", "pwd"] })
+    const result = yield* reviewer.review({ action: "shell", resources: ["git status", "pwd"] })
 
-    expect(review.effect).toBe("allow")
+    expect(result.effect).toBe("allow")
     expect(requests.map((request) => request.state)).toEqual([
       { action: "shell", resource: "git status" },
       { action: "shell", resource: "pwd" },
     ])
     expect(Object.keys(requests[0]?.questions ?? {})).toEqual(["harmful", "sensitive", "untrusted", "obscured"])
-  })
+  }))
 
-  it("asks when one valid answer crosses its threshold", async () => {
-    const reviewer = await createPermissionReviewer(fakeClient(async () => answer(0.9)))
+  it.effect("asks when one valid answer crosses its threshold", () => Effect.gen(function*() {
+    const reviewer = yield* createPermissionReviewer(fakeClient(() => Effect.succeed(answer(0.9))))
 
-    await expect(reviewer.review({ action: "shell", resources: ["git push --force"] })).resolves.toMatchObject({
+    const result = yield* reviewer.review({ action: "shell", resources: ["git push --force"] })
+
+    expect(result).toMatchObject({
       effect: "ask",
       reason: "judged",
     })
-  })
+  }))
 
-  it("caches valid allow and ask judgments for the reviewer lifetime", async () => {
-    const evaluate = vi.fn(async (request: JevRequest) =>
-      JSON.stringify(request.state).includes("never") ? answer(0.9) : answer(0.01)
+  it.effect("caches valid allow and ask judgments for the reviewer lifetime", () => Effect.gen(function*() {
+    const evaluate = vi.fn((request: JevRequest) => Effect.succeed(
+      JSON.stringify(request.state).includes("never") ? answer(0.9) : answer(0.01),
+    )
     )
 
-    const reviewer = await createPermissionReviewer(fakeClient(evaluate))
+    const reviewer = yield* createPermissionReviewer(fakeClient(evaluate))
 
-    await reviewer.review({ action: "shell", resources: ["pwd"] })
-    await reviewer.review({ action: "shell", resources: ["pwd"] })
-    await reviewer.review({ action: "shell", resources: ["never"] })
-    await reviewer.review({ action: "shell", resources: ["never"] })
+    yield* reviewer.review({ action: "shell", resources: ["pwd"] })
+    yield* reviewer.review({ action: "shell", resources: ["pwd"] })
+    yield* reviewer.review({ action: "shell", resources: ["never"] })
+    yield* reviewer.review({ action: "shell", resources: ["never"] })
 
     expect(evaluate).toHaveBeenCalledTimes(2)
-  })
+  }))
 
-  it("does not cache provider failures or malformed results", async () => {
+  it.effect("does not cache provider failures or malformed results", () => Effect.gen(function*() {
     let attempts = 0
 
-    const reviewer = await createPermissionReviewer(fakeClient(async () => {
+    const reviewer = yield* createPermissionReviewer(fakeClient(() => Effect.suspend(() => {
       attempts += 1
 
-      if (attempts === 1) throw new Error("offline")
+      if (attempts === 1) {
+        return new JevProviderError({ provider: "zen", kind: "unavailable", message: "offline" })
+      }
 
-      if (attempts === 2) return { model: "jev-test", answers: {} }
+      if (attempts === 2) return Effect.succeed({ model: "jev-test", answers: {} })
 
-      return answer(0.01)
-    }))
+      return Effect.succeed(answer(0.01))
+    })))
 
-    await expect(reviewer.review({ action: "shell", resources: ["pwd"] })).resolves.toMatchObject({ reason: "unavailable" })
-    await expect(reviewer.review({ action: "shell", resources: ["pwd"] })).resolves.toMatchObject({ reason: "unavailable" })
-    await expect(reviewer.review({ action: "shell", resources: ["pwd"] })).resolves.toMatchObject({ effect: "allow" })
+    expect(yield* reviewer.review({ action: "shell", resources: ["pwd"] })).toMatchObject({ reason: "unavailable" })
+    expect(yield* reviewer.review({ action: "shell", resources: ["pwd"] })).toMatchObject({ reason: "unavailable" })
+    expect(yield* reviewer.review({ action: "shell", resources: ["pwd"] })).toMatchObject({ effect: "allow" })
     expect(attempts).toBe(3)
-  })
+  }))
 
-  it("abstains without a provider call when no resource exists", async () => {
-    const evaluate = vi.fn(async () => answer(0.01))
-    const reviewer = await createPermissionReviewer(fakeClient(evaluate))
+  it.effect("preserves modeled provider failure evidence while abstaining", () => Effect.gen(function*() {
+    const reviewer = yield* createPermissionReviewer(fakeClient(() => new JevProviderError({
+      message: "Insufficient balance",
+      provider: "zen",
+      kind: "credits-exhausted",
+      status: 401,
+      code: "CreditsError",
+    })))
 
-    await expect(reviewer.review({ action: "shell", resources: [] })).resolves.toEqual({
+    const result = yield* reviewer.review({ action: "shell", resources: ["pwd"] })
+
+    expect(result).toMatchObject({
+      effect: "ask",
+      reason: "unavailable",
+      failure: {
+        provider: "zen",
+        kind: "credits-exhausted",
+        status: 401,
+        code: "CreditsError",
+      },
+    })
+  }))
+
+  it.effect("abstains without a provider call when no resource exists", () => Effect.gen(function*() {
+    const evaluate = vi.fn(() => Effect.succeed(answer(0.01)))
+    const reviewer = yield* createPermissionReviewer(fakeClient(evaluate))
+
+    const result = yield* reviewer.review({ action: "shell", resources: [] })
+
+    expect(result).toEqual({
       effect: "ask",
       reason: "empty",
       judgments: [],
     })
     expect(evaluate).not.toHaveBeenCalled()
-  })
+  }))
 
-  it("supports custom question directions and thresholds", async () => {
+  it.effect("supports custom question directions and thresholds", () => Effect.gen(function*() {
     const questions: ApprovalQuestions = {
       harmless: {
         type: "noul",
@@ -99,25 +133,20 @@ describe("permission reviewer", () => {
       },
     }
 
-    const reviewer = await createPermissionReviewer(fakeClient(async () => ({
+    const reviewer = yield* createPermissionReviewer(fakeClient(() => Effect.succeed({
       model: "jev-test",
       answers: { harmless: { type: "noul", noul: 0.99 } },
     })), { questions })
 
-    await expect(reviewer.review({ action: "shell", resources: ["domain command"] })).resolves.toMatchObject({ effect: "allow" })
-  })
+    expect(yield* reviewer.review({ action: "shell", resources: ["domain command"] })).toMatchObject({ effect: "allow" })
+  }))
 
-  it("forwards external cancellation instead of converting it to abstention", async () => {
-    const reviewer = await createPermissionReviewer(fakeClient(async (_request, signal) =>
-      new Promise((_resolve, reject) => signal?.addEventListener("abort", () => reject(signal.reason), { once: true }))
-    ))
+  it.effect("propagates interruption instead of converting it to abstention", () => Effect.gen(function*() {
+    const reviewer = yield* createPermissionReviewer(fakeClient(() => Effect.never))
+    const fiber = yield* Effect.forkChild(reviewer.review({ action: "shell", resources: ["pwd"] }))
+    yield* Fiber.interrupt(fiber)
+    const exit = yield* Fiber.await(fiber)
 
-    const controller = new AbortController()
-
-    const pending = reviewer.review({ action: "shell", resources: ["pwd"] }, controller.signal)
-
-    controller.abort(new Error("cancelled"))
-
-    await expect(pending).rejects.toThrow("cancelled")
-  })
+    expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true)
+  }))
 })

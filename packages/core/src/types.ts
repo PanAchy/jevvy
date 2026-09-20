@@ -27,6 +27,8 @@ export interface JevResult {
 }
 
 export interface JevClient {
-  readonly evaluate: (request: JevRequest, signal?: AbortSignal) => Promise<JevResult>
-  readonly dispose?: () => Promise<void>
+  readonly evaluate: (request: JevRequest) => Effect.Effect<JevResult, JevProviderError>
 }
+
+import type { Effect } from "effect"
+import type { JevProviderError } from "./provider-error.ts"

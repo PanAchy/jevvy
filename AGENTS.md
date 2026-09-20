@@ -6,9 +6,10 @@ Jevvy auto-approves existing harmless permission prompts. `@jevvy/permissions` i
 
 ```text
 packages/core/                 private provider-neutral judgment module
-  src/types                    JSON, noul question, answer, and client ports
-  src/typesafe                 TypeSafe provider over the isolated runtime
-  src/zen                      Zen provider and wire parser
+  src/types                    JSON, noul question, answer, and Effect client port
+  src/system-one               shared System One HTTP adapter and wire schemas
+  src/typesafe                 TypeSafe provider configuration
+  src/zen                      Zen provider configuration and compatibility parser
 packages/permissions/          public `@jevvy/permissions` product
   src/config                   global provider credentials and permission policy
   src/questions                shipped inquiries and thresholds
@@ -16,7 +17,6 @@ packages/permissions/          public `@jevvy/permissions` product
   src/opencode/evaluate        OpenCode truth table without SDK wiring
   src/opencode/credentials     Zen-first credential resolution
   src/opencode/index           OpenCode plugin adapter
-packages/typesafe-runtime/     private rc.116 workspace, bundled through core
 eval/                          explicit maintainer-only live calibration
 ```
 
@@ -41,7 +41,14 @@ Source, workflows, consumer docs, `AGENTS.md`, and licenses are tracked. Local a
 
 ## Effect pinning
 
-The permissions package pins the exact Effect version bundled by `@opencode/plugin`. Bump those together. `packages/typesafe-runtime` owns a separate Effect version for `@effect/ai-typesafe`; its build is bundled into one core module. Only promises, AbortSignals, and plain data cross that boundary. Never pass an Effect, Layer, Context tag, service, or Runtime between the two versions.
+The repository pins the exact Effect version bundled by `@opencode/plugin`. Core, permissions, Effect platform packages, and Effect test tooling must use that version. Bump them only when OpenCode does. Keep effects and typed errors intact across internal module interfaces. Convert to promises only at an external process interface that requires one.
+
+## Effect conventions
+
+- Name public and domain-significant workflows with stable `Effect.fn("Domain.operation")` identifiers.
+- Model domain failures with `Schema.TaggedError` and yield them directly inside `Effect.gen`. Preserve interruption as control flow rather than converting it to provider unavailability.
+- Decode unknown input once at the boundary that owns it. Prefer Schema codecs for JSON wire formats over manual parsing in implementation code.
+- Introduce `Context.Service` and `Layer` for dependencies that are shared, replaceable, or lifecycle-bound. Keep small pure factories as factories.
 
 ## Branches and PRs
 
@@ -61,7 +68,7 @@ No em dashes anywhere: replies, code strings, docs, or commits.
 
 ## Test surface
 
-Core and engine tests are deterministic, credential-free, and plain at provider boundaries. OpenCode behavior is tested through `createEvaluate` and fake reviewers. Real provider calls belong only in the explicit calibration harness.
+Core and engine tests are deterministic and credential-free. Use `it.effect` for Effect workflows and ordinary `it` for pure code. OpenCode behavior is tested through `createEvaluate` and fake reviewers. Real provider calls belong only in the explicit calibration harness.
 
 ## Lint
 

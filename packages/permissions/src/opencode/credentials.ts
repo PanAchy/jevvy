@@ -1,5 +1,5 @@
 import { DEFAULT_ZEN_MODEL } from "../core.ts"
-import { Redacted } from "effect"
+import { Effect, Redacted } from "effect"
 import type { ProviderApiKeys, ProviderPreference } from "../config.ts"
 
 export const OPENCODE_INTEGRATION = "opencode"
@@ -18,8 +18,8 @@ export type StoredCredential =
   | { readonly type: "oauth"; readonly access: string }
 
 export interface CredentialPorts<C> {
-  readonly activeIntegration: (id: string) => Promise<C | undefined>
-  readonly resolveIntegration: (connection: C) => Promise<StoredCredential | undefined>
+  readonly activeIntegration: (id: string) => Effect.Effect<C | undefined>
+  readonly resolveIntegration: (connection: C) => Effect.Effect<StoredCredential | undefined>
   readonly readEnv: (name: string) => string | undefined
 }
 
@@ -34,12 +34,12 @@ export const credentialToken = (credential: StoredCredential | undefined): strin
   return token !== undefined && token.trim().length > 0 ? token : undefined
 }
 
-const integrationCredential = async <C>(
+const integrationCredential = Effect.fn("Credentials.integrationCredential")(function*<C>(
   ports: CredentialPorts<C>,
   id: string,
   describe: (connection: C) => ConnectionLike,
-): Promise<StoredCredential | undefined> => {
-  const connection = await ports.activeIntegration(id)
+): Effect.fn.Return<StoredCredential | undefined> {
+  const connection = yield* ports.activeIntegration(id)
 
   if (connection === undefined) return undefined
 
@@ -51,17 +51,17 @@ const integrationCredential = async <C>(
     return key === undefined ? undefined : { type: "key", key }
   }
 
-  const resolved = await ports.resolveIntegration(connection)
+  const resolved = yield* ports.resolveIntegration(connection)
 
   return credentialToken(resolved) === undefined ? undefined : resolved
-}
+})
 
-const zenCandidate = async <C>(
+const zenCandidate = Effect.fn("Credentials.zenCandidate")(function*<C>(
   ports: CredentialPorts<C>,
   describe: (connection: C) => ConnectionLike,
   configuredKey: ProviderApiKeys["zen"],
-): Promise<ProviderCredential> => {
-  const opencode = await integrationCredential(ports, OPENCODE_INTEGRATION, describe)
+): Effect.fn.Return<ProviderCredential> {
+  const opencode = yield* integrationCredential(ports, OPENCODE_INTEGRATION, describe)
   const opencodeToken = credentialToken(opencode)
 
   if (opencodeToken !== undefined) {
@@ -73,7 +73,7 @@ const zenCandidate = async <C>(
   }
 
   return { kind: "unavailable" }
-}
+})
 
 const typeSafeCandidate = (
   configuredKey: ProviderApiKeys["typesafe"],
@@ -85,17 +85,17 @@ const typeSafeCandidate = (
   return { kind: "unavailable" }
 }
 
-export const resolveCredential = async <C>(
+export const resolveCredential = Effect.fn("Credentials.resolve")(function*<C>(
   ports: CredentialPorts<C>,
   preference: ProviderPreference,
   describe: (connection: C) => ConnectionLike,
   apiKeys: ProviderApiKeys = {},
-): Promise<ProviderCredential> => {
-  if (preference === "zen") return zenCandidate(ports, describe, apiKeys.zen)
+): Effect.fn.Return<ProviderCredential> {
+  if (preference === "zen") return yield* zenCandidate(ports, describe, apiKeys.zen)
 
   if (preference === "typesafe") return typeSafeCandidate(apiKeys.typesafe)
 
-  const zen = await zenCandidate(ports, describe, apiKeys.zen)
+  const zen = yield* zenCandidate(ports, describe, apiKeys.zen)
 
   return zen.kind === "unavailable" ? typeSafeCandidate(apiKeys.typesafe) : zen
-}
+})

@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "@effect/vitest"
+import { Effect } from "effect"
 import { createZenClient, parseZenResponse, ZEN_SYSTEMONE_URL } from "../src/zen.ts"
 
 afterEach(() => vi.restoreAllMocks())
 
 describe("Zen client", () => {
-  it("sends arbitrary JSON state and questions", async () => {
+  it.effect("sends arbitrary JSON state and questions", () => Effect.gen(function*() {
     const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
       model: "jev-test",
       answers: { routine: { type: "noul", noul: 0.9 } },
@@ -12,7 +13,7 @@ describe("Zen client", () => {
 
     const client = createZenClient("secret", "jev-test", transport)
 
-    const result = await client.evaluate({
+    const result = yield* client.evaluate({
       state: { operation: "index", items: [1, 2] },
       questions: { routine: { type: "noul", instructions: "Is this routine?" } },
     })
@@ -28,7 +29,7 @@ describe("Zen client", () => {
       state: { operation: "index", items: [1, 2] },
       questions: { routine: { type: "noul", instructions: "Is this routine?" } },
     })
-  })
+  }))
 
   it("rejects missing, malformed, and out-of-range answers", () => {
     const questions = { routine: { type: "noul" as const, instructions: "Routine?" } }
@@ -39,13 +40,70 @@ describe("Zen client", () => {
     expect(parseZenResponse({ answers: { routine: { type: "noul", noul: 0.5 } } }, questions)).toBeUndefined()
   })
 
-  it("surfaces non-success responses", async () => {
-    const transport = vi.fn<typeof fetch>().mockResolvedValue(new Response("no", { status: 401 }))
+  it.effect("surfaces non-success responses", () => Effect.gen(function*() {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+      type: "error",
+      error: { type: "AuthError", message: "Invalid API key" },
+    }, { status: 401 }))
+
     const client = createZenClient("bad", "jev-test", transport)
 
-    await expect(client.evaluate({
+    const error = yield* Effect.flip(client.evaluate({
       state: "hello",
       questions: { routine: { type: "noul", instructions: "Routine?" } },
-    })).rejects.toThrow("zen systemOne 401")
-  })
+    }))
+
+    expect(error).toMatchObject({
+      name: "JevProviderError",
+      provider: "zen",
+      kind: "authentication",
+      status: 401,
+      code: "AuthError",
+    })
+  }))
+
+  it.effect("distinguishes exhausted Zen credits from authentication failures sharing status 401", () => Effect.gen(function*() {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+      type: "error",
+      error: { type: "CreditsError", message: "Insufficient balance" },
+    }, { status: 401 }))
+
+    const client = createZenClient("empty", "jev-test", transport)
+
+    const error = yield* Effect.flip(client.evaluate({
+      state: "hello",
+      questions: { routine: { type: "noul", instructions: "Routine?" } },
+    }))
+
+    expect(error).toMatchObject({
+      name: "JevProviderError",
+      provider: "zen",
+      kind: "credits-exhausted",
+      status: 401,
+      code: "CreditsError",
+    })
+  }))
+
+  it.effect("preserves temporary Zen limit evidence", () => Effect.gen(function*() {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+      type: "error",
+      error: { type: "RateLimitError", message: "Try again later" },
+    }, { status: 429, headers: { "retry-after": "12" } }))
+
+    const client = createZenClient("busy", "jev-test", transport)
+
+    const error = yield* Effect.flip(client.evaluate({
+      state: "hello",
+      questions: { routine: { type: "noul", instructions: "Routine?" } },
+    }))
+
+    expect(error).toMatchObject({
+      name: "JevProviderError",
+      provider: "zen",
+      kind: "rate-limited",
+      status: 429,
+      code: "RateLimitError",
+      retryAfterMs: 12_000,
+    })
+  }))
 })

@@ -1,5 +1,5 @@
-import type { PermissionEvaluation } from "@opencode/plugin/promise/permission"
-import { Option, Schema } from "effect"
+import type { PermissionEvaluation } from "@opencode/plugin/effect/permission"
+import { Effect, Option, Schema } from "effect"
 import type { PermissionReviewer } from "../engine.ts"
 
 export interface EvaluationEvent {
@@ -31,8 +31,8 @@ export interface EvaluateOptions {
 export const createEvaluate = (
   reviewer: PermissionReviewer | undefined,
   options: EvaluateOptions,
-): ((event: EvaluationEvent) => Promise<void>) =>
-  async (event) => {
+): ((event: EvaluationEvent) => Effect.Effect<void>) =>
+  Effect.fn("OpenCode.evaluatePermission")(function*(event) {
     if (event.effect !== "ask" || event.action !== "shell" || reviewer === undefined) return
 
     const command = commandFrom(event.metadata)
@@ -47,10 +47,10 @@ export const createEvaluate = (
       ? event.resources
       : [...new Set([...event.resources, command])]
 
-    const review = await reviewer.review({ action: event.action, resources })
+    const review = yield* reviewer.review({ action: event.action, resources })
     const reason = review.effect === "ask" ? review.reason : "judged"
 
     options.report?.({ effect: review.effect, reason, resources: resources.length })
 
     if (review.effect === "allow") event.effect = "allow"
-  }
+  })

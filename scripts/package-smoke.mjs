@@ -104,15 +104,12 @@ try {
   ensure(!existsSync(join(consumer, "node_modules", "@jevvy", "core")), "private core became a top-level dependency")
   ensure(!existsSync(join(consumer, "node_modules", "@jevvy", "typesafe-runtime")), "private runtime became an installed dependency")
 
-  const core = await import(pathToFileURL(coreBundle).href)
-  const client = core.createTypeSafeClient("package-smoke-unused-key")
-
-  await client.dispose?.()
+  const effect = await import(pathToFileURL(join(consumer, "node_modules", "effect", "dist", "index.js")).href)
 
   const engine = await import(pathToFileURL(join(permissionsRoot, "dist", "engine.js")).href)
 
-  const reviewer = await engine.createPermissionReviewer({
-    evaluate: async () => ({
+  const reviewer = await effect.Effect.runPromise(engine.createPermissionReviewer({
+    evaluate: () => effect.Effect.succeed({
       model: "fake",
       answers: {
         harmful: { type: "noul", noul: 0 },
@@ -121,9 +118,9 @@ try {
         obscured: { type: "noul", noul: 0 },
       },
     }),
-  })
+  }))
 
-  const review = await reviewer.review({ action: "shell", resources: ["pwd"] })
+  const review = await effect.Effect.runPromise(reviewer.review({ action: "shell", resources: ["pwd"] }))
 
   ensure(review.effect === "allow", `installed permission engine returned ${String(review.effect)}`)
 
