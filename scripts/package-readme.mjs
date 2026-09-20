@@ -21,8 +21,20 @@ const replaceOne = (content, relative, absolute) => {
 const createReadme = () => {
   const rootReadme = readFileSync(source, "utf8")
 
-  const withCalibrationCorpus = replaceOne(
+  const withOpenCodeDemo = replaceOne(
     rootReadme,
+    "./assets/jevvy-demo.gif",
+    "https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-demo.gif",
+  )
+
+  const withClaudeDemo = replaceOne(
+    withOpenCodeDemo,
+    "./assets/jevvy-claude-demo.gif",
+    "https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-claude-demo.gif",
+  )
+
+  const withCalibrationCorpus = replaceOne(
+    withClaudeDemo,
     "./eval/commands.json",
     "https://github.com/PanAchy/jevvy/blob/main/eval/commands.json",
   )

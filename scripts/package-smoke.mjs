@@ -96,7 +96,11 @@ try {
   ensure(existsSync(coreBundle), "permissions is missing its bundled core")
   ensure(
     readme.includes("https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-demo.gif"),
-    "permissions README is missing its public demo URL",
+    "permissions README is missing its public OpenCode demo URL",
+  )
+  ensure(
+    readme.includes("https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-claude-demo.gif"),
+    "permissions README is missing its public Claude Code demo URL",
   )
   ensure(!readme.includes("](./"), "permissions README contains repository-relative links")
   ensure(existsSync(join(permissionsRoot, "THIRD_PARTY_LICENSES.txt")), "permissions is missing bundled-code notices")

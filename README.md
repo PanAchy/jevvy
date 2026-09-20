@@ -19,11 +19,11 @@ The permissions plugin auto-approves harmless shell permission requests. Anythin
 
 ### OpenCode (v2)
 
-![OpenCode demo showing git status asks without Jevvy Permissions, runs automatically with it, and rm -rf still asks](https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-demo.gif)
+![OpenCode demo showing git status asks without Jevvy Permissions, runs automatically with it, and rm -rf still asks](./assets/jevvy-demo.gif)
 
 ### Claude Code
 
-![Claude Code demo showing a routine Bash command asks without Jevvy Permissions, runs after a one-action hook approval with it, and a risky command outside the project still asks](https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-claude-demo.gif)
+![Claude Code demo showing a routine Bash command asks without Jevvy Permissions, runs after a one-action hook approval with it, and a risky command outside the project still asks](./assets/jevvy-claude-demo.gif)
 
 ## Quickstart
 
