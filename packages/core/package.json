@@ -13,10 +13,10 @@
   },
   "scripts": {
     "prebuild": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "tsc -p tsconfig.build.json && esbuild ../typesafe-runtime/src/index.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/typesafe-runtime.js"
+    "build": "tsc -p tsconfig.build.json"
   },
-  "devDependencies": {
-    "@jevvy/typesafe-runtime": "0.0.0"
+  "dependencies": {
+    "effect": "4.0.0-rc.112"
   },
   "engines": {
     "node": ">=24"

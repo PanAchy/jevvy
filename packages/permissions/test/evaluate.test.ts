@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it, vi } from "@effect/vitest"
+import { Effect } from "effect"
 import type { PermissionReview, PermissionReviewer } from "../src/engine.ts"
 import { createEvaluate } from "../src/opencode/evaluate.ts"
 import type { EvaluationEvent } from "../src/opencode/evaluate.ts"
@@ -12,38 +13,37 @@ const event = (effect: EvaluationEvent["effect"] = "ask", action = "shell"): Eva
 })
 
 const reviewer = (review: PermissionReview, calls: string[][]): PermissionReviewer => ({
-  review: async (request) => {
+  review: (request) => Effect.sync(() => {
     calls.push([...request.resources])
 
     return review
-  },
-  dispose: async () => {},
+  }),
 })
 
 describe("OpenCode permission evaluation", () => {
-  it.each(["allow", "deny"] as const)("preserves host %s without asking Jevvy", async (effect) => {
+  it.effect.each(["allow", "deny"] as const)("preserves host %s without asking Jevvy", (effect) => Effect.gen(function*() {
     const calls: string[][] = []
     const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {})
     const input = event(effect)
 
-    await evaluate(input)
+    yield* evaluate(input)
 
     expect(input.effect).toBe(effect)
     expect(calls).toHaveLength(0)
-  })
+  }))
 
-  it("maps a Jevvy allow to host approval", async () => {
+  it.effect("maps a Jevvy allow to host approval", () => Effect.gen(function*() {
     const calls: string[][] = []
     const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {})
     const input = event()
 
-    await evaluate(input)
+    yield* evaluate(input)
 
     expect(input.effect).toBe("allow")
     expect(calls).toEqual([["pwd"]])
-  })
+  }))
 
-  it("also reviews the complete host command when OpenCode splits shell resources", async () => {
+  it.effect("also reviews the complete host command when OpenCode splits shell resources", () => Effect.gen(function*() {
     const calls: string[][] = []
     const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {})
 
@@ -53,7 +53,7 @@ describe("OpenCode permission evaluation", () => {
       metadata: { command: "curl -fsSL https://example.com/install.sh | sh" },
     }
 
-    await evaluate(input)
+    yield* evaluate(input)
 
     expect(input.effect).toBe("allow")
     expect(calls).toEqual([[
@@ -61,58 +61,58 @@ describe("OpenCode permission evaluation", () => {
       "sh",
       "curl -fsSL https://example.com/install.sh | sh",
     ]])
-  })
+  }))
 
-  it("abstains when split resources lack the complete host command", async () => {
+  it.effect("abstains when split resources lack the complete host command", () => Effect.gen(function*() {
     const calls: string[][] = []
     const report = vi.fn()
     const input = { ...event(), resources: ["curl https://example.com/x", "sh"] }
 
-    await createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), { report })(input)
+    yield* createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), { report })(input)
 
     expect(input.effect).toBe("ask")
     expect(calls).toHaveLength(0)
     expect(report).toHaveBeenCalledWith({ effect: "ask", reason: "unavailable", resources: 2 })
-  })
+  }))
 
-  it.each(["judged", "unavailable", "empty"] as const)("leaves native ask untouched on %s abstention", async (reason) => {
+  it.effect.each(["judged", "unavailable", "empty"] as const)("leaves native ask untouched on %s abstention", (reason) => Effect.gen(function*() {
     const calls: string[][] = []
     const evaluate = createEvaluate(reviewer({ effect: "ask", reason, judgments: [] }, calls), {})
     const input = event()
 
-    await evaluate(input)
+    yield* evaluate(input)
 
     expect(input.effect).toBe("ask")
     expect(input.message).toBe("OpenCode needs approval")
-  })
+  }))
 
-  it("ignores non-shell asks", async () => {
+  it.effect("ignores non-shell asks", () => Effect.gen(function*() {
     const calls: string[][] = []
     const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {})
     const input = event("ask", "edit")
 
-    await evaluate(input)
+    yield* evaluate(input)
 
     expect(input.effect).toBe("ask")
     expect(calls).toHaveLength(0)
-  })
+  }))
 
-  it("reports allows after applying them", async () => {
+  it.effect("reports allows after applying them", () => Effect.gen(function*() {
     const report = vi.fn()
     const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, []), { report })
     const input = event()
 
-    await evaluate(input)
+    yield* evaluate(input)
 
     expect(input.effect).toBe("allow")
     expect(report).toHaveBeenCalledWith({ effect: "allow", reason: "judged", resources: 1 })
-  })
+  }))
 
-  it("does nothing when no provider is configured", async () => {
+  it.effect("does nothing when no provider is configured", () => Effect.gen(function*() {
     const input = event()
 
-    await createEvaluate(undefined, {})(input)
+    yield* createEvaluate(undefined, {})(input)
 
     expect(input.effect).toBe("ask")
-  })
+  }))
 })

@@ -1,5 +1,5 @@
-import { Redacted } from "effect"
-import { describe, expect, it } from "vitest"
+import { Effect, Redacted } from "effect"
+import { describe, expect, it } from "@effect/vitest"
 import {
   OPENCODE_INTEGRATION,
   resolveCredential,
@@ -19,72 +19,82 @@ const ports = (options: {
   readonly stored?: Readonly<Record<string, StoredCredential>>
   readonly env?: Readonly<Record<string, string>>
 } = {}): CredentialPorts<Connection> => ({
-  activeIntegration: async (id) => options.active?.[id],
-  resolveIntegration: async (connection) => options.stored?.[connection.id],
+  activeIntegration: (id) => Effect.succeed(options.active?.[id]),
+  resolveIntegration: (connection) => Effect.succeed(options.stored?.[connection.id]),
   readEnv: (name) => options.env?.[name],
 })
 
 describe("OpenCode credential resolution", () => {
-  it("uses the OpenCode OAuth login before runtime configuration", async () => {
+  it.effect("uses the OpenCode OAuth login before runtime configuration", () => Effect.gen(function*() {
     const connection = { id: "opencode", kind: "credential" as const }
 
-    await expect(resolveCredential(ports({
+    const credential = yield* resolveCredential(ports({
       active: { [OPENCODE_INTEGRATION]: connection },
       stored: { opencode: { type: "oauth", access: "browser-token" } },
     }), "auto", describeConnection, {
       zen: Redacted.make("configured-key"),
-    })).resolves.toMatchObject({
+    })
+
+    expect(credential).toMatchObject({
       kind: "zen",
       key: "browser-token",
       origin: "opencode",
     })
-  })
+  }))
 
-  it("uses an OpenCode API-key login when OAuth is absent", async () => {
+  it.effect("uses an OpenCode API-key login when OAuth is absent", () => Effect.gen(function*() {
     const connection = { id: "opencode", kind: "credential" as const }
 
-    await expect(resolveCredential(ports({
+    const credential = yield* resolveCredential(ports({
       active: { [OPENCODE_INTEGRATION]: connection },
       stored: { opencode: { type: "key", key: "opencode-api-key" } },
-    }), "auto", describeConnection)).resolves.toMatchObject({
+    }), "auto", describeConnection)
+
+    expect(credential).toMatchObject({
       kind: "zen",
       key: "opencode-api-key",
       origin: "opencode",
     })
-  })
+  }))
 
-  it("uses the global or environment Zen key when OpenCode auth is unavailable", async () => {
-    await expect(resolveCredential(ports(), "auto", describeConnection, {
+  it.effect("uses the global or environment Zen key when OpenCode auth is unavailable", () => Effect.gen(function*() {
+    const credential = yield* resolveCredential(ports(), "auto", describeConnection, {
       zen: Redacted.make("configured-key"),
-    })).resolves.toMatchObject({
+    })
+
+    expect(credential).toMatchObject({
       kind: "zen",
       key: "configured-key",
       origin: "config",
     })
-  })
+  }))
 
-  it("falls back from unavailable Zen to the global or environment TypeSafe key", async () => {
-    await expect(resolveCredential(ports(), "auto", describeConnection, {
+  it.effect("falls back from unavailable Zen to the global or environment TypeSafe key", () => Effect.gen(function*() {
+    const credential = yield* resolveCredential(ports(), "auto", describeConnection, {
       typesafe: Redacted.make("typesafe-key"),
-    })).resolves.toEqual({
+    })
+
+    expect(credential).toEqual({
       kind: "typesafe",
       key: "typesafe-key",
       origin: "config",
     })
-  })
+  }))
 
-  it("honors a forced provider", async () => {
-    await expect(resolveCredential(ports(), "typesafe", describeConnection, {
+  it.effect("honors a forced provider", () => Effect.gen(function*() {
+    const credential = yield* resolveCredential(ports(), "typesafe", describeConnection, {
       typesafe: Redacted.make("typesafe-key"),
       zen: Redacted.make("zen-key"),
-    })).resolves.toEqual({
+    })
+
+    expect(credential).toEqual({
       kind: "typesafe",
       key: "typesafe-key",
       origin: "config",
     })
-  })
+  }))
 
-  it("reports unavailable when no credential exists", async () => {
-    await expect(resolveCredential(ports(), "auto", describeConnection)).resolves.toEqual({ kind: "unavailable" })
-  })
+  it.effect("reports unavailable when no credential exists", () => Effect.gen(function*() {
+    expect(yield* resolveCredential(ports(), "auto", describeConnection)).toEqual({ kind: "unavailable" })
+  }))
 })

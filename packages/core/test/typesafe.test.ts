@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it, vi } from "vitest"
+import { afterEach, describe, expect, it, vi } from "@effect/vitest"
+import { Effect } from "effect"
 import { createTypeSafeClient } from "../src/typesafe.ts"
 
 afterEach(() => vi.restoreAllMocks())
 
 describe("TypeSafe client", () => {
-  it("keeps Promise, AbortSignal, and plain data across the isolated runtime", async () => {
+  it.effect("evaluates through the shared Effect runtime", () => Effect.gen(function*() {
     const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
       model: "jev-served",
       answers: {
@@ -15,16 +16,10 @@ describe("TypeSafe client", () => {
 
     const client = createTypeSafeClient("test-key", "jev-test", transport)
 
-    const controller = new AbortController()
-
-    const pending = client.evaluate({
+    const result = yield* client.evaluate({
       state: { command: "pwd" },
       questions: { harmless: { type: "noul", instructions: "Is it harmless?" } },
-    }, controller.signal)
-
-    expect(pending).toBeInstanceOf(Promise)
-
-    const result = await pending
+    })
 
     expect(result).toEqual({
       model: "jev-served",
@@ -33,10 +28,9 @@ describe("TypeSafe client", () => {
     expect(Object.getPrototypeOf(result)).toBe(Object.prototype)
     expect(Object.getPrototypeOf(result.answers)).toBe(Object.prototype)
 
-    await client.dispose?.()
-  })
+  }))
 
-  it("rejects missing requested answers", async () => {
+  it.effect("rejects missing requested answers", () => Effect.gen(function*() {
     const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
       model: "jev-test",
       answers: {},
@@ -44,11 +38,60 @@ describe("TypeSafe client", () => {
 
     const client = createTypeSafeClient("test-key", "jev-test", transport)
 
-    await expect(client.evaluate({
+    const error = yield* Effect.flip(client.evaluate({
       state: null,
       questions: { harmless: { type: "noul", instructions: "Is it harmless?" } },
-    })).rejects.toThrow()
+    }))
 
-    await client.dispose?.()
-  })
+    expect(error).toMatchObject({
+      name: "JevProviderError",
+      provider: "typesafe",
+      kind: "invalid-response",
+    })
+  }))
+
+  it.effect("preserves exhausted-credit responses", () => Effect.gen(function*() {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+      message: "Insufficient credits. Top up to continue.",
+      type: "insufficient_quota",
+    }, { status: 402 }))
+
+    const client = createTypeSafeClient("empty", "jev-test", transport)
+
+    const error = yield* Effect.flip(client.evaluate({
+      state: null,
+      questions: { harmless: { type: "noul", instructions: "Is it harmless?" } },
+    }))
+
+    expect(error).toMatchObject({
+      name: "JevProviderError",
+      provider: "typesafe",
+      kind: "credits-exhausted",
+      status: 402,
+      code: "insufficient_quota",
+    })
+  }))
+
+  it.effect("preserves TypeSafe rate limits as transient failures", () => Effect.gen(function*() {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+      message: "Rate limit exceeded",
+      type: "rate_limit_error",
+    }, { status: 429, headers: { "retry-after": "3" } }))
+
+    const client = createTypeSafeClient("busy", "jev-test", transport)
+
+    const error = yield* Effect.flip(client.evaluate({
+      state: null,
+      questions: { harmless: { type: "noul", instructions: "Is it harmless?" } },
+    }))
+
+    expect(error).toMatchObject({
+      name: "JevProviderError",
+      provider: "typesafe",
+      kind: "rate-limited",
+      status: 429,
+      code: "rate_limit_error",
+      retryAfterMs: 3_000,
+    })
+  }))
 })

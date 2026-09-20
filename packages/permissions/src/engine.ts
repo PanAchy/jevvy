@@ -1,5 +1,6 @@
-import { Cache, Duration, Effect, Exit } from "effect"
-import type { JevClient, JevResult, NoulAnswer } from "./core.ts"
+import { Cache, Duration, Effect, Exit, Schema } from "effect"
+import { isJevProviderError, JevProviderFailure as JevProviderFailureSchema, providerFailureOf } from "./core.ts"
+import type { JevClient, JevProviderFailure, JevResult, NoulAnswer } from "./core.ts"
 import type { ApprovalQuestion, ApprovalQuestions } from "./questions.ts"
 import { defaultApprovalQuestions, toNoulQuestions } from "./questions.ts"
 
@@ -21,6 +22,7 @@ export type PermissionReview =
       readonly effect: "ask"
       readonly reason: "judged" | "unavailable" | "empty"
       readonly judgments: readonly ResourceJudgment[]
+      readonly failure?: JevProviderFailure
     }
 
 export interface PermissionRequest {
@@ -29,8 +31,7 @@ export interface PermissionRequest {
 }
 
 export interface PermissionReviewer {
-  readonly review: (request: PermissionRequest, signal?: AbortSignal) => Promise<PermissionReview>
-  readonly dispose: () => Promise<void>
+  readonly review: (request: PermissionRequest) => Effect.Effect<PermissionReview>
 }
 
 export interface PermissionReviewerOptions {
@@ -39,9 +40,15 @@ export interface PermissionReviewerOptions {
   readonly cacheCapacity?: number
 }
 
-class JudgmentUnavailable extends Error {
-  readonly name = "JudgmentUnavailable"
-}
+class JudgmentUnavailable extends Schema.TaggedError<JudgmentUnavailable>()("JudgmentUnavailable", {
+  message: Schema.String,
+  failure: Schema.optional(JevProviderFailureSchema),
+}) {}
+
+export class ReviewerConfigurationError extends Schema.TaggedError<ReviewerConfigurationError>()(
+  "ReviewerConfigurationError",
+  { message: Schema.String },
+) {}
 
 const answerPasses = (answer: number, question: ApprovalQuestion): boolean =>
   question.threshold.direction === "atMost"
@@ -60,7 +67,7 @@ export const permissionEffectOf = (
   for (const [key, question] of Object.entries(questions)) {
     const answer = answers[key]
 
-    if (!validAnswer(answer)) throw new JudgmentUnavailable(`missing valid answer for ${key}`)
+    if (!validAnswer(answer)) throw new JudgmentUnavailable({ message: `missing valid answer for ${key}` })
 
     if (!answerPasses(answer.noul, question)) effect = "ask"
   }
@@ -73,7 +80,7 @@ const judgeResult = (
   result: JevResult,
   questions: ApprovalQuestions,
 ): ResourceJudgment => {
-  if (result.model.trim().length === 0) throw new JudgmentUnavailable("missing model identifier")
+  if (result.model.trim().length === 0) throw new JudgmentUnavailable({ message: "missing model identifier" })
 
   return {
     resource,
@@ -83,7 +90,8 @@ const judgeResult = (
   }
 }
 
-const validateQuestions = (questions: ApprovalQuestions): void => {
+const validateQuestions = (questions: ApprovalQuestions): Effect.Effect<void, ReviewerConfigurationError> => Effect.try({
+  try: () => {
   const entries = Object.entries(questions)
 
   if (entries.length === 0) throw new Error("at least one approval question is required")
@@ -97,35 +105,45 @@ const validateQuestions = (questions: ApprovalQuestions): void => {
       throw new Error(`approval question ${key} has an invalid threshold`)
     }
   }
-}
+  },
+  catch: (cause) => new ReviewerConfigurationError({
+    message: cause instanceof Error ? cause.message : "invalid approval questions",
+  }),
+})
 
 const cacheKey = (action: string, resource: string): string => `${action.length}:${action}${resource}`
 
-const abortReason = (signal: AbortSignal): Error =>
-  signal.reason instanceof Error
-    ? signal.reason
-    : new DOMException("The operation was aborted", "AbortError")
+const unavailable = (error: Error): JudgmentUnavailable => {
+  if (error instanceof JudgmentUnavailable) return error
 
-const isAborted = (signal: AbortSignal | undefined): signal is AbortSignal => signal?.aborted === true
+  if (isJevProviderError(error)) {
+    return new JudgmentUnavailable({ message: error.message, failure: providerFailureOf(error) })
+  }
 
-export const createPermissionReviewer = async (
+  return new JudgmentUnavailable({ message: String(error) })
+}
+
+export const createPermissionReviewer = Effect.fn("PermissionReviewer.create")(function*(
   client: JevClient,
   options: PermissionReviewerOptions = {},
-): Promise<PermissionReviewer> => {
+): Effect.fn.Return<PermissionReviewer, ReviewerConfigurationError> {
   const questions = options.questions ?? defaultApprovalQuestions
   const timeoutMs = options.timeoutMs ?? 5_000
   const capacity = options.cacheCapacity ?? 512
 
-  validateQuestions(questions)
+  yield* validateQuestions(questions)
 
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("timeoutMs must be positive")
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    return yield* new ReviewerConfigurationError({ message: "timeoutMs must be positive" })
+  }
 
-  if (!Number.isInteger(capacity) || capacity <= 0) throw new Error("cacheCapacity must be a positive integer")
+  if (!Number.isInteger(capacity) || capacity <= 0) {
+    return yield* new ReviewerConfigurationError({ message: "cacheCapacity must be a positive integer" })
+  }
 
   const noulQuestions = toNoulQuestions(questions)
 
-  const cache = await Effect.runPromise(
-    Cache.makeWith(
+  const cache = yield* Cache.makeWith(
       (key: string) => {
         const separator = key.indexOf(":")
         const actionLength = Number(key.slice(0, separator))
@@ -133,50 +151,58 @@ export const createPermissionReviewer = async (
         const action = payload.slice(0, actionLength)
         const resource = payload.slice(actionLength)
 
-        return Effect.tryPromise((signal) =>
-          client.evaluate({ state: { action, resource }, questions: noulQuestions }, signal)
-        ).pipe(
+        return client.evaluate({ state: { action, resource }, questions: noulQuestions }).pipe(
           Effect.timeout(timeoutMs),
-          Effect.map((result) => judgeResult(resource, result, questions)),
-          Effect.mapError((error) => new JudgmentUnavailable(String(error))),
+          Effect.flatMap((result) => Effect.try({
+            try: () => judgeResult(resource, result, questions),
+            catch: (cause) => unavailable(cause instanceof Error ? cause : new Error(String(cause))),
+          })),
+          Effect.mapError(unavailable),
         )
       },
       {
         capacity,
         timeToLive: (exit) => Exit.isSuccess(exit) ? Duration.infinity : Duration.zero,
       },
-    ),
-  )
+    )
 
   return {
-    async review(request, signal) {
+    review: Effect.fn("PermissionReviewer.review")(function*(request) {
       if (request.resources.length === 0) return { effect: "ask", reason: "empty", judgments: [] }
 
       const judgments: ResourceJudgment[] = []
 
       for (const resource of request.resources) {
-        if (isAborted(signal)) throw abortReason(signal)
+        const result = yield* Cache.get(cache, cacheKey(request.action, resource)).pipe(
+          Effect.match({
+            onFailure: (error) => ({ kind: "failure" as const, error }),
+            onSuccess: (judgment) => ({ kind: "success" as const, judgment }),
+          }),
+        )
 
-        try {
-          const judgment = await Effect.runPromise(
-            Cache.get(cache, cacheKey(request.action, resource)),
-            signal === undefined ? undefined : { signal },
-          )
+        if (result.kind === "failure") {
+          if (result.error.failure !== undefined) {
+            return {
+              effect: "ask",
+              reason: "unavailable",
+              judgments,
+              failure: result.error.failure,
+            }
+          }
 
-          judgments.push(judgment)
-
-          if (judgment.effect === "ask") return { effect: "ask", reason: "judged", judgments }
-        } catch {
-          if (isAborted(signal)) throw abortReason(signal)
-
-          return { effect: "ask", reason: "unavailable", judgments }
+          return {
+            effect: "ask",
+            reason: "unavailable",
+            judgments,
+          }
         }
+
+        judgments.push(result.judgment)
+
+        if (result.judgment.effect === "ask") return { effect: "ask", reason: "judged", judgments }
       }
 
       return { effect: "allow", judgments }
-    },
-    async dispose() {
-      await client.dispose?.()
-    },
+    }),
   }
-}
+})

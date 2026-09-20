@@ -27,13 +27,14 @@
   "devDependencies": {
     "@changesets/changelog-github": "1.0.1",
     "@changesets/cli": "^3.0.3",
+    "@effect/vitest": "4.0.0-rc.112",
     "@oxlint/plugins": "1.83.0",
     "@types/node": "^22.20.3",
     "dotenv": "^17.4.2",
     "esbuild": "^0.25.10",
     "oxlint": "1.83.0",
     "typescript": "^7.0.2",
-    "vitest": "^3.2.7"
+    "vitest": "4.1.0"
   },
   "engines": {
     "node": ">=24"
