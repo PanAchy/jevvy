@@ -107,7 +107,14 @@ jobs:
           package-manager-cache: false
       - run: npm install --global npm@${{ env.NPM_VERSION }}
       - run: npm ci --no-audit --no-fund
-      - uses: changesets/action/publish@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2
+      - id: publish
+        uses: changesets/action/publish@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2
         with:
           pack-dir-artifact-id: ${{ needs.pack.outputs.pack-dir-artifact-id }}
           create-github-releases: true
+      - name: Use readable GitHub release titles
+        if: steps.publish.outputs.published == 'true'
+        run: node scripts/rename-github-releases.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISHED_PACKAGES: ${{ steps.publish.outputs.published-packages }}
