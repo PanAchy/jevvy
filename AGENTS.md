@@ -1,6 +1,6 @@
 # jevvy
 
-Jevvy auto-approves existing harmless permission prompts. `@jevvy/permissions` is the only public package. Jevvy never blocks. The user and host remain the only sources of denial.
+Jevvy is an allow-only reviewer for host-provided shell approval requests. `@jevvy/permissions` is the only public package. Jevvy never blocks. The user and host remain the only sources of denial.
 
 ## Architecture
 
@@ -18,21 +18,25 @@ packages/permissions/          public `@jevvy/permissions` product
   src/init                     setup planning, secure config writes, and harness installation
   src/questions                shipped inquiries and thresholds
   src/engine                   ask/allow policy, timeout, and process cache
+  src/claude/evaluate          Claude Code hook input and output mapping
+  src/claude/hook              global reviewer setup and hook protocol
   src/opencode/evaluate        OpenCode truth table without SDK wiring
-  src/opencode/credentials     OpenCode Zen credential resolution
+  src/opencode/setup           OpenCode setup diagnostics
   src/opencode/index           OpenCode plugin adapter
 eval/                          explicit maintainer-only live calibration
 ```
 
-Providers and harnesses are independent dimensions inside the product. OpenRouter, TypeSafe, Vercel, and OpenCode Zen belong to the private core module. OpenCode belongs to the permissions adapter. Future Claude Code and Codex adapters belong in `@jevvy/permissions`.
+Providers and harnesses are independent dimensions inside the product. OpenRouter, TypeSafe, Vercel, and OpenCode Zen belong to the private core module. OpenCode and Claude Code belong to the permissions adapter. Future harness adapters belong in `@jevvy/permissions`.
 
 ## Permission contract
 
-- Preserve host `allow` and `deny` without a Jev call.
-- Review only host `ask` decisions for shell actions.
+- Enter through a host approval boundary, never a general pre-tool event.
+- Preserve every host `allow` or `deny` finalized before Jevvy without a Jev call. When a harness exposes the finalized effect, review only `ask`.
+- Document where each adapter runs and which native reviewers, prompts, or automatic outcomes remain after abstention.
 - Judge each resource separately. Every resource and inquiry must allow.
-- Map Jev allow to host approval.
-- Map Jev ask, timeout, malformed output, missing credentials, and provider failure to abstention. Abstention leaves the native prompt untouched.
+- Map Jev allow to one-action host approval without creating a durable rule.
+- Map Jev ask, timeout, malformed output, missing credentials, and provider failure to abstention. Abstention leaves the host's remaining permission flow unchanged.
+- Surface actionable setup failures through host diagnostics without turning them into permission decisions.
 - Never add local command verdicts, task authorization, approval matching, credential detection, redaction, durable rules, or persistent decision records.
 - Read user configuration only from the global Jevvy path. Repositories must not control provider credentials, questions, or thresholds.
 - Cache valid allow and ask judgments for the owning process lifetime. Do not cache unavailable results.
@@ -62,13 +66,15 @@ Nothing is released yet, so work lands as direct local commits until v0. From th
 
 Write public changelog entries and GitHub release notes for users rather than around Changesets bump types. Use only relevant headings such as `New harnesses`, `New providers`, `Permission behavior`, `Configuration`, `Reliability`, `Fixes`, and `Breaking changes`; omit empty sections. Keep `major`, `minor`, and `patch` in changeset metadata rather than public section headings. Preserve generated PR, commit, and contributor attribution links when reshaping a release entry.
 
-## Plugin dev loop
+## Harness dev loops
 
 Run `npm run smoke:opencode` to verify the packed plugin reports an actionable setup failure without configuration and activates for a configured credential-free custom endpoint. Local dogfood configuration stays untracked. Confirm `jevvy.permissions` is `active` through OpenCode's plugin status endpoint before treating any live session behavior as evidence.
 
 Run `npm run smoke:package` and `npm run smoke:opencode` as background jobs because they can take several minutes. Do not overlap them with `npm run check` or other builds because the build scripts clean `dist`.
 
 Add the `full-package-smoke` label to a PR for one Linux, Windows, and macOS x64/arm64 package matrix when it changes package files, exports, bins, bundled artifacts, dependencies, build tooling, installers, or platform-specific filesystem or process behavior. Remove the label after the matrix completes so later pushes use normal PR CI.
+
+Run `npm run build:permissions && npm run smoke:claude` after changing the Claude Code plugin manifest, hook registration, or bundle path. The smoke validates both manifests and loads the plugin into an isolated Claude Code host. Run `npm run smoke:package` to verify the packed hook remains dependency-free and silent on abstention. A real permission-flow smoke still requires an authenticated Claude Code host.
 
 ## Commit discipline
 

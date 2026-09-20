@@ -2,14 +2,16 @@
 
 # Jevvy
 
-[![npm version](https://img.shields.io/npm/v/%40jevvy%2Fpermissions)](https://www.npmjs.com/package/@jevvy/permissions)
-[![npm downloads](https://img.shields.io/npm/dm/%40jevvy%2Fpermissions)](https://www.npmjs.com/package/@jevvy/permissions)
-
 **Auto-approve harmless shell commands without handling every permission prompt yourself**
 
-Jevvy adds probabilistic review to your agent harness, clearing routine commands while preserving human review for anything uncertain.
+Use Jevvy to clear routine commands while uncertain requests continue through your agent's normal permission flow.
 
-![Demo showing git status asks without Jevvy, runs automatically with Jevvy, and rm -rf still asks](./assets/jevvy-demo.gif)
+<p align="center">
+  <a href="https://www.npmjs.com/package/@jevvy/permissions"><img alt="npm version" src="https://img.shields.io/npm/v/%40jevvy%2Fpermissions?style=flat&labelColor=000000&color=000000" /></a>
+  <a href="https://github.com/PanAchy/jevvy/blob/main/LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/PanAchy/jevvy?style=flat&labelColor=000000&color=000000" /></a>
+</p>
+
+![Demo showing git status asks without Jevvy, runs automatically with Jevvy, and rm -rf still asks](https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-demo.gif)
 
 </div>
 
@@ -19,17 +21,28 @@ Jevvy adds probabilistic review to your agent harness, clearing routine commands
 npx @jevvy/permissions init
 ```
 
+The initializer asks for a provider API key, stores it in the mode-`0600` global configuration, and lets you install Jevvy for OpenCode, Claude Code, or both.
+
 ## Manual setup
 
-Install the OpenCode plugin:
+### OpenCode
 
 ```bash
 opencode plugin add @jevvy/permissions
 ```
 
-Create `~/.config/jevvy/jevvy.jsonc` and select your provider.
+### Claude Code
 
-For example, to use OpenCode Zen with an OpenCode login:
+Claude Code 2.1.268 or newer and Node.js 24 or newer are required.
+
+```text
+/plugin marketplace add PanAchy/jevvy
+/plugin install jevvy-permissions@jevvy
+```
+
+### Provider setup
+
+Create `~/.config/jevvy/jevvy.jsonc` and select your provider:
 
 ```jsonc
 {
@@ -38,16 +51,37 @@ For example, to use OpenCode Zen with an OpenCode login:
 }
 ```
 
-Then authenticate the selected provider and start a session. For the OpenCode Zen example:
+## Quickstart
+
+### OpenCode
+
+Set an API key for the selected provider, then start OpenCode. For the OpenCode Zen configuration above:
 
 ```bash
-opencode auth login opencode
+read -rsp "OpenCode Zen API key: " OPENCODE_API_KEY
+echo
+export OPENCODE_API_KEY
 opencode
+```
+
+### Claude Code
+
+Set an API key for the selected provider, then start Claude Code. For the OpenCode Zen configuration above:
+
+```bash
+read -rsp "OpenCode Zen API key: " OPENCODE_API_KEY
+echo
+export OPENCODE_API_KEY
+claude
 ```
 
 ## How it works
 
-OpenCode applies its built-in permission rules and any rules you add. Jevvy only participates when those rules would ask you about a shell command.
+Jevvy reviews a shell command only when the host is ready to ask permission. It approves only the current action when every safety check passes. Otherwise it does nothing, so the host continues as it would without Jevvy.
+
+### OpenCode
+
+OpenCode evaluates its built-in and configured permission rules first. Existing allow and deny decisions stay final. Jevvy reviews only shell commands that OpenCode would otherwise ask you about.
 
 ```mermaid
 flowchart TD
@@ -59,6 +93,28 @@ flowchart TD
     review -->|Anything else| prompt[Ask you what to do]
 ```
 
+### Claude Code
+
+Claude Code evaluates its permission rules and automatic checks before sending unresolved Bash approval requests to Jevvy. Existing allow and deny decisions stay final. A Jevvy approval applies only to the current command and never creates a rule. Claude Code still enforces explicit ask rules and protected-action checks. If Jevvy does nothing, Claude Code shows its normal prompt or uses its normal non-interactive denial.
+
+```mermaid
+flowchart TD
+    rules[Claude Code permission rules and automatic checks]
+    rules -->|Allow| run[Run the command]
+    rules -->|Deny| block[Block the command]
+    rules -->|Approval request| review[Jevvy reviews]
+    review -->|Every check passes| recheck[Claude Code rechecks required prompts]
+    recheck -->|No prompt required| run
+    recheck -->|Prompt required| prompt[Ask you what to do]
+    review -->|Anything else| normal[Claude Code continues normally]
+    normal -->|Interactive| prompt
+    normal -->|Non-interactive| block
+```
+
+When a session starts, Jevvy warns you if its global configuration is invalid or no provider credential is available. The warning disables only Jevvy auto-approval and does not change Claude Code's permission decisions.
+
+`--bare` skips hooks. Cloud sessions use plugins declared by the repository or organization rather than plugins installed only on your local machine.
+
 ## Configuration
 
 Jevvy reads one global file at `~/.config/jevvy/jevvy.jsonc`. Project repositories cannot override it. JSONC comments and trailing commas are supported. Keep `$schema` for editor validation and autocomplete.
@@ -67,11 +123,6 @@ Jevvy reads one global file at `~/.config/jevvy/jevvy.jsonc`. Project repositori
 {
   "$schema": "https://raw.githubusercontent.com/PanAchy/jevvy/main/config.schema.json",
   "provider": "typesafe",
-  "providers": {
-    "typesafe": {
-      "apiKey": "your-typesafe-api-key",
-    },
-  },
 }
 ```
 
@@ -79,7 +130,7 @@ Jevvy reads one global file at `~/.config/jevvy/jevvy.jsonc`. Project repositori
 
 | Provider          | `provider`   | Credential sources                                            |
 | ----------------- | ------------ | ------------------------------------------------------------- |
-| OpenCode Zen      | `zen`        | OpenCode login, `providers.zen.apiKey`, or `OPENCODE_API_KEY` |
+| OpenCode Zen      | `zen`        | `providers.zen.apiKey` or `OPENCODE_API_KEY`                  |
 | TypeSafe AI       | `typesafe`   | `providers.typesafe.apiKey` or `TYPESAFE_API_KEY`             |
 | OpenRouter        | `openrouter` | `providers.openrouter.apiKey` or `OPENROUTER_API_KEY`         |
 | Vercel AI Gateway | `vercel`     | `providers.vercel.apiKey` or `AI_GATEWAY_API_KEY`             |
@@ -108,6 +159,8 @@ Select `custom` to use any HTTP endpoint that accepts the System One request sha
 `providers.custom.apiKey` is optional. When present, Jevvy sends it as a Bearer token. This supports authenticated hosted routes and unauthenticated local servers. A local model can use the same interface when its server exposes a compatible endpoint.
 
 Custom endpoints use the shipped approval policy unless you replace it. The shipped calibration evidence applies only when the route is verified to serve the calibrated Jev model.
+
+Every harness uses credentials from the global Jevvy configuration or the selected provider's environment variable.
 
 ### Approval policy
 

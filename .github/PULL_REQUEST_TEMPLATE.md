@@ -13,8 +13,8 @@
 
 ## Permission contract
 
-- [ ] Preserves host `allow` and `deny` decisions
-- [ ] Reviews only shell requests that would otherwise ask
+- [ ] Uses a host shell approval boundary rather than a general pre-tool event
+- [ ] Preserves host `allow` and `deny` decisions finalized before Jevvy
 - [ ] Requires every inquiry to allow every resource and the complete command
-- [ ] Leaves the native prompt unchanged on uncertainty or failure
+- [ ] Leaves the host's remaining permission flow unchanged on uncertainty or failure
 - [ ] Keeps credentials and policy outside repositories
