@@ -16,6 +16,10 @@ Let `jevvy init` install OpenCode, Claude Code, or both from one multi-select se
 
 Support Node.js 22.19 and newer for setup, provider review, and Claude Code hooks.
 
+## Fixes
+
+Correct the MIT license attribution in the repository and published package.
+
 ## Breaking changes
 
 Stop reading OpenCode login credentials for OpenCode Zen. Every harness now uses the selected provider's API key from the global Jevvy configuration or its native environment variable.

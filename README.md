@@ -2,13 +2,9 @@
 
 # Jevvy
 
-**Jev-powered plugins for coding agents**
+**Fast probabilistic judgments inside coding-agent workflows**
 
-Jevvy is a home for plugins that use [Jev](https://typesafe.ai), TypeSafe's System One model, to make fast probabilistic judgments inside coding-agent workflows.
-
-<p align="center">
-  <a href="https://github.com/PanAchy/jevvy/blob/main/LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/PanAchy/jevvy?style=flat&labelColor=000000&color=000000" /></a>
-</p>
+A plugin collection powered by TypeSafe's [System One model](https://typesafe.ai).
 
 </div>
 
@@ -19,7 +15,7 @@ Jevvy is a home for plugins that use [Jev](https://typesafe.ai), TypeSafe's Syst
   <a href="https://www.npmjs.com/package/@jevvy/permissions"><img alt="npm downloads" src="https://img.shields.io/npm/dm/%40jevvy%2Fpermissions?style=flat&labelColor=000000&color=000000" /></a>
 </p>
 
-Jevvy Permissions uses Jev to auto-approve harmless shell permission requests. Anything uncertain continues through your agent's normal permission flow.
+The permissions plugin auto-approves harmless shell permission requests. Anything uncertain continues through your agent's normal permission flow.
 
 ### OpenCode (v2)
 
