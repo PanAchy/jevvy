@@ -1,6 +1,6 @@
 # jevvy
 
-Jevvy is an allow-only reviewer for host-provided shell approval requests. `@jevvy/permissions` is the only public package. Jevvy never blocks. The user and host remain the only sources of denial.
+Jevvy is a home for Jev-powered coding-agent plugins. `@jevvy/permissions` is currently the only public package. It is an allow-only reviewer for host-provided shell approval requests. It never blocks. The user and host remain the only sources of denial.
 
 ## Architecture
 

@@ -1,5 +1,5 @@
 {
-  "description": "Jevvy setup diagnostics and allow-only review for Claude Code shell approval requests",
+  "description": "Jev-powered setup diagnostics and allow-only review for Claude Code shell approval requests",
   "hooks": {
     "SessionStart": [
       {

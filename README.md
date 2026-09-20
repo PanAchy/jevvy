@@ -2,9 +2,9 @@
 
 # Jevvy
 
-**Auto-approve harmless shell commands without handling every permission prompt yourself**
+**Jev-powered plugins for coding agents**
 
-Use Jevvy to clear routine commands while uncertain requests continue through your agent's normal permission flow.
+Jevvy is a home for plugins that use [Jev](https://typesafe.ai), TypeSafe's System One model, to make fast probabilistic judgments inside coding-agent workflows.
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@jevvy/permissions"><img alt="npm version" src="https://img.shields.io/npm/v/%40jevvy%2Fpermissions?style=flat&labelColor=000000&color=000000" /></a>
@@ -14,6 +14,10 @@ Use Jevvy to clear routine commands while uncertain requests continue through yo
 ![Demo showing git status asks without Jevvy, runs automatically with Jevvy, and rm -rf still asks](https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-demo.gif)
 
 </div>
+
+## Current plugin: `@jevvy/permissions`
+
+Jevvy Permissions uses Jev to auto-approve harmless shell permission requests. Anything uncertain continues through your agent's normal permission flow.
 
 ## Assisted setup
 

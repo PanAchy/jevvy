@@ -1,12 +1,12 @@
 {
   "name": "jevvy-permissions",
   "displayName": "Jevvy Permissions",
-  "description": "Allow-only review for shell approval requests",
+  "description": "Jev-powered auto-approval for harmless shell permission requests",
   "author": {
     "name": "Jevvy"
   },
   "homepage": "https://github.com/PanAchy/jevvy",
   "repository": "https://github.com/PanAchy/jevvy",
   "license": "MIT",
-  "keywords": ["permissions", "shell", "jev"]
+  "keywords": ["permissions", "shell", "jev", "system-one"]
 }

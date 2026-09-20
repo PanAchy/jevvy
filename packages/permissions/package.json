@@ -1,7 +1,7 @@
 {
   "name": "@jevvy/permissions",
   "version": "0.3.0",
-  "description": "Auto-approve shell permission requests that Jevvy judges harmless",
+  "description": "Jev-powered auto-approval for harmless shell permission requests",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/PanAchy/jevvy#readme",
@@ -19,7 +19,8 @@
     "plugin",
     "permissions",
     "agent",
-    "jev"
+    "jev",
+    "system-one"
   ],
   "publishConfig": {
     "access": "public"
