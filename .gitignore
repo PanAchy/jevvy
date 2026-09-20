@@ -1,0 +1,12 @@
+node_modules/
+.agents/
+.opencode/
+.env
+dist/
+*.tsbuildinfo
+*.log
+
+# local-only: agent and OpenCode workflows, research, design, decisions; never tracked
+docs/
+CONTEXT.md
+ROADMAP.md

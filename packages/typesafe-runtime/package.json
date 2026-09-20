@@ -1,0 +1,13 @@
+{
+  "name": "@jevvy/typesafe-runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@effect/ai-typesafe": "4.0.0-rc.116",
+    "effect": "4.0.0-rc.116"
+  }
+}

@@ -1,0 +1,58 @@
+name: Bug report
+description: Report incorrect permission behavior or another reproducible problem
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: Do not include API keys, credentials, private command contents, or other secrets.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What happened, and what impact did it have?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide the smallest safe reproduction, including the complete host-emitted shell resource when relevant.
+      placeholder: |
+        1. Configure ...
+        2. Request ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: Include the expected OpenCode decision and whether Jevvy should allow or preserve the prompt.
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Include Jevvy, OpenCode, Node.js, operating system, and architecture versions.
+      placeholder: "@jevvy/permissions 0.1.0, OpenCode 2.0.8, Node 24, Linux x64"
+    validations:
+      required: true
+
+  - type: textarea
+    id: configuration
+    attributes:
+      label: Sanitized configuration
+      description: Include relevant global Jevvy and OpenCode settings with all credentials removed.
+
+  - type: textarea
+    id: checks
+    attributes:
+      label: Verification
+      description: List the exact checks you ran and any checks you could not run.

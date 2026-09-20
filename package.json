@@ -1,0 +1,41 @@
+{
+  "name": "jevvy-monorepo",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "npm@11.19.1",
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build:permissions",
+    "build:core": "npm run build --workspace=@jevvy/core",
+    "build:permissions": "npm run build --workspace=@jevvy/permissions",
+    "calibrate": "npm run build && node eval/calibrate.mjs",
+    "changeset": "changeset",
+    "changeset:status": "changeset status",
+    "changeset:version": "changeset version",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "lint": "oxlint",
+    "pretest": "npm run build:core",
+    "pretypecheck": "npm run build:core",
+    "smoke:package": "node scripts/package-smoke.mjs",
+    "smoke:opencode": "node scripts/opencode-smoke.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/permissions/tsconfig.json"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "1.0.1",
+    "@changesets/cli": "^3.0.3",
+    "@oxlint/plugins": "1.83.0",
+    "@types/node": "^22.20.3",
+    "dotenv": "^17.4.2",
+    "esbuild": "^0.25.10",
+    "oxlint": "1.83.0",
+    "typescript": "^7.0.2",
+    "vitest": "^3.2.7"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  NPM_VERSION: 11.19.1
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm install --global npm@${{ env.NPM_VERSION }}
+      - run: npm ci
+      - run: npm run check
+
+  package-smoke:
+    name: Package smoke (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x64
+            runner: ubuntu-24.04
+            platform: linux
+            architecture: x64
+          - name: Linux arm64
+            runner: ubuntu-24.04-arm
+            platform: linux
+            architecture: arm64
+          - name: Windows x64
+            runner: windows-2025
+            platform: win32
+            architecture: x64
+          - name: Windows arm64
+            runner: windows-11-arm
+            platform: win32
+            architecture: arm64
+          - name: macOS x64
+            runner: macos-15-intel
+            platform: darwin
+            architecture: x64
+          - name: macOS arm64
+            runner: macos-15
+            platform: darwin
+            architecture: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm install --global npm@${{ env.NPM_VERSION }}
+      - run: npm ci
+      - run: npm run smoke:package
+        env:
+          JEVVY_EXPECT_PLATFORM: ${{ matrix.platform }}
+          JEVVY_EXPECT_ARCH: ${{ matrix.architecture }}
+
+  opencode-smoke:
+    name: OpenCode host smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm install --global npm@${{ env.NPM_VERSION }}
+      - run: npm ci
+      - run: npm run smoke:opencode

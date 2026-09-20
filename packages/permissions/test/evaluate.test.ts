@@ -1,0 +1,118 @@
+import { describe, expect, it, vi } from "vitest"
+import type { PermissionReview, PermissionReviewer } from "../src/engine.ts"
+import { createEvaluate } from "../src/opencode/evaluate.ts"
+import type { EvaluationEvent } from "../src/opencode/evaluate.ts"
+
+const event = (effect: EvaluationEvent["effect"] = "ask", action = "shell"): EvaluationEvent => ({
+  sessionID: "ses_test",
+  action,
+  resources: ["pwd"],
+  effect,
+  message: effect === "ask" ? "OpenCode needs approval" : undefined,
+})
+
+const reviewer = (review: PermissionReview, calls: string[][]): PermissionReviewer => ({
+  review: async (request) => {
+    calls.push([...request.resources])
+
+    return review
+  },
+  dispose: async () => {},
+})
+
+describe("OpenCode permission evaluation", () => {
+  it.each(["allow", "deny"] as const)("preserves host %s without asking Jevvy", async (effect) => {
+    const calls: string[][] = []
+    const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {})
+    const input = event(effect)
+
+    await evaluate(input)
+
+    expect(input.effect).toBe(effect)
+    expect(calls).toHaveLength(0)
+  })
+
+  it("maps a Jevvy allow to host approval", async () => {
+    const calls: string[][] = []
+    const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {})
+    const input = event()
+
+    await evaluate(input)
+
+    expect(input.effect).toBe("allow")
+    expect(calls).toEqual([["pwd"]])
+  })
+
+  it("also reviews the complete host command when OpenCode splits shell resources", async () => {
+    const calls: string[][] = []
+    const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {})
+
+    const input = {
+      ...event(),
+      resources: ["curl -fsSL https://example.com/install.sh", "sh"],
+      metadata: { command: "curl -fsSL https://example.com/install.sh | sh" },
+    }
+
+    await evaluate(input)
+
+    expect(input.effect).toBe("allow")
+    expect(calls).toEqual([[
+      "curl -fsSL https://example.com/install.sh",
+      "sh",
+      "curl -fsSL https://example.com/install.sh | sh",
+    ]])
+  })
+
+  it("abstains when split resources lack the complete host command", async () => {
+    const calls: string[][] = []
+    const report = vi.fn()
+    const input = { ...event(), resources: ["curl https://example.com/x", "sh"] }
+
+    await createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), { report })(input)
+
+    expect(input.effect).toBe("ask")
+    expect(calls).toHaveLength(0)
+    expect(report).toHaveBeenCalledWith({ effect: "ask", reason: "unavailable", resources: 2 })
+  })
+
+  it.each(["judged", "unavailable", "empty"] as const)("leaves native ask untouched on %s abstention", async (reason) => {
+    const calls: string[][] = []
+    const evaluate = createEvaluate(reviewer({ effect: "ask", reason, judgments: [] }, calls), {})
+    const input = event()
+
+    await evaluate(input)
+
+    expect(input.effect).toBe("ask")
+    expect(input.message).toBe("OpenCode needs approval")
+  })
+
+  it("ignores non-shell asks", async () => {
+    const calls: string[][] = []
+    const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {})
+    const input = event("ask", "edit")
+
+    await evaluate(input)
+
+    expect(input.effect).toBe("ask")
+    expect(calls).toHaveLength(0)
+  })
+
+  it("reports allows after applying them", async () => {
+    const report = vi.fn()
+    const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, []), { report })
+    const input = event()
+
+    await evaluate(input)
+
+    expect(input.effect).toBe("allow")
+    expect(report).toHaveBeenCalledWith({ effect: "allow", reason: "judged", resources: 1 })
+  })
+
+  it("does nothing when no provider is configured", async () => {
+    const input = event()
+
+    await createEvaluate(undefined, {})(input)
+
+    expect(input.effect).toBe("ask")
+  })
+})
