@@ -71,7 +71,8 @@ With `provider` set to `auto`, Jevvy uses the first available credential:
 |        4 | Global JSON field `providers.typesafe.apiKey` | TypeSafe |
 |        5 | `TYPESAFE_API_KEY`                            | TypeSafe |
 
-To review a command, Jevvy sends its text to Zen or TypeSafe.
+> [!TIP]
+> Join the [TypeSafe AI waitlist](https://typesafe.ai/) for $5 in credit.
 
 ### Approval policy
 
