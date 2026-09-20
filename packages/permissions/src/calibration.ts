@@ -1,4 +1,4 @@
-import type { Json, NoulAnswer } from "./core.ts"
+import type { JevProvider, Json, NoulAnswer } from "./core.ts"
 import type { ApprovalQuestions } from "./questions.ts"
 import { Schema } from "effect"
 
@@ -31,7 +31,7 @@ export interface CalibrationPlanEntry extends CalibrationCommand {
 }
 
 export interface CalibrationMeta {
-  readonly provider: "typesafe" | "zen"
+  readonly provider: JevProvider
   readonly requestedModel: string
   readonly questions: ApprovalQuestions
   readonly questionHash: string

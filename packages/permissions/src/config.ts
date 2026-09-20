@@ -2,12 +2,11 @@ import { chmod, readFile, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { Config, ConfigProvider, Effect, Option, Schema } from "effect"
-import type { Redacted } from "effect"
 import { parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
 import { ApprovalQuestions } from "./questions.ts"
-
-const ProviderPreferenceSchema = Schema.Literals(["auto", "zen", "typesafe"])
+import { ProviderPreference } from "./providers.ts"
+import type { ProviderApiKeys } from "./providers.ts"
 
 const ProviderCredentialSchema = Schema.Struct({
   apiKey: Schema.NonEmptyString,
@@ -15,7 +14,7 @@ const ProviderCredentialSchema = Schema.Struct({
 
 const JevvyConfigSchema = Schema.Struct({
   $schema: Schema.optionalKey(Schema.String),
-  provider: Schema.optionalKey(ProviderPreferenceSchema),
+  provider: Schema.optionalKey(ProviderPreference),
   providers: Schema.optionalKey(Schema.Struct({
     zen: Schema.optionalKey(ProviderCredentialSchema),
     typesafe: Schema.optionalKey(ProviderCredentialSchema),
@@ -27,12 +26,9 @@ const JevvyConfigSchema = Schema.Struct({
 
 interface ConfigDocument extends Schema.Schema.Type<typeof JevvyConfigSchema> {}
 
-export interface ProviderApiKeys {
-  readonly zen?: Redacted.Redacted<string>
-  readonly typesafe?: Redacted.Redacted<string>
-}
+export { ProviderPreference }
 
-export type ProviderPreference = Schema.Schema.Type<typeof ProviderPreferenceSchema>
+export type { ProviderApiKeys }
 
 export type JevvyConfig =
   | { readonly kind: "default"; readonly provider: ProviderPreference; readonly apiKeys: ProviderApiKeys }
@@ -57,7 +53,7 @@ const fileApiKey = (provider: "zen" | "typesafe") =>
   )
 
 const RuntimeConfig = Config.all({
-  provider: Config.schema(ProviderPreferenceSchema, "provider"),
+  provider: Config.schema(ProviderPreference, "provider"),
   zen: Config.option(fileApiKey("zen").pipe(
     Config.orElse(() => Config.redacted("OPENCODE_API_KEY")),
   )),

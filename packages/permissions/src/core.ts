@@ -6,6 +6,7 @@ export {
   isJevProviderError,
   JevRequest,
   JevResult,
+  JevProvider,
   JevProviderError,
   JevProviderFailure,
   Json,
@@ -16,6 +17,5 @@ export {
 
 export type {
   JevClient,
-  JevProvider,
   JevProviderErrorKind,
 } from "@jevvy/core"
