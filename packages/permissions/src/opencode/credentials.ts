@@ -10,10 +10,15 @@ import type { BuiltInProvider, ProviderSelection, SelectedProvider } from "../pr
 
 export const OPENCODE_INTEGRATION = "opencode"
 
-export const missingCredentialMessage = (provider: BuiltInProvider, configPath: string): string => {
-  const openCodeLogin = provider === "zen" ? 'run "opencode auth login opencode", ' : ""
+export const missingConfigurationMessage = (configPath: string): string =>
+  `Jevvy cannot start because no provider is configured. Run "npx @jevvy/permissions init", or create ${configPath} manually. OpenCode's remaining permission flow remains unchanged.`
 
-  return `${providerDisplayName(provider)} has no credential. ${openCodeLogin}set ${providerApiKeyEnvironment(provider)}, add providers.${provider}.apiKey to ${configPath}, or run "npx @jevvy/permissions init". OpenCode's remaining permission flow remains unchanged.`
+export const missingCredentialMessage = (provider: BuiltInProvider, configPath: string): string => {
+  const credentialSources = provider === "zen"
+    ? `Run "opencode auth login opencode", set ${providerApiKeyEnvironment(provider)}`
+    : `Set ${providerApiKeyEnvironment(provider)}`
+
+  return `${providerDisplayName(provider)} has no credential. ${credentialSources}, add providers.${provider}.apiKey to ${configPath}, or run "npx @jevvy/permissions init". OpenCode's remaining permission flow remains unchanged.`
 }
 
 export type StoredCredential =

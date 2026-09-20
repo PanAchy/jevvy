@@ -8,6 +8,7 @@ import { createPermissionReviewer } from "../engine.ts"
 import { createEvaluate } from "./evaluate.ts"
 import {
   credentialToken,
+  missingConfigurationMessage,
   missingCredentialMessage,
   OPENCODE_INTEGRATION,
   selectOpenCodeProvider,
@@ -42,9 +43,7 @@ export default Plugin.define({
     }
 
     if (permissionConfig.kind === "unconfigured") {
-      return yield* Effect.die(new Error(
-        `Jevvy cannot start because no provider is configured. Run "npx @jevvy/permissions init" to create ${configPath}. OpenCode's remaining permission flow remains unchanged.`,
-      ))
+      return yield* Effect.die(new Error(missingConfigurationMessage(configPath)))
     }
 
     const ports = {
