@@ -56,6 +56,10 @@ The repository pins the exact Effect version bundled by `@opencode/plugin`. Core
 
 Nothing is released yet, so work lands as direct local commits until v0. From the first release onward, `main` gets changes only through PRs with green CI. Use `feat/x`, `fix/x`, and `chore/x` branches. Squash-merge one clean commit per PR. Every user-visible change gets a changeset. Release tags are package-qualified, such as `@jevvy/permissions@0.1.0`. Never force-push `main`.
 
+## Release notes
+
+Write public changelog entries and GitHub release notes for users rather than around Changesets bump types. Use only relevant headings such as `New harnesses`, `New providers`, `Permission behavior`, `Configuration`, `Reliability`, `Fixes`, and `Breaking changes`; omit empty sections. Keep `major`, `minor`, and `patch` in changeset metadata rather than public section headings. Preserve generated PR, commit, and contributor attribution links when reshaping a release entry.
+
 ## Plugin dev loop
 
 Run `npm run smoke:opencode` to verify the packed plugin activates in a credential-free OpenCode host. Local dogfood configuration stays untracked. Confirm `jevvy.permissions` is `active` through OpenCode's plugin status endpoint before treating any live session behavior as evidence.
