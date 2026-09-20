@@ -40,8 +40,6 @@ const authorization = `Basic ${Buffer.from(`opencode:${serverPassword}`).toStrin
 
 writeFileSync(join(project, "opencode.jsonc"), `${JSON.stringify({ plugins: ["@jevvy/permissions"] }, null, 2)}\n`)
 
-writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({ provider: "typesafe" }, null, 2)}\n`, { mode: 0o600 })
-
 const environment = {
   ...process.env,
   HOME: home,
@@ -58,81 +56,93 @@ const environment = {
 
 const executable = join(root, "node_modules", ".bin", "opencode")
 
-const server = spawn(executable, ["serve", "--hostname", "127.0.0.1", "--port", "4096"], {
-  cwd: project,
-  env: environment,
-  stdio: ["ignore", "pipe", "pipe"],
-})
-
-const diagnostics = []
-
-server.stdout.on("data", (chunk) => diagnostics.push(String(chunk)))
-
-server.stderr.on("data", (chunk) => diagnostics.push(String(chunk)))
-
-const waitForServer = async () => {
-  for (let attempt = 0; attempt < 120; attempt++) {
-    try {
-      const response = await fetch("http://127.0.0.1:4096/api/info", {
-        headers: { authorization },
-      })
-
-      if (response.ok) return
-    } catch {
-      // The foreground server is still starting.
-    }
-
-    await new Promise((resolveWait) => setTimeout(resolveWait, 250))
-  }
-
-  throw new Error(`OpenCode did not start\n${diagnostics.join("").slice(-4000)}`)
-}
-
-try {
-  await waitForServer()
-
-  const session = await fetch("http://127.0.0.1:4096/api/session", {
-    method: "POST",
-    headers: { authorization, "content-type": "application/json" },
-    body: JSON.stringify({ location: { directory: project } }),
+const inspectPlugin = async (port, expectedStatus, expectedError) => {
+  const server = spawn(executable, ["serve", "--hostname", "127.0.0.1", "--port", String(port)], {
+    cwd: project,
+    env: environment,
+    stdio: ["ignore", "pipe", "pipe"],
   })
 
-  if (!session.ok) throw new Error(`session creation failed: ${session.status} ${await session.text()}`)
+  const diagnostics = []
 
-  const url = new URL("http://127.0.0.1:4096/api/plugin")
+  server.stdout.on("data", (chunk) => diagnostics.push(String(chunk)))
+  server.stderr.on("data", (chunk) => diagnostics.push(String(chunk)))
 
-  url.searchParams.set("location[directory]", project)
+  try {
+    const baseUrl = `http://127.0.0.1:${port}`
 
-  let lastBody
+    for (let attempt = 0; attempt < 120; attempt++) {
+      try {
+        const response = await fetch(`${baseUrl}/api/info`, { headers: { authorization } })
 
-  let active = false
+        if (response.ok) break
+      } catch {
+        // The foreground server is still starting.
+      }
 
-  for (let attempt = 0; attempt < 120; attempt++) {
-    const response = await fetch(url, { headers: { authorization } })
+      if (attempt === 119) throw new Error(`OpenCode did not start\n${diagnostics.join("").slice(-4000)}`)
 
-    if (!response.ok) throw new Error(`plugin status failed: ${response.status} ${await response.text()}`)
-
-    lastBody = await response.json()
-
-    const plugin = lastBody.data?.find((entry) => entry.id === "jevvy.permissions")
-
-    if (plugin?.state?.status === "active") {
-      console.log("OpenCode host smoke passed: jevvy.permissions active without credentials")
-
-      active = true
-      break
+      await new Promise((resolveWait) => setTimeout(resolveWait, 250))
     }
 
-    if (plugin?.state?.status === "failed") {
-      throw new Error(`Jevvy plugin failed: ${JSON.stringify(plugin)}\n${diagnostics.join("").slice(-4000)}`)
+    const session = await fetch(`${baseUrl}/api/session`, {
+      method: "POST",
+      headers: { authorization, "content-type": "application/json" },
+      body: JSON.stringify({ location: { directory: project } }),
+    })
+
+    if (!session.ok) throw new Error(`session creation failed: ${session.status} ${await session.text()}`)
+
+    const url = new URL(`${baseUrl}/api/plugin`)
+
+    url.searchParams.set("location[directory]", project)
+
+    let lastPlugin
+
+    for (let attempt = 0; attempt < 120; attempt++) {
+      const response = await fetch(url, { headers: { authorization } })
+
+      if (!response.ok) throw new Error(`plugin status failed: ${response.status} ${await response.text()}`)
+
+      const body = await response.json()
+
+      lastPlugin = body.data?.find((entry) => entry.id === "jevvy.permissions")
+
+      if (lastPlugin?.state?.status === expectedStatus) {
+        if (expectedError !== undefined && !lastPlugin.state.error?.includes(expectedError)) {
+          throw new Error(`Jevvy plugin error was not actionable: ${JSON.stringify(lastPlugin)}`)
+        }
+
+        return
+      }
+
+      if (lastPlugin?.state?.status === "failed") {
+        throw new Error(`Jevvy plugin failed unexpectedly: ${JSON.stringify(lastPlugin)}`)
+      }
+
+      await new Promise((resolveWait) => setTimeout(resolveWait, 250))
     }
 
-    await new Promise((resolveWait) => setTimeout(resolveWait, 250))
-  }
+    throw new Error(`Jevvy plugin did not reach ${expectedStatus}: ${JSON.stringify(lastPlugin)}\n${diagnostics.join("").slice(-4000)}`)
+  } finally {
+    server.kill("SIGTERM")
 
-  if (!active) {
-    throw new Error(`Jevvy plugin did not activate: ${JSON.stringify(lastBody)}\n${diagnostics.join("").slice(-4000)}`)
+    if (server.exitCode === null) await new Promise((resolveExit) => server.once("exit", resolveExit))
   }
-} finally {
-  server.kill("SIGTERM")
 }
+
+await inspectPlugin(4096, "failed", "npx @jevvy/permissions init")
+
+writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
+  provider: "custom",
+  providers: {
+    custom: {
+      endpoint: "http://127.0.0.1:9/v1/decisions",
+      model: "smoke-model",
+    },
+  },
+}, null, 2)}\n`, { mode: 0o600 })
+
+await inspectPlugin(4097, "active")
+
+console.log("OpenCode host smoke passed: setup failures are actionable and configured no-key endpoints activate")

@@ -1,25 +1,33 @@
 import { chmod, readFile, stat } from "node:fs/promises"
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { Config, ConfigProvider, Effect, Option, Schema } from "effect"
+import { Config, ConfigProvider, Effect, Option, Redacted, Schema } from "effect"
 import { parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
+import { JevProvider } from "./core.ts"
 import { ApprovalQuestions } from "./questions.ts"
-import { ProviderPreference } from "./providers.ts"
-import type { ProviderApiKeys } from "./providers.ts"
+import { providerApiKeyEnvironment } from "./providers.ts"
+import type { BuiltInProvider, ProviderSelection } from "./providers.ts"
 
 const ProviderCredentialSchema = Schema.Struct({
   apiKey: Schema.NonEmptyString,
 })
 
+const CustomProviderSchema = Schema.Struct({
+  endpoint: Schema.URLFromString,
+  model: Schema.NonEmptyString,
+  apiKey: Schema.optionalKey(Schema.NonEmptyString),
+})
+
 const JevvyConfigSchema = Schema.Struct({
   $schema: Schema.optionalKey(Schema.String),
-  provider: Schema.optionalKey(ProviderPreference),
+  provider: JevProvider,
   providers: Schema.optionalKey(Schema.Struct({
     zen: Schema.optionalKey(ProviderCredentialSchema),
     typesafe: Schema.optionalKey(ProviderCredentialSchema),
     openrouter: Schema.optionalKey(ProviderCredentialSchema),
     vercel: Schema.optionalKey(ProviderCredentialSchema),
+    custom: Schema.optionalKey(CustomProviderSchema),
   })),
   permissions: Schema.optionalKey(Schema.Struct({
     questions: Schema.optionalKey(ApprovalQuestions),
@@ -28,16 +36,12 @@ const JevvyConfigSchema = Schema.Struct({
 
 interface ConfigDocument extends Schema.Schema.Type<typeof JevvyConfigSchema> {}
 
-export { ProviderPreference }
-
-export type { ProviderApiKeys }
-
 export type JevvyConfig =
-  | { readonly kind: "default"; readonly provider: ProviderPreference; readonly apiKeys: ProviderApiKeys }
+  | { readonly kind: "unconfigured" }
+  | { readonly kind: "shipped-policy"; readonly selection: ProviderSelection }
   | {
-      readonly kind: "custom"
-      readonly provider: ProviderPreference
-      readonly apiKeys: ProviderApiKeys
+      readonly kind: "custom-policy"
+      readonly selection: ProviderSelection
       readonly questions: ApprovalQuestions
     }
   | { readonly kind: "invalid"; readonly message: string }
@@ -48,34 +52,21 @@ class ConfigFileError extends Schema.TaggedError<ConfigFileError>()("ConfigFileE
   reason: Schema.Literals(["read", "schema", "permissions"]),
 }) {}
 
-const fileApiKey = (provider: "zen" | "typesafe" | "openrouter" | "vercel") =>
-  Config.redacted("apiKey").pipe(
-    Config.nested(provider),
-    Config.nested("providers"),
-  )
-
-const RuntimeConfig = Config.all({
-  provider: Config.schema(ProviderPreference, "provider"),
-  zen: Config.option(fileApiKey("zen").pipe(
-    Config.orElse(() => Config.redacted("OPENCODE_API_KEY")),
-  )),
-  typesafe: Config.option(fileApiKey("typesafe").pipe(
-    Config.orElse(() => Config.redacted("TYPESAFE_API_KEY")),
-  )),
-  openrouter: Config.option(fileApiKey("openrouter").pipe(
-    Config.orElse(() => Config.redacted("OPENROUTER_API_KEY")),
-  )),
-  vercel: Config.option(fileApiKey("vercel").pipe(
-    Config.orElse(() => Config.redacted("AI_GATEWAY_API_KEY")),
-  )),
-  questions: Config.option(Config.schema(ApprovalQuestions, ["permissions", "questions"])),
+const EnvironmentApiKeys = Config.all({
+  zen: Config.option(Config.redacted(providerApiKeyEnvironment("zen"))),
+  typesafe: Config.option(Config.redacted(providerApiKeyEnvironment("typesafe"))),
+  openrouter: Config.option(Config.redacted(providerApiKeyEnvironment("openrouter"))),
+  vercel: Config.option(Config.redacted(providerApiKeyEnvironment("vercel"))),
 })
+
+type EnvironmentApiKeys = Config.Success<typeof EnvironmentApiKeys>
 
 const hasCredentials = (document: ConfigDocument): boolean =>
   document.providers?.zen !== undefined ||
   document.providers?.typesafe !== undefined ||
   document.providers?.openrouter !== undefined ||
-  document.providers?.vercel !== undefined
+  document.providers?.vercel !== undefined ||
+  document.providers?.custom?.apiKey !== undefined
 
 const readDocument = Effect.fn("JevvyConfig.readDocument")(function*(path: string) {
   const raw = yield* Effect.tryPromise({
@@ -134,32 +125,59 @@ export const globalJevvyConfigPath = (): string => {
   return join(root, "jevvy", "jevvy.jsonc")
 }
 
+const environmentApiKey = (
+  provider: BuiltInProvider,
+  keys: EnvironmentApiKeys,
+): Redacted.Redacted<string> | undefined => Option.getOrUndefined(keys[provider])
+
+const providerSelection = (
+  document: ConfigDocument,
+  environment: EnvironmentApiKeys,
+): Effect.Effect<ProviderSelection, ConfigFileError> => {
+  if (document.provider === "custom") {
+    const custom = document.providers?.custom
+
+    if (custom === undefined || (custom.endpoint.protocol !== "http:" && custom.endpoint.protocol !== "https:")) {
+      return new ConfigFileError({ reason: "schema" })
+    }
+
+    const apiKey = custom.apiKey === undefined ? undefined : Redacted.make(custom.apiKey)
+
+    return Effect.succeed({
+      provider: "custom",
+      endpoint: custom.endpoint.href,
+      model: custom.model,
+      apiKey,
+    })
+  }
+
+  const fileApiKey = document.providers?.[document.provider]?.apiKey
+
+  const apiKey = fileApiKey === undefined
+    ? environmentApiKey(document.provider, environment)
+    : Redacted.make(fileApiKey)
+
+  return Effect.succeed({ provider: document.provider, apiKey })
+}
+
 const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: ConfigProvider.ConfigProvider) {
   const document = yield* readDocument(path).pipe(
-    Effect.catchTag("ConfigMissing", () => Effect.succeed({} satisfies ConfigDocument)),
+    Effect.map(Option.some),
+    Effect.catchTag("ConfigMissing", () => Effect.succeed(Option.none<ConfigDocument>())),
   )
 
-  const provider = ConfigProvider.fromUnknown({ provider: "auto", ...document }).pipe(
-    ConfigProvider.orElse(environment),
-  )
+  if (Option.isNone(document)) return { kind: "unconfigured" as const }
 
-  const config = yield* RuntimeConfig.parse(provider).pipe(
+  const environmentKeys = yield* EnvironmentApiKeys.parse(environment).pipe(
     Effect.mapError(() => new ConfigFileError({ reason: "schema" })),
   )
 
-  let apiKeys: ProviderApiKeys = {}
+  const selection = yield* providerSelection(document.value, environmentKeys)
+  const questions = document.value.permissions?.questions
 
-  if (Option.isSome(config.zen)) apiKeys = { zen: config.zen.value }
+  if (questions === undefined) return { kind: "shipped-policy" as const, selection }
 
-  if (Option.isSome(config.typesafe)) apiKeys = { ...apiKeys, typesafe: config.typesafe.value }
-
-  if (Option.isSome(config.openrouter)) apiKeys = { ...apiKeys, openrouter: config.openrouter.value }
-
-  if (Option.isSome(config.vercel)) apiKeys = { ...apiKeys, vercel: config.vercel.value }
-
-  if (Option.isNone(config.questions)) return { kind: "default" as const, provider: config.provider, apiKeys }
-
-  return { kind: "custom" as const, provider: config.provider, apiKeys, questions: config.questions.value }
+  return { kind: "custom-policy" as const, selection, questions }
 }, Effect.catchTag("ConfigFileError", (error) =>
   Effect.succeed({ kind: "invalid" as const, message: invalidMessage(error.reason) })))
 

@@ -4,14 +4,14 @@
   "title": "Jevvy configuration",
   "type": "object",
   "additionalProperties": false,
+  "required": ["provider"],
   "properties": {
     "$schema": {
       "type": "string"
     },
     "provider": {
       "type": "string",
-      "enum": ["auto", "zen", "typesafe", "openrouter", "vercel"],
-      "default": "auto"
+      "enum": ["zen", "typesafe", "openrouter", "vercel", "custom"]
     },
     "providers": {
       "type": "object",
@@ -28,6 +28,9 @@
         },
         "vercel": {
           "$ref": "#/$defs/providerCredential"
+        },
+        "custom": {
+          "$ref": "#/$defs/customSystemOneProvider"
         }
       }
     },
@@ -48,12 +51,52 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "provider": {
+            "const": "custom"
+          }
+        },
+        "required": ["provider"]
+      },
+      "then": {
+        "required": ["providers"],
+        "properties": {
+          "providers": {
+            "required": ["custom"]
+          }
+        }
+      }
+    }
+  ],
   "$defs": {
     "providerCredential": {
       "type": "object",
       "additionalProperties": false,
       "required": ["apiKey"],
       "properties": {
+        "apiKey": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "customSystemOneProvider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "model"],
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
         "apiKey": {
           "type": "string",
           "minLength": 1

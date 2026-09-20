@@ -1,4 +1,5 @@
 import {
+  createCustomSystemOneClient,
   createOpenRouterClient,
   createTypeSafeClient,
   createVercelClient,
@@ -12,46 +13,61 @@ import {
 import type { JevClient, JevProvider as JevProviderType } from "./core.ts"
 import { Redacted, Schema } from "effect"
 
-export const ProviderPreference = Schema.Literals(["auto", ...JevProvider.literals])
+export const BuiltInProvider = Schema.Literals(["zen", "typesafe", "openrouter", "vercel"])
 
-export type ProviderPreference = Schema.Schema.Type<typeof ProviderPreference>
+export type BuiltInProvider = Schema.Schema.Type<typeof BuiltInProvider>
 
-export type ProviderApiKeys = {
-  readonly [Provider in JevProviderType]?: Redacted.Redacted<string>
-}
+export type ProviderSelection =
+  | {
+      readonly provider: BuiltInProvider
+      readonly apiKey?: Redacted.Redacted<string>
+    }
+  | {
+      readonly provider: "custom"
+      readonly endpoint: string
+      readonly model: string
+      readonly apiKey?: Redacted.Redacted<string>
+    }
 
 interface ProviderDefinition {
-  readonly automaticPriority: number
+  readonly displayName: string
+  readonly apiKeyEnvironment: string
   readonly model: string
   readonly createClient: (apiKey: string) => JevClient
 }
 
 const providerDefinitions = {
   zen: {
-    automaticPriority: 0,
+    displayName: "OpenCode Zen",
+    apiKeyEnvironment: "OPENCODE_API_KEY",
     model: DEFAULT_ZEN_MODEL,
     createClient: createZenClient,
   },
   typesafe: {
-    automaticPriority: 1,
+    displayName: "TypeSafe AI",
+    apiKeyEnvironment: "TYPESAFE_API_KEY",
     model: DEFAULT_TYPESAFE_MODEL,
     createClient: createTypeSafeClient,
   },
   openrouter: {
-    automaticPriority: 2,
+    displayName: "OpenRouter",
+    apiKeyEnvironment: "OPENROUTER_API_KEY",
     model: DEFAULT_OPENROUTER_MODEL,
     createClient: createOpenRouterClient,
   },
   vercel: {
-    automaticPriority: 3,
+    displayName: "Vercel AI Gateway",
+    apiKeyEnvironment: "AI_GATEWAY_API_KEY",
     model: DEFAULT_VERCEL_MODEL,
     createClient: createVercelClient,
   },
-} satisfies Readonly<Record<JevProviderType, ProviderDefinition>>
+} satisfies Readonly<Record<BuiltInProvider, ProviderDefinition>>
 
-const automaticProviders = [...JevProvider.literals].sort(
-  (left, right) => providerDefinitions[left].automaticPriority - providerDefinitions[right].automaticPriority,
-)
+export const providerDisplayName = (provider: JevProviderType): string =>
+  provider === "custom" ? "Custom endpoint" : providerDefinitions[provider].displayName
+
+export const providerApiKeyEnvironment = (provider: BuiltInProvider): string =>
+  providerDefinitions[provider].apiKeyEnvironment
 
 export interface SelectedProvider {
   readonly provider: JevProviderType
@@ -60,30 +76,45 @@ export interface SelectedProvider {
   readonly redact: (text: string) => string
 }
 
-export const createProvider = (
-  provider: JevProviderType,
+const redactWith = (apiKey: string | undefined) =>
+  (text: string): string => apiKey === undefined || apiKey.length === 0
+    ? text
+    : text.replaceAll(apiKey, "[redacted]")
+
+export const createBuiltInProvider = (
+  provider: BuiltInProvider,
   apiKey: string,
   client: JevClient = providerDefinitions[provider].createClient(apiKey),
 ): SelectedProvider => ({
   provider,
   model: providerDefinitions[provider].model,
   client,
-  redact: (text) => apiKey.length === 0 ? text : text.replaceAll(apiKey, "[redacted]"),
+  redact: redactWith(apiKey),
 })
 
-export const selectConfiguredProvider = (
-  preference: ProviderPreference,
-  apiKeys: ProviderApiKeys,
+export const createConfiguredProvider = (
+  selection: ProviderSelection,
 ): SelectedProvider | undefined => {
-  const candidates: readonly JevProviderType[] = preference === "auto"
-    ? automaticProviders
-    : [preference]
+  const apiKey = selection.apiKey === undefined
+    ? undefined
+    : Redacted.value(selection.apiKey)
 
-  for (const provider of candidates) {
-    const apiKey = apiKeys[provider]
-
-    if (apiKey !== undefined) return createProvider(provider, Redacted.value(apiKey))
+  if (selection.provider === "custom") {
+    return {
+      provider: "custom",
+      model: selection.model,
+      client: createCustomSystemOneClient({
+        endpoint: selection.endpoint,
+        model: selection.model,
+        apiKey,
+      }),
+      redact: redactWith(apiKey),
+    }
   }
 
-  return undefined
+  return apiKey === undefined
+    ? undefined
+    : createBuiltInProvider(selection.provider, apiKey)
 }
+
+export { JevProvider }

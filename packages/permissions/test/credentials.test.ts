@@ -1,6 +1,7 @@
 import { Effect, Redacted } from "effect"
 import { describe, expect, it } from "@effect/vitest"
 import {
+  missingCredentialMessage,
   OPENCODE_INTEGRATION,
   selectOpenCodeProvider,
 } from "../src/opencode/credentials.ts"
@@ -28,15 +29,31 @@ const ports = (options: {
 })
 
 describe("OpenCode credential resolution", () => {
-  it.effect("uses the OpenCode OAuth login before runtime configuration", () => Effect.gen(function*() {
+  it.each([
+    ["zen", "OpenCode Zen", "opencode auth login opencode", "OPENCODE_API_KEY", "providers.zen.apiKey"],
+    ["typesafe", "TypeSafe AI", undefined, "TYPESAFE_API_KEY", "providers.typesafe.apiKey"],
+    ["openrouter", "OpenRouter", undefined, "OPENROUTER_API_KEY", "providers.openrouter.apiKey"],
+    ["vercel", "Vercel AI Gateway", undefined, "AI_GATEWAY_API_KEY", "providers.vercel.apiKey"],
+  ] as const)("explains how to configure missing %s credentials", (provider, label, login, environment, config) => {
+    const message = missingCredentialMessage(provider, "/home/user/.config/jevvy/jevvy.jsonc")
+
+    expect(message).toContain(label)
+    expect(message).toContain(environment)
+    expect(message).toContain(config)
+    expect(message).toContain("npx @jevvy/permissions init")
+    expect(message).toContain("OpenCode's remaining permission flow remains unchanged")
+
+    if (login === undefined) expect(message).not.toContain("opencode auth login")
+    else expect(message).toContain(login)
+  })
+
+  it.effect("uses the OpenCode OAuth login for an explicitly selected Zen provider", () => Effect.gen(function*() {
     const connection = { id: "opencode", kind: "credential" as const }
 
     const selected = yield* selectOpenCodeProvider(ports({
       active: { [OPENCODE_INTEGRATION]: connection },
       stored: { opencode: { type: "oauth", access: "browser-token" } },
-    }), "auto", describeConnection, {
-      typesafe: Redacted.make("configured-key"),
-    }, openCodeClient)
+    }), { provider: "zen" }, describeConnection, openCodeClient)
 
     expect(selected).toMatchObject({ provider: "zen" })
     expect(selected?.redact("browser-token")).toBe("[redacted]")
@@ -48,7 +65,7 @@ describe("OpenCode credential resolution", () => {
     const selected = yield* selectOpenCodeProvider(ports({
       active: { [OPENCODE_INTEGRATION]: connection },
       stored: { opencode: { type: "key", key: "opencode-api-key" } },
-    }), "auto", describeConnection, {}, openCodeClient)
+    }), { provider: "zen" }, describeConnection, openCodeClient)
 
     expect(selected).toMatchObject({ provider: "zen" })
   }))
@@ -59,43 +76,41 @@ describe("OpenCode credential resolution", () => {
     const selected = yield* selectOpenCodeProvider(ports({
       active: { [OPENCODE_INTEGRATION]: connection },
       env: { OPENCODE_API_KEY: "environment-key" },
-    }), "auto", describeConnection, {}, openCodeClient)
+    }), { provider: "zen" }, describeConnection, openCodeClient)
 
     expect(selected).toMatchObject({ provider: "zen" })
   }))
 
-  it.effect("uses a configured provider when OpenCode auth is unavailable", () => Effect.gen(function*() {
+  it.effect("uses the configured Zen key when OpenCode auth is unavailable", () => Effect.gen(function*() {
     const selected = yield* selectOpenCodeProvider(
       ports(),
-      "auto",
+      { provider: "zen", apiKey: Redacted.make("zen-key") },
       describeConnection,
-      { typesafe: Redacted.make("typesafe-key") },
       openCodeClient,
     )
 
-    expect(selected).toMatchObject({ provider: "typesafe" })
+    expect(selected).toMatchObject({ provider: "zen" })
   }))
 
-  it.effect("honors a forced configured provider", () => Effect.gen(function*() {
+  it.effect("does not inspect OpenCode auth for another selected provider", () => Effect.gen(function*() {
     const connection = { id: "opencode", kind: "credential" as const }
 
     const selected = yield* selectOpenCodeProvider(ports({
       active: { [OPENCODE_INTEGRATION]: connection },
       stored: { opencode: { type: "oauth", access: "browser-token" } },
-    }), "typesafe", describeConnection, {
-      zen: Redacted.make("zen-key"),
-      typesafe: Redacted.make("typesafe-key"),
-    }, openCodeClient)
+    }), {
+      provider: "typesafe",
+      apiKey: Redacted.make("typesafe-key"),
+    }, describeConnection, openCodeClient)
 
     expect(selected).toMatchObject({ provider: "typesafe" })
   }))
 
-  it.effect("reports unavailable when no credential exists", () => Effect.gen(function*() {
+  it.effect("reports unavailable when the selected provider has no credential", () => Effect.gen(function*() {
     expect(yield* selectOpenCodeProvider(
       ports(),
-      "auto",
+      { provider: "zen" },
       describeConnection,
-      {},
       openCodeClient,
     )).toBeUndefined()
   }))

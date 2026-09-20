@@ -1,61 +1,72 @@
 import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Redacted } from "effect"
-import { describe, expect, it } from "vitest"
 import { loadJevvyConfig } from "../src/config.ts"
 
-const customConfig = {
-  $schema: "https://raw.githubusercontent.com/PanAchy/jevvy/main/config.schema.json",
-  permissions: {
-    questions: {
-      harmless: {
-        type: "noul",
-        instructions: "How likely is this action harmless?",
-        criteria: { false: "Harmful", true: "Harmless" },
-        threshold: { direction: "atLeast", value: 0.99 },
-      },
-    },
+const customQuestions = {
+  harmless: {
+    type: "noul" as const,
+    instructions: "How likely is this action harmless?",
+    criteria: { false: "Harmful", true: "Harmless" },
+    threshold: { direction: "atLeast" as const, value: 0.99 },
   },
+}
+
+const customPolicyConfig = {
+  $schema: "https://raw.githubusercontent.com/PanAchy/jevvy/main/config.schema.json",
+  provider: "typesafe",
+  permissions: { questions: customQuestions },
 }
 
 const noEnvironment = ConfigProvider.fromUnknown({})
 
-const load = (path: string, environment = noEnvironment) =>
-  Effect.runPromise(loadJevvyConfig(path, environment))
+const load = (path: string, environment = noEnvironment) => loadJevvyConfig(path, environment)
 
-const withConfigFile = async <A>(raw: string, use: (path: string) => Promise<A>, mode?: number): Promise<A> => {
-  const directory = await mkdtemp(join(tmpdir(), "jevvy-config-"))
-  const path = `${directory}/jevvy.jsonc`
+const withConfigFile = <A, E, R>(
+  raw: string,
+  use: (path: string) => Effect.Effect<A, E, R>,
+  mode?: number,
+): Effect.Effect<A, E, R> => Effect.acquireUseRelease(
+  Effect.promise(async () => {
+    const directory = await mkdtemp(join(tmpdir(), "jevvy-config-"))
+    const path = join(directory, "jevvy.jsonc")
 
-  try {
     await writeFile(path, raw)
 
     if (mode !== undefined) await chmod(path, mode)
 
-    return await use(path)
-  } finally {
-    await rm(directory, { recursive: true })
-  }
-}
+    return { directory, path }
+  }),
+  ({ path }) => use(path),
+  ({ directory }) => Effect.promise(() => rm(directory, { recursive: true })),
+)
 
 describe("Jevvy configuration", () => {
-  it("loads a complete custom question set", async () => {
-    await expect(withConfigFile(JSON.stringify(customConfig), load)).resolves.toEqual({
-      kind: "custom",
-      provider: "auto",
-      apiKeys: {},
-      questions: customConfig.permissions.questions,
-    })
-  })
+  it.effect("loads a complete custom question set", () => Effect.gen(function*() {
+    const config = yield* withConfigFile(JSON.stringify(customPolicyConfig), load)
 
-  it.each([
+    expect(config).toEqual({
+      kind: "custom-policy",
+      selection: { provider: "typesafe", apiKey: undefined },
+      questions: customQuestions,
+    })
+  }))
+
+  it.effect.each([
     "not json",
-    JSON.stringify({ permissions: { questions: {} } }),
+    JSON.stringify({}),
+    JSON.stringify({ provider: "auto" }),
     JSON.stringify({ provider: "other" }),
-    JSON.stringify({ ...customConfig, unknown: true }),
-    JSON.stringify({ permissions: { questions: { "": customConfig.permissions.questions.harmless } } }),
+    JSON.stringify({ ...customPolicyConfig, unknown: true }),
+    JSON.stringify({ provider: "typesafe", permissions: { questions: {} } }),
     JSON.stringify({
+      provider: "typesafe",
+      permissions: { questions: { "": customQuestions.harmless } },
+    }),
+    JSON.stringify({
+      provider: "typesafe",
       permissions: {
         questions: {
           harmful: {
@@ -66,132 +77,132 @@ describe("Jevvy configuration", () => {
         },
       },
     }),
-  ])("rejects invalid explicit configuration", async (raw) => {
-    await expect(withConfigFile(raw, load)).resolves.toMatchObject({ kind: "invalid" })
-  })
+    JSON.stringify({
+      provider: "custom",
+      providers: { custom: { endpoint: "file:///tmp/laya", model: "laya" } },
+      permissions: { questions: customQuestions },
+    }),
+  ])("rejects invalid explicit configuration", (raw) => Effect.gen(function*() {
+    expect(yield* withConfigFile(raw, load)).toMatchObject({ kind: "invalid" })
+  }))
 
-  it("uses calibrated defaults when the global file is absent", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "jevvy-config-"))
+  it.effect("stays unconfigured when the global file is absent", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => mkdtemp(join(tmpdir(), "jevvy-config-"))),
+      (directory) => Effect.gen(function*() {
+        expect(yield* load(join(directory, "missing.json"))).toEqual({ kind: "unconfigured" })
+      }),
+      (directory) => Effect.promise(() => rm(directory, { recursive: true })),
+    ))
 
-    try {
-      await expect(load(`${directory}/missing.json`)).resolves.toEqual({
-        kind: "default",
-        provider: "auto",
-        apiKeys: {},
-      })
-    } finally {
-      await rm(directory, { recursive: true })
-    }
-  })
-
-  it("loads redacted provider keys from the global file before native environment keys", async () => {
-    const environment = ConfigProvider.fromEnvRecord({
-      OPENCODE_API_KEY: "environment-zen-key",
-      TYPESAFE_API_KEY: "environment-typesafe-key",
-      OPENROUTER_API_KEY: "environment-openrouter-key",
-      AI_GATEWAY_API_KEY: "environment-vercel-key",
-    })
+  it.effect("loads the explicitly selected provider and prefers its global key", () => Effect.gen(function*() {
+    const environment = ConfigProvider.fromUnknown({ TYPESAFE_API_KEY: "environment-key" })
 
     const raw = JSON.stringify({
-      providers: {
-        zen: { apiKey: "file-zen-key" },
-        typesafe: { apiKey: "file-typesafe-key" },
-        openrouter: { apiKey: "file-openrouter-key" },
-        vercel: { apiKey: "file-vercel-key" },
-      },
+      provider: "typesafe",
+      providers: { typesafe: { apiKey: "file-key" } },
     })
 
-    const config = await withConfigFile(raw, (path) => load(path, environment), 0o600)
+    const config = yield* withConfigFile(raw, (path) => load(path, environment), 0o600)
 
-    expect(config.kind).toBe("default")
+    expect(config.kind).toBe("shipped-policy")
 
-    if (config.kind !== "default") return
+    if (config.kind !== "shipped-policy") return
 
-    const zen = config.apiKeys.zen
-    const typesafe = config.apiKeys.typesafe
-    const openrouter = config.apiKeys.openrouter
-    const vercel = config.apiKeys.vercel
+    expect(config.selection.provider).toBe("typesafe")
+    expect(config.selection.apiKey).toBeDefined()
 
-    if (zen === undefined || typesafe === undefined || openrouter === undefined || vercel === undefined) {
-      throw new Error("expected all provider keys")
-    }
+    if (config.selection.apiKey === undefined) return
 
-    expect(Redacted.value(zen)).toBe("file-zen-key")
-    expect(Redacted.value(typesafe)).toBe("file-typesafe-key")
-    expect(Redacted.value(openrouter)).toBe("file-openrouter-key")
-    expect(Redacted.value(vercel)).toBe("file-vercel-key")
-  })
+    expect(Redacted.value(config.selection.apiKey)).toBe("file-key")
+  }))
 
-  it("loads the provider preference from the global file", async () => {
-    const raw = JSON.stringify({ provider: "vercel" })
+  it.effect("uses the selected provider's native environment key when the global file has none", () =>
+    Effect.gen(function*() {
+      const environment = ConfigProvider.fromUnknown({ OPENROUTER_API_KEY: "environment-key" })
+      const raw = JSON.stringify({ provider: "openrouter" })
+      const config = yield* withConfigFile(raw, (path) => load(path, environment))
 
-    await expect(withConfigFile(raw, load)).resolves.toEqual({
-      kind: "default",
-      provider: "vercel",
-      apiKeys: {},
-    })
-  })
+      expect(config.kind).toBe("shipped-policy")
 
-  it("accepts comments and trailing commas", async () => {
+      if (config.kind !== "shipped-policy") return
+
+      expect(config.selection.provider).toBe("openrouter")
+      expect(config.selection.apiKey).toBeDefined()
+
+      if (config.selection.apiKey === undefined) return
+
+      expect(Redacted.value(config.selection.apiKey)).toBe("environment-key")
+    }))
+
+  it.effect("loads an unauthenticated custom System One endpoint with custom questions", () =>
+    Effect.gen(function*() {
+      const raw = JSON.stringify({
+        provider: "custom",
+        providers: {
+          custom: {
+            endpoint: "http://127.0.0.1:8080/v1/decisions",
+            model: "laya-typed-decisions",
+          },
+        },
+        permissions: { questions: customQuestions },
+      })
+
+      expect(yield* withConfigFile(raw, load)).toEqual({
+        kind: "custom-policy",
+        selection: {
+          provider: "custom",
+          endpoint: "http://127.0.0.1:8080/v1/decisions",
+          model: "laya-typed-decisions",
+          apiKey: undefined,
+        },
+        questions: customQuestions,
+      })
+    }))
+
+  it.effect("uses shipped questions when a custom provider does not configure questions", () =>
+    Effect.gen(function*() {
+      const raw = JSON.stringify({
+        provider: "custom",
+        providers: {
+          custom: { endpoint: "https://api.aimlapi.com/v1/decisions", model: "typesafe/jev" },
+        },
+      })
+
+      expect(yield* withConfigFile(raw, load)).toEqual({
+        kind: "shipped-policy",
+        selection: {
+          provider: "custom",
+          endpoint: "https://api.aimlapi.com/v1/decisions",
+          model: "typesafe/jev",
+          apiKey: undefined,
+        },
+      })
+    }))
+
+  it.effect("accepts comments and trailing commas", () => Effect.gen(function*() {
     const raw = `{
-      // Keep TypeSafe available for policy calibration.
+      // Select one provider explicitly.
       "provider": "typesafe",
     }`
 
-    await expect(withConfigFile(raw, load)).resolves.toEqual({
-      kind: "default",
-      provider: "typesafe",
-      apiKeys: {},
+    expect(yield* withConfigFile(raw, load)).toEqual({
+      kind: "shipped-policy",
+      selection: { provider: "typesafe", apiKey: undefined },
     })
+  }))
+
+  it.effect.each([0o644, 0o400])("secures a credential file with mode %s", (mode) => {
+    if (process.platform === "win32") return Effect.void
+
+    const raw = JSON.stringify({ provider: "zen", providers: { zen: { apiKey: "file-key" } } })
+
+    return withConfigFile(raw, (path) => Effect.gen(function*() {
+      const config = yield* load(path)
+      const info = yield* Effect.promise(() => stat(path))
+
+      expect(config.kind).toBe("shipped-policy")
+      expect(info.mode & 0o777).toBe(0o600)
+    }), mode)
   })
-
-  it("uses provider-native environment keys when the global file has none", async () => {
-    const environment = ConfigProvider.fromEnvRecord({
-      OPENCODE_API_KEY: "environment-zen-key",
-      TYPESAFE_API_KEY: "environment-typesafe-key",
-      OPENROUTER_API_KEY: "environment-openrouter-key",
-      AI_GATEWAY_API_KEY: "environment-vercel-key",
-    })
-
-    const directory = await mkdtemp(join(tmpdir(), "jevvy-config-"))
-
-    try {
-      const config = await load(`${directory}/missing.json`, environment)
-
-      expect(config.kind).toBe("default")
-
-      if (config.kind !== "default") return
-
-      const zen = config.apiKeys.zen
-      const typesafe = config.apiKeys.typesafe
-      const openrouter = config.apiKeys.openrouter
-      const vercel = config.apiKeys.vercel
-
-      if (zen === undefined || typesafe === undefined || openrouter === undefined || vercel === undefined) {
-        throw new Error("expected all provider keys")
-      }
-
-      expect(Redacted.value(zen)).toBe("environment-zen-key")
-      expect(Redacted.value(typesafe)).toBe("environment-typesafe-key")
-      expect(Redacted.value(openrouter)).toBe("environment-openrouter-key")
-      expect(Redacted.value(vercel)).toBe("environment-vercel-key")
-    } finally {
-      await rm(directory, { recursive: true })
-    }
-  })
-
-  it.runIf(process.platform !== "win32").each([0o644, 0o400])(
-    "secures a credential file with mode %s",
-    async (mode) => {
-      const raw = JSON.stringify({ providers: { zen: { apiKey: "file-key" } } })
-
-      await withConfigFile(raw, async (path) => {
-        const config = await load(path)
-        const info = await stat(path)
-
-        expect(config.kind).toBe("default")
-        expect(info.mode & 0o777).toBe(0o600)
-      }, mode)
-    },
-  )
 })

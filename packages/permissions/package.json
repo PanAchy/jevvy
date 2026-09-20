@@ -30,6 +30,8 @@
     }
   },
   "bin": {
+    "jevvy": "bin/jevvy.mjs",
+    "permissions": "bin/jevvy.mjs",
     "jevvy-calibrate": "bin/jevvy-calibrate.mjs"
   },
   "files": [
@@ -45,6 +47,7 @@
     "postpack": "node ../../scripts/package-readme.mjs clean"
   },
   "dependencies": {
+    "@clack/prompts": "^1.8.1",
     "@effect/platform-node": "4.0.0-rc.112",
     "@effect/platform-node-shared": "4.0.0-rc.112",
     "@opencode/client": "2.0.8",

@@ -13,15 +13,31 @@ Jevvy adds probabilistic review to your agent harness, clearing routine commands
 
 </div>
 
-## Install
+## Assisted setup
+```bash
+npx @jevvy/permissions init
+```
+
+The initializer lets you select agent harnesses and a System One provider, stores credentials in the mode-`0600` global configuration, and installs the harness integration. OpenCode is the first available harness.
+
+## Manual setup
+
+Install the OpenCode plugin:
 
 ```bash
 opencode plugin add @jevvy/permissions
 ```
 
-## Quickstart
+Create `~/.config/jevvy/jevvy.jsonc` and select your provider. For example, to use OpenCode Zen with an OpenCode login:
 
-Sign in for the default Zen provider, then start a session:
+```jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/PanAchy/jevvy/main/config.schema.json",
+  "provider": "zen"
+}
+```
+
+Then authenticate the selected provider and start a session. For the OpenCode Zen example:
 
 ```bash
 opencode auth login opencode
@@ -44,7 +60,7 @@ flowchart TD
 
 ## Configuration
 
-Jevvy reads one optional global file at `~/.config/jevvy/jevvy.jsonc`. Project repositories cannot override it. JSONC comments and trailing commas are supported. Keep `$schema` for editor validation and autocomplete.
+Jevvy reads one global file at `~/.config/jevvy/jevvy.jsonc`. Project repositories cannot override it. JSONC comments and trailing commas are supported. Keep `$schema` for editor validation and autocomplete. Without an explicitly selected provider or its required credential, OpenCode marks Jevvy as failed and its remaining permission flow continues unchanged. Run `/plugins` and open the Jevvy entry to see the setup error.
 
 ```jsonc
 {
@@ -60,35 +76,59 @@ Jevvy reads one optional global file at `~/.config/jevvy/jevvy.jsonc`. Project r
 
 ### Provider
 
-| Setting                       | Default | Options                                           | Purpose                           |
-| ----------------------------- | ------- | ------------------------------------------------- | --------------------------------- |
-| `provider`                    | `auto`  | `auto`, `zen`, `typesafe`, `openrouter`, `vercel` | Select a provider                 |
-| `providers.zen.apiKey`        | none    | OpenCode API key                                  | Use Zen without an OpenCode login |
-| `providers.typesafe.apiKey`   | none    | TypeSafe API key                                  | Use TypeSafe AI                   |
-| `providers.openrouter.apiKey` | none    | OpenRouter API key                                | Use OpenRouter                    |
-| `providers.vercel.apiKey`     | none    | Vercel AI Gateway key                             | Use Vercel AI Gateway             |
+| Setting                       | Required | Purpose                                      |
+| ----------------------------- | -------- | -------------------------------------------- |
+| `provider`                    | yes      | Select `zen`, `typesafe`, `openrouter`, `vercel`, or `custom` |
+| `providers.zen.apiKey`        | no       | Use OpenCode Zen without an OpenCode login   |
+| `providers.typesafe.apiKey`   | no       | Use TypeSafe AI                              |
+| `providers.openrouter.apiKey` | no       | Use OpenRouter                               |
+| `providers.vercel.apiKey`     | no       | Use Vercel AI Gateway                        |
 
-With `provider` set to `auto`, Jevvy uses the first available credential:
+Jevvy uses only the selected provider and never falls back to another one. For OpenCode Zen, the OpenCode adapter can use an active OpenCode OAuth or API-key login instead of `providers.zen.apiKey`. The built-in providers also read their native environment variables: `OPENCODE_API_KEY`, `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, and `AI_GATEWAY_API_KEY`.
 
-| Priority | Credential source                               | Provider   |
-| -------: | ----------------------------------------------- | ---------- |
-|        1 | OpenCode login                                  | Zen        |
-|        2 | Global JSON field `providers.zen.apiKey`        | Zen        |
-|        3 | `OPENCODE_API_KEY`                              | Zen        |
-|        4 | Global JSON field `providers.typesafe.apiKey`   | TypeSafe   |
-|        5 | `TYPESAFE_API_KEY`                              | TypeSafe   |
-|        6 | Global JSON field `providers.openrouter.apiKey` | OpenRouter |
-|        7 | `OPENROUTER_API_KEY`                            | OpenRouter |
-|        8 | Global JSON field `providers.vercel.apiKey`     | Vercel     |
-|        9 | `AI_GATEWAY_API_KEY`                            | Vercel     |
+### Custom System One endpoint
+
+Select `custom` to use any HTTP endpoint that accepts the System One request shape and returns typed System One answers:
+
+```jsonc
+{
+  "$schema": "https://raw.githubusercontent.com/PanAchy/jevvy/main/config.schema.json",
+  "provider": "custom",
+  "providers": {
+    "custom": {
+      "endpoint": "https://system-one.example.com/v1/decisions",
+      "model": "your-model",
+      "apiKey": "your-api-key"
+    }
+  },
+  "permissions": {
+    "questions": {
+      "harmful": {
+        "type": "noul",
+        "instructions": "Could this command cause meaningful harm that deserves human review?",
+        "criteria": {
+          "false": "Routine or harmless",
+          "true": "Potentially harmful"
+        },
+        "threshold": {
+          "direction": "atMost",
+          "value": 0.35
+        }
+      }
+    }
+  }
+}
+```
+
+`providers.custom.apiKey` is optional. When present, Jevvy sends it as a Bearer token. This supports authenticated hosted routes and unauthenticated local servers. A local model can use the same interface when its server exposes a compatible endpoint.
+
+The `permissions.questions` block above illustrates an optional replacement policy. Custom endpoints use the complete shipped question set when it is omitted. The shipped calibration evidence applies only when the route is verified to serve the calibrated Jev model. Other models can use the same question shape, but they do not inherit that evidence.
 
 ### Approval policy
 
-| Setting                 | Default                | Options      | Purpose                              |
-| ----------------------- | ---------------------- | ------------ | ------------------------------------ |
-| `permissions.questions` | four shipped questions | Question map | Replace the complete approval policy |
+Set `permissions.questions` to a non-empty question map to replace the complete approval policy.
 
-Without `permissions.questions`, Jevvy requires all four shipped questions to pass:
+For built-in providers, omitting `permissions.questions` requires all four shipped questions to pass:
 
 | Question  | What it checks                                                                            | Pass condition |
 | --------- | ----------------------------------------------------------------------------------------- | -------------: |

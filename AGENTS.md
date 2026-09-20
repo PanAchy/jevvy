@@ -11,18 +11,20 @@ packages/core/                 private provider-neutral judgment module
   src/openrouter               OpenRouter provider configuration
   src/typesafe                 TypeSafe provider configuration
   src/vercel                   Vercel AI Gateway provider configuration
-  src/zen                      Zen provider configuration and compatibility parser
+  src/zen                      OpenCode Zen provider configuration and compatibility parser
+  src/custom                   user-configured System One endpoint
 packages/permissions/          public `@jevvy/permissions` product
   src/config                   global provider credentials and permission policy
+  src/init                     setup planning, secure config writes, and harness installation
   src/questions                shipped inquiries and thresholds
   src/engine                   ask/allow policy, timeout, and process cache
   src/opencode/evaluate        OpenCode truth table without SDK wiring
-  src/opencode/credentials     Zen-first credential resolution
+  src/opencode/credentials     OpenCode Zen credential resolution
   src/opencode/index           OpenCode plugin adapter
 eval/                          explicit maintainer-only live calibration
 ```
 
-Providers and harnesses are independent dimensions inside the product. OpenRouter, TypeSafe, Vercel, and Zen belong to the private core module. OpenCode belongs to the permissions adapter. Future Claude Code and Codex adapters belong in `@jevvy/permissions`.
+Providers and harnesses are independent dimensions inside the product. OpenRouter, TypeSafe, Vercel, and OpenCode Zen belong to the private core module. OpenCode belongs to the permissions adapter. Future Claude Code and Codex adapters belong in `@jevvy/permissions`.
 
 ## Permission contract
 
@@ -62,7 +64,9 @@ Write public changelog entries and GitHub release notes for users rather than ar
 
 ## Plugin dev loop
 
-Run `npm run smoke:opencode` to verify the packed plugin activates in a credential-free OpenCode host. Local dogfood configuration stays untracked. Confirm `jevvy.permissions` is `active` through OpenCode's plugin status endpoint before treating any live session behavior as evidence.
+Run `npm run smoke:opencode` to verify the packed plugin reports an actionable setup failure without configuration and activates for a configured credential-free custom endpoint. Local dogfood configuration stays untracked. Confirm `jevvy.permissions` is `active` through OpenCode's plugin status endpoint before treating any live session behavior as evidence.
+
+Run `npm run smoke:package` and `npm run smoke:opencode` as background jobs because they can take several minutes. Do not overlap them with `npm run check` or other builds because the build scripts clean `dist`.
 
 ## Commit discipline
 

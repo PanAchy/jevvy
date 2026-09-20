@@ -2,6 +2,10 @@ export { JevRequest, JevResult, Json, NoulAnswer, NoulQuestion } from "./types.t
 
 export type { JevClient, JsonPrimitive } from "./types.ts"
 
+export { createCustomSystemOneClient } from "./custom.ts"
+
+export type { CustomSystemOneClientOptions } from "./custom.ts"
+
 export {
   createOpenRouterClient,
   DEFAULT_OPENROUTER_MODEL,

@@ -3,11 +3,12 @@ import type { JevClient } from "../core.ts"
 import { Credential, Plugin } from "@opencode/plugin/effect"
 import type { ConnectionInfo } from "@opencode/client"
 import { Effect } from "effect"
-import { loadJevvyConfig } from "../config.ts"
+import { globalJevvyConfigPath, loadJevvyConfig } from "../config.ts"
 import { createPermissionReviewer } from "../engine.ts"
 import { createEvaluate } from "./evaluate.ts"
 import {
   credentialToken,
+  missingCredentialMessage,
   OPENCODE_INTEGRATION,
   selectOpenCodeProvider,
 } from "./credentials.ts"
@@ -31,12 +32,19 @@ const storedCredentialFrom = (credential: Credential.Value | undefined): StoredC
 export default Plugin.define({
   id: "jevvy.permissions",
   effect: Effect.fn("JevvyPlugin.setup")(function*(ctx) {
-    const permissionConfig = yield* loadJevvyConfig()
+    const configPath = globalJevvyConfigPath()
+    const permissionConfig = yield* loadJevvyConfig(configPath)
 
     if (permissionConfig.kind === "invalid") {
-      yield* Effect.sync(() => {
-        console.warn("[jevvy] jevvy.jsonc failed validation, auto-approval is disabled", permissionConfig.message)
-      })
+      return yield* Effect.die(new Error(
+        `Jevvy cannot start because ${configPath} is invalid: ${permissionConfig.message}. Fix the file, or move it aside and run "npx @jevvy/permissions init". OpenCode's remaining permission flow remains unchanged.`,
+      ))
+    }
+
+    if (permissionConfig.kind === "unconfigured") {
+      return yield* Effect.die(new Error(
+        `Jevvy cannot start because no provider is configured. Run "npx @jevvy/permissions init" to create ${configPath}. OpenCode's remaining permission flow remains unchanged.`,
+      ))
     }
 
     const ports = {
@@ -48,58 +56,54 @@ export default Plugin.define({
       readEnv: (name: string) => process.env[name],
     }
 
-    const apiKeys = permissionConfig.kind === "invalid" ? {} : permissionConfig.apiKeys
-    const preference = permissionConfig.kind === "invalid" ? "auto" : permissionConfig.provider
+    const selected = yield* selectOpenCodeProvider(
+      ports,
+      permissionConfig.selection,
+      describeConnection,
+      (): JevClient => ({
+        evaluate: Effect.fn("JevvyPlugin.evaluateWithOpenCodeCredential")(function*(request) {
+          const connection = yield* ctx.integration.connection.active(OPENCODE_INTEGRATION)
 
-    const selected = permissionConfig.kind === "invalid"
-      ? undefined
-      : yield* selectOpenCodeProvider(
-        ports,
-        preference,
-        describeConnection,
-        apiKeys,
-        (): JevClient => ({
-          evaluate: Effect.fn("JevvyPlugin.evaluateWithOpenCodeCredential")(function*(request) {
-            const connection = yield* ctx.integration.connection.active(OPENCODE_INTEGRATION)
+          const stored = connection === undefined
+            ? undefined
+            : yield* ctx.integration.connection.resolve(connection).pipe(
+              Effect.map(storedCredentialFrom),
+              Effect.catch(() => Effect.succeed(undefined)),
+            )
 
-            const stored = connection === undefined
-              ? undefined
-              : yield* ctx.integration.connection.resolve(connection).pipe(
-                Effect.map(storedCredentialFrom),
-                Effect.catch(() => Effect.succeed(undefined)),
-              )
+          const token = credentialToken(stored)
 
-            const token = credentialToken(stored)
+          if (token === undefined) {
+            return yield* new JevProviderError({
+              provider: "zen",
+              kind: "authentication",
+              message: "OpenCode login is unavailable",
+            })
+          }
 
-            if (token === undefined) {
-              return yield* new JevProviderError({
-                provider: "zen",
-                kind: "authentication",
-                message: "OpenCode login is unavailable",
-              })
-            }
-
-            return yield* createZenClient(token).evaluate(request)
-          }),
+          return yield* createZenClient(token).evaluate(request)
         }),
-      )
+      }),
+    )
 
-    const questions = permissionConfig.kind === "custom" ? permissionConfig.questions : undefined
+    if (selected === undefined) {
+      const provider = permissionConfig.selection.provider
 
-    const reviewer = selected === undefined || permissionConfig.kind === "invalid"
-      ? undefined
-      : yield* createPermissionReviewer(selected.client, { questions }).pipe(Effect.orDie)
+      if (provider === "custom") {
+        return yield* Effect.die(new Error("Jevvy could not construct the configured custom provider"))
+      }
 
-    if (selected === undefined && permissionConfig.kind !== "invalid") {
-      yield* Effect.sync(() => {
-        console.warn("[jevvy] no provider credential, native permission prompts remain unchanged")
-      })
+      return yield* Effect.die(new Error(missingCredentialMessage(provider, configPath)))
     }
+
+    const questions = permissionConfig.kind === "custom-policy" ? permissionConfig.questions : undefined
+
+    const reviewer = yield* createPermissionReviewer(selected.client, { questions }).pipe(Effect.orDie)
 
     const evaluate = createEvaluate(reviewer, {
       report: (entry) => {
         if (entry.failure !== undefined) {
-          console.warn("[jevvy] provider failure, native permission prompt remains unchanged", entry)
+          console.warn("[jevvy] provider failure, OpenCode's remaining permission flow is unchanged", entry)
 
           return
         }
@@ -112,10 +116,14 @@ export default Plugin.define({
 
     yield* Effect.sync(() => {
       console.info("[jevvy] loaded", {
-        provider: selected?.provider ?? "unavailable",
-        model: selected?.model,
-        questions: permissionConfig.kind === "custom" ? "custom" : "calibrated-defaults",
-        autoApproval: reviewer === undefined ? "disabled" : "enabled",
+        provider: selected.provider,
+        model: selected.model,
+        questions: permissionConfig.kind === "custom-policy"
+          ? "custom"
+          : selected.provider === "custom"
+          ? "shipped-defaults-unverified"
+          : "calibrated-defaults",
+        autoApproval: "enabled",
       })
     })
   }),
