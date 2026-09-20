@@ -26,6 +26,7 @@ jobs:
 
   package-smoke:
     name: Package smoke (${{ matrix.name }})
+    if: github.head_ref == 'changeset-release/main'
     strategy:
       fail-fast: false
       matrix:
