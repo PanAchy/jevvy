@@ -1,15 +1,31 @@
-import type { NoulQuestion } from "./core.ts"
+import { Schema } from "effect"
+import { NoulAnswer, NoulQuestion } from "./core.ts"
 
-export interface ApprovalThreshold {
-  readonly direction: "atLeast" | "atMost"
-  readonly value: number
-}
+export const ApprovalThreshold = Schema.Struct({
+  direction: Schema.Literals(["atLeast", "atMost"]),
+  value: NoulAnswer.fields.noul,
+})
 
-export interface ApprovalQuestion extends NoulQuestion {
-  readonly threshold: ApprovalThreshold
-}
+export interface ApprovalThreshold extends Schema.Schema.Type<typeof ApprovalThreshold> {}
 
-export type ApprovalQuestions = Readonly<Record<string, ApprovalQuestion>>
+export const ApprovalQuestion = Schema.Struct({
+  ...NoulQuestion.fields,
+  instructions: Schema.NonEmptyString,
+  criteria: Schema.optionalKey(Schema.Struct({
+    false: Schema.NonEmptyString,
+    true: Schema.NonEmptyString,
+  })),
+  threshold: ApprovalThreshold,
+})
+
+export interface ApprovalQuestion extends Schema.Schema.Type<typeof ApprovalQuestion> {}
+
+export const ApprovalQuestions = Schema.Record(Schema.NonEmptyString, ApprovalQuestion).check(
+  Schema.isMinProperties(1),
+  Schema.isPropertyNames(Schema.NonEmptyString),
+)
+
+export type ApprovalQuestions = Schema.Schema.Type<typeof ApprovalQuestions>
 
 /**
  * The shipped inquiry set is calibrated as one unit with its thresholds and

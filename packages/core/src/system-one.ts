@@ -8,31 +8,12 @@ import {
 } from "effect/unstable/http"
 import { JevProviderError } from "./provider-error.ts"
 import type { JevProvider, JevProviderErrorKind } from "./provider-error.ts"
-import type { JevClient, JevRequest, JevResult, NoulQuestion } from "./types.ts"
-
-const NoulAnswer = Schema.Struct({
-  type: Schema.Literal("noul"),
-  noul: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
-})
-
-const NoulQuestion = Schema.Struct({
-  type: Schema.Literal("noul"),
-  instructions: Schema.String,
-  criteria: Schema.optional(Schema.Struct({
-    false: Schema.String,
-    true: Schema.String,
-  })),
-})
+import { JevRequest, JevResult } from "./types.ts"
+import type { JevClient, NoulQuestion } from "./types.ts"
 
 const SystemOneRequest = Schema.Struct({
   model: Schema.NonEmptyString,
-  state: Schema.Json,
-  questions: Schema.Record(Schema.String, NoulQuestion),
-})
-
-const SystemOneResponse = Schema.Struct({
-  model: Schema.NonEmptyString,
-  answers: Schema.Record(Schema.String, NoulAnswer),
+  ...JevRequest.fields,
 })
 
 const ProviderErrorDetails = Schema.Struct({
@@ -212,7 +193,7 @@ export const createSystemOneClient = (options: SystemOneClientOptions): JevClien
       })
     }
 
-    const result = yield* HttpClientResponse.schemaBodyJson(SystemOneResponse)(response).pipe(
+    const result = yield* HttpClientResponse.schemaBodyJson(JevResult)(response).pipe(
       Effect.mapError((cause) => new JevProviderError({
         provider: options.provider,
         kind: "invalid-response",
@@ -230,7 +211,7 @@ export const parseSystemOneResponse = (
   raw: SystemOneBodyInput,
   questions?: Readonly<Record<string, NoulQuestion>>,
 ): JevResult | undefined => {
-  const result = Option.getOrUndefined(Schema.decodeUnknownOption(SystemOneResponse)(raw))
+  const result = Option.getOrUndefined(Schema.decodeUnknownOption(JevResult)(raw))
 
   if (result === undefined) return undefined
 

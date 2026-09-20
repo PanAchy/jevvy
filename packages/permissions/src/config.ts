@@ -5,26 +5,7 @@ import { Config, ConfigProvider, Effect, Option, Schema } from "effect"
 import type { Redacted } from "effect"
 import { parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
-import type { ApprovalQuestions } from "./questions.ts"
-
-const Probability = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
-
-const CriteriaSchema = Schema.Struct({
-  false: Schema.NonEmptyString,
-  true: Schema.NonEmptyString,
-})
-
-const ApprovalQuestionSchema = Schema.Struct({
-  type: Schema.Literal("noul"),
-  instructions: Schema.NonEmptyString,
-  criteria: Schema.optional(CriteriaSchema),
-  threshold: Schema.Struct({
-    direction: Schema.Literals(["atLeast", "atMost"]),
-    value: Probability,
-  }),
-})
-
-const ApprovalQuestionsSchema = Schema.Record(Schema.NonEmptyString, ApprovalQuestionSchema)
+import { ApprovalQuestions } from "./questions.ts"
 
 const ProviderPreferenceSchema = Schema.Literals(["auto", "zen", "typesafe"])
 
@@ -33,14 +14,14 @@ const ProviderCredentialSchema = Schema.Struct({
 })
 
 const JevvyConfigSchema = Schema.Struct({
-  $schema: Schema.optional(Schema.String),
-  provider: Schema.optional(ProviderPreferenceSchema),
-  providers: Schema.optional(Schema.Struct({
-    zen: Schema.optional(ProviderCredentialSchema),
-    typesafe: Schema.optional(ProviderCredentialSchema),
+  $schema: Schema.optionalKey(Schema.String),
+  provider: Schema.optionalKey(ProviderPreferenceSchema),
+  providers: Schema.optionalKey(Schema.Struct({
+    zen: Schema.optionalKey(ProviderCredentialSchema),
+    typesafe: Schema.optionalKey(ProviderCredentialSchema),
   })),
-  permissions: Schema.optional(Schema.Struct({
-    questions: Schema.optional(ApprovalQuestionsSchema),
+  permissions: Schema.optionalKey(Schema.Struct({
+    questions: Schema.optionalKey(ApprovalQuestions),
   })),
 })
 
@@ -83,7 +64,7 @@ const RuntimeConfig = Config.all({
   typesafe: Config.option(fileApiKey("typesafe").pipe(
     Config.orElse(() => Config.redacted("TYPESAFE_API_KEY")),
   )),
-  questions: Config.option(Config.schema(ApprovalQuestionsSchema, ["permissions", "questions"])),
+  questions: Config.option(Config.schema(ApprovalQuestions, ["permissions", "questions"])),
 })
 
 const hasCredentials = (document: ConfigDocument): boolean =>
@@ -166,10 +147,6 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
   if (Option.isSome(config.typesafe)) apiKeys = { ...apiKeys, typesafe: config.typesafe.value }
 
   if (Option.isNone(config.questions)) return { kind: "default" as const, provider: config.provider, apiKeys }
-
-  if (Object.keys(config.questions.value).length === 0) {
-    return { kind: "invalid" as const, message: "permissions.questions must contain at least one question" }
-  }
 
   return { kind: "custom" as const, provider: config.provider, apiKeys, questions: config.questions.value }
 }, Effect.catchTag("ConfigFileError", (error) =>

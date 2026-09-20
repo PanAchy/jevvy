@@ -248,6 +248,20 @@ describe("permission reviewer", () => {
     expect(yield* reviewer.review({ action: "shell", resources: ["domain command"] })).toMatchObject({ effect: "allow" })
   }))
 
+  it.effect("rejects an empty custom question set", () => Effect.gen(function*() {
+    const questions: ApprovalQuestions = {}
+
+    const error = yield* Effect.flip(createPermissionReviewer(
+      fakeClient(() => Effect.succeed(answer(0.01))),
+      { questions },
+    ))
+
+    expect(error).toMatchObject({
+      name: "ReviewerConfigurationError",
+      message: "invalid approval questions",
+    })
+  }))
+
   it.effect("propagates interruption instead of converting it to abstention", () => Effect.gen(function*() {
     const reviewer = yield* createPermissionReviewer(fakeClient(() => Effect.never))
     const fiber = yield* Effect.forkChild(reviewer.review({ action: "shell", resources: ["pwd"] }))

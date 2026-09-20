@@ -4,18 +4,18 @@ export {
   DEFAULT_TYPESAFE_MODEL,
   DEFAULT_ZEN_MODEL,
   isJevProviderError,
+  JevRequest,
+  JevResult,
   JevProviderError,
   JevProviderFailure,
+  Json,
+  NoulAnswer,
+  NoulQuestion,
   providerFailureOf,
 } from "@jevvy/core"
 
 export type {
-  Json,
   JevClient,
-  JevRequest,
-  JevResult,
   JevProvider,
   JevProviderErrorKind,
-  NoulAnswer,
-  NoulQuestion,
 } from "@jevvy/core"
