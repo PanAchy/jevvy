@@ -1,9 +1,20 @@
 import { Effect } from "effect"
 import type { JevClient } from "../core.ts"
-import { createProvider, selectConfiguredProvider } from "../providers.ts"
-import type { ProviderApiKeys, ProviderPreference, SelectedProvider } from "../providers.ts"
+import {
+  createBuiltInProvider,
+  createConfiguredProvider,
+  providerApiKeyEnvironment,
+  providerDisplayName,
+} from "../providers.ts"
+import type { BuiltInProvider, ProviderSelection, SelectedProvider } from "../providers.ts"
 
 export const OPENCODE_INTEGRATION = "opencode"
+
+export const missingCredentialMessage = (provider: BuiltInProvider, configPath: string): string => {
+  const openCodeLogin = provider === "zen" ? 'run "opencode auth login opencode", ' : ""
+
+  return `${providerDisplayName(provider)} has no credential. ${openCodeLogin}set ${providerApiKeyEnvironment(provider)}, add providers.${provider}.apiKey to ${configPath}, or run "npx @jevvy/permissions init". OpenCode's remaining permission flow remains unchanged.`
+}
 
 export type StoredCredential =
   | {
@@ -53,19 +64,18 @@ const resolveOpenCodeCredential = Effect.fn("Credentials.resolveOpenCodeCredenti
 
 export const selectOpenCodeProvider = Effect.fn("Credentials.selectOpenCodeProvider")(function*<C>(
   ports: CredentialPorts<C>,
-  preference: ProviderPreference,
+  selection: ProviderSelection,
   describe: (connection: C) => ConnectionLike,
-  apiKeys: ProviderApiKeys,
   createOpenCodeClient: (apiKey: string) => JevClient,
 ): Effect.fn.Return<SelectedProvider | undefined> {
-  const configured = selectConfiguredProvider(preference, apiKeys)
+  const configured = createConfiguredProvider(selection)
 
-  if (preference !== "auto" && preference !== "zen") return configured
+  if (selection.provider !== "zen") return configured
 
   const credential = yield* resolveOpenCodeCredential(ports, describe)
   const apiKey = credentialToken(credential)
 
   return apiKey === undefined
     ? configured
-    : createProvider("zen", apiKey, createOpenCodeClient(apiKey))
+    : createBuiltInProvider("zen", apiKey, createOpenCodeClient(apiKey))
 })

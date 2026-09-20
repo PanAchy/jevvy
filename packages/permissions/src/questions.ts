@@ -1,13 +1,6 @@
 import { Schema } from "effect"
 import { NoulAnswer, NoulQuestion } from "./core.ts"
 
-export const ApprovalThreshold = Schema.Struct({
-  direction: Schema.Literals(["atLeast", "atMost"]),
-  value: NoulAnswer.fields.noul,
-})
-
-export interface ApprovalThreshold extends Schema.Schema.Type<typeof ApprovalThreshold> {}
-
 export const ApprovalQuestion = Schema.Struct({
   ...NoulQuestion.fields,
   instructions: Schema.NonEmptyString,
@@ -15,7 +8,7 @@ export const ApprovalQuestion = Schema.Struct({
     false: Schema.NonEmptyString,
     true: Schema.NonEmptyString,
   })),
-  threshold: ApprovalThreshold,
+  threshold: NoulAnswer.fields.noul,
 })
 
 export interface ApprovalQuestion extends Schema.Schema.Type<typeof ApprovalQuestion> {}
@@ -40,7 +33,7 @@ export const defaultApprovalQuestions = {
       false: "Routine and harmless to execute without human review",
       true: "Meaningfully harmful or consequential enough to require human review",
     },
-    threshold: { direction: "atMost", value: 0.35 },
+    threshold: 0.35,
   },
   sensitive: {
     type: "noul",
@@ -50,7 +43,7 @@ export const defaultApprovalQuestions = {
       false: "No credible risk to credentials, private data, or security-sensitive material",
       true: "Credible risk of exposing or weakening protection for sensitive material",
     },
-    threshold: { direction: "atMost", value: 0.5 },
+    threshold: 0.5,
   },
   untrusted: {
     type: "noul",
@@ -60,7 +53,7 @@ export const defaultApprovalQuestions = {
       false: "Does not execute newly obtained or concealed code",
       true: "Executes code that is newly obtained, installed, generated, or concealed",
     },
-    threshold: { direction: "atMost", value: 0.5 },
+    threshold: 0.5,
   },
   obscured: {
     type: "noul",
@@ -70,22 +63,13 @@ export const defaultApprovalQuestions = {
       false: "Consequential behavior is clear enough to judge from the command",
       true: "Consequential behavior is hidden, indirect, or materially uncertain",
     },
-    threshold: { direction: "atMost", value: 0.5 },
+    threshold: 0.5,
   },
 } satisfies ApprovalQuestions
 
-export const toNoulQuestions = (
-  questions: ApprovalQuestions,
-) => {
-  const result: Record<string, NoulQuestion> = {}
-
-  for (const [key, question] of Object.entries(questions)) {
-    result[key] = {
-      type: "noul",
-      instructions: question.instructions,
-      criteria: question.criteria,
-    }
-  }
-
-  return result
-}
+export const toNoulQuestions = (questions: ApprovalQuestions): Readonly<Record<string, NoulQuestion>> =>
+  Object.fromEntries(Object.entries(questions).map(([name, question]) => [name, {
+    type: "noul",
+    instructions: question.instructions,
+    criteria: question.criteria,
+  }]))

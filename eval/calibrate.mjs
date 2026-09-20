@@ -117,7 +117,7 @@ const timestamp = new Date().toISOString().replaceAll(":", "-").replace(".", "-"
 
 const output = resolve(outputOverride ?? join(root, "docs", "research", `threshold-eval-${provider}-${timestamp}.jsonl`))
 
-const questionHash = createHash("sha256").update(JSON.stringify(noulQuestions)).digest("hex")
+const questionHash = createHash("sha256").update(JSON.stringify(questions)).digest("hex")
 
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
 

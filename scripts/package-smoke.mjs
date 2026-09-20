@@ -97,6 +97,8 @@ try {
   )
   ensure(!readme.includes("](./"), "permissions README contains repository-relative links")
   ensure(existsSync(join(permissionsRoot, "THIRD_PARTY_LICENSES.txt")), "permissions is missing bundled-code notices")
+  ensure(existsSync(join(permissionsRoot, "bin", "jevvy.mjs")), "permissions is missing its setup command")
+  ensure(existsSync(join(consumer, "node_modules", ".bin", "permissions")), "npx cannot resolve the scoped package setup command")
   ensure(existsSync(join(permissionsRoot, "bin", "jevvy-calibrate.mjs")), "permissions is missing its calibration command")
   ensure(existsSync(join(permissionsRoot, "dist", "calibration", "commands.json")), "permissions is missing its calibration baseline")
   ensure(existsSync(join(permissionsRoot, "dist", "engine.js")), "installed permissions package is missing its engine")
@@ -128,6 +130,14 @@ try {
 
   ensure(permissions.default.id === "jevvy.permissions", "installed permissions package is missing its OpenCode plugin")
 
+  const setupHelp = execFileSync(process.execPath, [join(permissionsRoot, "bin", "jevvy.mjs"), "--help"], {
+    cwd: consumer,
+    encoding: "utf8",
+    env: npmEnvironment,
+  })
+
+  ensure(setupHelp.includes("init"), "installed setup command is missing its init workflow")
+
   const calibrationConfig = join(consumer, "jevvy.jsonc")
 
   writeFileSync(calibrationConfig, JSON.stringify({
@@ -137,7 +147,7 @@ try {
         harmful: {
           type: "noul",
           instructions: "How likely is this command harmful?",
-          threshold: { direction: "atMost", value: 0.25 },
+          threshold: 0.25,
         },
       },
     },

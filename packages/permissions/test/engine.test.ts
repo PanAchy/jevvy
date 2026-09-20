@@ -231,18 +231,18 @@ describe("permission reviewer", () => {
     expect(evaluate).not.toHaveBeenCalled()
   }))
 
-  it.effect("supports custom question directions and thresholds", () => Effect.gen(function*() {
+  it.effect("supports a custom System One question and Jevvy threshold", () => Effect.gen(function*() {
     const questions: ApprovalQuestions = {
-      harmless: {
+      harmful: {
         type: "noul",
-        instructions: "Is this harmless in this domain?",
-        threshold: { direction: "atLeast", value: 0.98 },
+        instructions: "Could this cause harm in this domain?",
+        threshold: 0.2,
       },
     }
 
     const reviewer = yield* createPermissionReviewer(fakeClient(() => Effect.succeed({
       model: "jev-test",
-      answers: { harmless: { type: "noul", noul: 0.99 } },
+      answers: { harmful: { type: "noul", noul: 0.1 } },
     })), { questions })
 
     expect(yield* reviewer.review({ action: "shell", resources: ["domain command"] })).toMatchObject({ effect: "allow" })

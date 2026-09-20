@@ -16,9 +16,13 @@ import type {
   CalibrationRecord,
 } from "./calibration.ts"
 import { loadJevvyConfig } from "./config.ts"
+import type { JevProvider } from "./core.ts"
 import { permissionEffectOf } from "./engine.ts"
-import { selectConfiguredProvider } from "./providers.ts"
-import type { ProviderPreference } from "./providers.ts"
+import {
+  createConfiguredProvider,
+  providerApiKeyEnvironment,
+  providerDisplayName,
+} from "./providers.ts"
 import { toNoulQuestions } from "./questions.ts"
 
 export interface CalibrationCliOptions {
@@ -44,24 +48,16 @@ const loadCorpus = Effect.fn("JevvyCalibration.loadCorpus")(function*(path: stri
 const timestamp = (milliseconds: number): string =>
   new Date(milliseconds).toISOString().replaceAll(":", "-").replace(".", "-")
 
-export const missingProviderMessage = (preference: ProviderPreference): string => {
-  if (preference === "zen") {
-    return "Zen calibration needs providers.zen.apiKey or OPENCODE_API_KEY; OpenCode login is unavailable to the standalone calibration command"
+export const missingProviderMessage = (provider: JevProvider): string => {
+  if (provider !== "custom") {
+    const login = provider === "zen"
+      ? "; OpenCode login is unavailable to the standalone calibration command"
+      : ""
+
+    return `${providerDisplayName(provider)} calibration needs providers.${provider}.apiKey or ${providerApiKeyEnvironment(provider)}${login}`
   }
 
-  if (preference === "typesafe") {
-    return "TypeSafe calibration needs providers.typesafe.apiKey or TYPESAFE_API_KEY"
-  }
-
-  if (preference === "openrouter") {
-    return "OpenRouter calibration needs providers.openrouter.apiKey or OPENROUTER_API_KEY"
-  }
-
-  if (preference === "vercel") {
-    return "Vercel calibration needs providers.vercel.apiKey or AI_GATEWAY_API_KEY"
-  }
-
-  return "calibration needs a global or environment provider credential"
+  return "Custom endpoint calibration needs providers.custom.apiKey when the endpoint requires authentication"
 }
 
 const run = Effect.fn("JevvyCalibration.runPlan")(function*(
@@ -80,15 +76,21 @@ const run = Effect.fn("JevvyCalibration.runPlan")(function*(
 
     if (config.kind === "invalid") return yield* Effect.fail(new Error(config.message))
 
-    if (config.kind !== "custom") {
+    if (config.kind === "unconfigured") {
+      return yield* Effect.fail(new Error("calibration requires provider in jevvy.jsonc"))
+    }
+
+    if (config.kind !== "custom-policy") {
       return yield* Effect.fail(new Error("calibration requires permissions.questions in jevvy.jsonc"))
     }
 
-    const selected = selectConfiguredProvider(config.provider, config.apiKeys)
+    const selected = createConfiguredProvider(config.selection)
 
-    if (selected === undefined) return yield* Effect.fail(new Error(missingProviderMessage(config.provider)))
+    if (selected === undefined) {
+      return yield* Effect.fail(new Error(missingProviderMessage(config.selection.provider)))
+    }
 
-    const questionHash = hash(JSON.stringify(toNoulQuestions(config.questions)))
+    const questionHash = hash(JSON.stringify(config.questions))
     const createdAt = yield* Clock.currentTimeMillis
 
     const meta: CalibrationMeta = {

@@ -1,4 +1,5 @@
 export {
+  createCustomSystemOneClient,
   createOpenRouterClient,
   createTypeSafeClient,
   createVercelClient,
@@ -20,6 +21,7 @@ export {
 } from "@jevvy/core"
 
 export type {
+  CustomSystemOneClientOptions,
   JevClient,
   JevProviderErrorKind,
 } from "@jevvy/core"

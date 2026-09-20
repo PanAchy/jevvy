@@ -7,7 +7,6 @@ import {
 } from "./core.ts"
 import type { JevClient, JevProviderFailure, JevResult } from "./core.ts"
 import { ApprovalQuestions, defaultApprovalQuestions, toNoulQuestions } from "./questions.ts"
-import type { ApprovalQuestion } from "./questions.ts"
 
 export type PermissionEffect = "allow" | "ask"
 
@@ -76,11 +75,6 @@ export class ReviewerConfigurationError extends Schema.TaggedError<ReviewerConfi
   { message: Schema.String },
 ) {}
 
-const answerPasses = (answer: number, question: ApprovalQuestion): boolean =>
-  question.threshold.direction === "atMost"
-    ? answer <= question.threshold.value
-    : answer >= question.threshold.value
-
 const validAnswer = Schema.is(NoulAnswer)
 
 export const permissionEffectOf = (
@@ -94,7 +88,7 @@ export const permissionEffectOf = (
 
     if (!validAnswer(answer)) throw new JudgmentUnavailable({ message: `missing valid answer for ${key}` })
 
-    if (!answerPasses(answer.noul, question)) effect = "ask"
+    if (answer.noul > question.threshold) effect = "ask"
   }
 
   return effect
@@ -151,8 +145,8 @@ export const createPermissionReviewer = Effect.fn("PermissionReviewer.create")(f
     return yield* new ReviewerConfigurationError({ message: "cacheCapacity must be a positive integer" })
   }
 
-  const noulQuestions = toNoulQuestions(questions)
   const providerCooldown = yield* Ref.make<ProviderCooldown | undefined>(undefined)
+  const noulQuestions = toNoulQuestions(questions)
 
   const activeProviderFailure = Effect.fn("PermissionReviewer.activeProviderFailure")(function*() {
     const now = yield* Clock.currentTimeMillis

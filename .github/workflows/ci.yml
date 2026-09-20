@@ -2,6 +2,7 @@ name: CI
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, labeled]
 
 permissions:
   contents: read
@@ -26,7 +27,7 @@ jobs:
 
   package-smoke:
     name: Package smoke (${{ matrix.name }})
-    if: github.head_ref == 'changeset-release/main'
+    if: github.head_ref == 'changeset-release/main' || contains(github.event.pull_request.labels.*.name, 'full-package-smoke')
     strategy:
       fail-fast: false
       matrix:

@@ -38,11 +38,11 @@ The command writes one append-safe JSONL artifact under ignored `docs/research/`
 
 ## Provider changes
 
-A provider can be wired into a product only after its response parser, cancellation, and failure behavior have deterministic tests, a real endpoint call confirms the wire format, and calibration covers its selected model.
+A dedicated provider can be wired into a product only after its response parser, cancellation, and failure behavior have deterministic tests, a real endpoint call confirms the wire format, and calibration covers its selected model. The generic custom transport requires deterministic protocol tests, but user-selected routes remain unverified and never inherit calibration evidence solely because they use shipped questions.
 
 ## OpenCode checks
 
-Run `npm run smoke:opencode` to verify the packed plugin loads as `jevvy.permissions` in a credential-free OpenCode host. Keep personal dogfood configuration out of the repository. A session test alone is not proof that a plugin loaded.
+Run `npm run smoke:opencode` to verify the packed plugin reports an actionable setup failure without configuration and loads as `jevvy.permissions` for a configured credential-free custom endpoint. Keep personal dogfood configuration out of the repository. A session test alone is not proof that a plugin loaded.
 
 ## Pull requests
 
