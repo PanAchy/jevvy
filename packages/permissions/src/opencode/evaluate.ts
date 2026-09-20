@@ -1,6 +1,7 @@
 import type { PermissionEvaluation } from "@opencode/plugin/effect/permission"
 import { Effect, Option, Schema } from "effect"
 import type { PermissionReviewer } from "../engine.ts"
+import type { JevProviderFailure } from "../core.ts"
 
 export interface EvaluationEvent {
   readonly sessionID: string
@@ -25,6 +26,7 @@ export interface EvaluateOptions {
     readonly effect: "allow" | "ask"
     readonly reason: "judged" | "unavailable" | "empty"
     readonly resources: number
+    readonly failure?: JevProviderFailure
   }) => void
 }
 
@@ -50,7 +52,11 @@ export const createEvaluate = (
     const review = yield* reviewer.review({ action: event.action, resources })
     const reason = review.effect === "ask" ? review.reason : "judged"
 
-    options.report?.({ effect: review.effect, reason, resources: resources.length })
+    if (review.effect === "ask" && review.failure !== undefined) {
+      options.report?.({ effect: review.effect, reason, resources: resources.length, failure: review.failure })
+    } else {
+      options.report?.({ effect: review.effect, reason, resources: resources.length })
+    }
 
     if (review.effect === "allow") event.effect = "allow"
   })

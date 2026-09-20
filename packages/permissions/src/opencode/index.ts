@@ -102,7 +102,15 @@ export default Plugin.define({
     }
 
     const evaluate = createEvaluate(reviewer, {
-      report: (entry) => console.info("[jevvy] permission review", entry),
+      report: (entry) => {
+        if (entry.failure !== undefined) {
+          console.warn("[jevvy] provider failure, native permission prompt remains unchanged", entry)
+
+          return
+        }
+
+        console.info("[jevvy] permission review", entry)
+      },
     })
 
     yield* ctx.permission.hook("evaluate", evaluate)
