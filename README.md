@@ -6,9 +6,10 @@
 
 [![npm version](https://img.shields.io/npm/v/%40jevvy%2Fpermissions)](https://www.npmjs.com/package/@jevvy/permissions)
 [![npm downloads](https://img.shields.io/npm/dm/%40jevvy%2Fpermissions)](https://www.npmjs.com/package/@jevvy/permissions)
-[![CI](https://github.com/PanAchy/jevvy/actions/workflows/ci.yml/badge.svg)](https://github.com/PanAchy/jevvy/actions/workflows/ci.yml)
 
 Jevvy adds probabilistic review to your agent harness, clearing routine commands while preserving human review for anything uncertain.
+
+![Demo showing git status asks without Jevvy, runs automatically with Jevvy, and rm -rf still asks](./assets/jevvy-demo.gif)
 
 </div>
 
