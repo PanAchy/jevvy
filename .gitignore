@@ -3,6 +3,7 @@ node_modules/
 .opencode/
 .env
 dist/
+packages/permissions/README.md
 *.tsbuildinfo
 *.log
 
