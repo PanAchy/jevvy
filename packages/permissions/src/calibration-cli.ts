@@ -53,6 +53,10 @@ const missingProviderMessage = (preference: ProviderPreference): string => {
     return "TypeSafe calibration needs providers.typesafe.apiKey or TYPESAFE_API_KEY"
   }
 
+  if (preference === "openrouter") {
+    return "OpenRouter calibration needs providers.openrouter.apiKey or OPENROUTER_API_KEY"
+  }
+
   return "calibration needs a global or environment provider credential"
 }
 

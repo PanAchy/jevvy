@@ -88,12 +88,14 @@ describe("Jevvy configuration", () => {
     const environment = ConfigProvider.fromEnvRecord({
       OPENCODE_API_KEY: "environment-zen-key",
       TYPESAFE_API_KEY: "environment-typesafe-key",
+      OPENROUTER_API_KEY: "environment-openrouter-key",
     })
 
     const raw = JSON.stringify({
       providers: {
         zen: { apiKey: "file-zen-key" },
         typesafe: { apiKey: "file-typesafe-key" },
+        openrouter: { apiKey: "file-openrouter-key" },
       },
     })
 
@@ -105,19 +107,23 @@ describe("Jevvy configuration", () => {
 
     const zen = config.apiKeys.zen
     const typesafe = config.apiKeys.typesafe
+    const openrouter = config.apiKeys.openrouter
 
-    if (zen === undefined || typesafe === undefined) throw new Error("expected both provider keys")
+    if (zen === undefined || typesafe === undefined || openrouter === undefined) {
+      throw new Error("expected all provider keys")
+    }
 
     expect(Redacted.value(zen)).toBe("file-zen-key")
     expect(Redacted.value(typesafe)).toBe("file-typesafe-key")
+    expect(Redacted.value(openrouter)).toBe("file-openrouter-key")
   })
 
   it("loads the provider preference from the global file", async () => {
-    const raw = JSON.stringify({ provider: "typesafe" })
+    const raw = JSON.stringify({ provider: "openrouter" })
 
     await expect(withConfigFile(raw, load)).resolves.toEqual({
       kind: "default",
-      provider: "typesafe",
+      provider: "openrouter",
       apiKeys: {},
     })
   })
@@ -139,6 +145,7 @@ describe("Jevvy configuration", () => {
     const environment = ConfigProvider.fromEnvRecord({
       OPENCODE_API_KEY: "environment-zen-key",
       TYPESAFE_API_KEY: "environment-typesafe-key",
+      OPENROUTER_API_KEY: "environment-openrouter-key",
     })
 
     const directory = await mkdtemp(join(tmpdir(), "jevvy-config-"))
@@ -152,11 +159,15 @@ describe("Jevvy configuration", () => {
 
       const zen = config.apiKeys.zen
       const typesafe = config.apiKeys.typesafe
+      const openrouter = config.apiKeys.openrouter
 
-      if (zen === undefined || typesafe === undefined) throw new Error("expected both provider keys")
+      if (zen === undefined || typesafe === undefined || openrouter === undefined) {
+        throw new Error("expected all provider keys")
+      }
 
       expect(Redacted.value(zen)).toBe("environment-zen-key")
       expect(Redacted.value(typesafe)).toBe("environment-typesafe-key")
+      expect(Redacted.value(openrouter)).toBe("environment-openrouter-key")
     } finally {
       await rm(directory, { recursive: true })
     }

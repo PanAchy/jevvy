@@ -8,6 +8,7 @@ Jevvy auto-approves existing harmless permission prompts. `@jevvy/permissions` i
 packages/core/                 private provider-neutral judgment module
   src/types                    JSON, noul question, answer, and Effect client port
   src/system-one               shared System One HTTP adapter and wire schemas
+  src/openrouter               OpenRouter provider configuration
   src/typesafe                 TypeSafe provider configuration
   src/zen                      Zen provider configuration and compatibility parser
 packages/permissions/          public `@jevvy/permissions` product
@@ -20,7 +21,7 @@ packages/permissions/          public `@jevvy/permissions` product
 eval/                          explicit maintainer-only live calibration
 ```
 
-Providers and harnesses are independent dimensions inside the product. TypeSafe and Zen belong to the private core module. OpenCode belongs to the permissions adapter. Future Claude Code and Codex adapters belong in `@jevvy/permissions`.
+Providers and harnesses are independent dimensions inside the product. OpenRouter, TypeSafe, and Zen belong to the private core module. OpenCode belongs to the permissions adapter. Future Claude Code and Codex adapters belong in `@jevvy/permissions`.
 
 ## Permission contract
 

@@ -18,6 +18,7 @@ const JevvyConfigSchema = Schema.Struct({
   providers: Schema.optionalKey(Schema.Struct({
     zen: Schema.optionalKey(ProviderCredentialSchema),
     typesafe: Schema.optionalKey(ProviderCredentialSchema),
+    openrouter: Schema.optionalKey(ProviderCredentialSchema),
   })),
   permissions: Schema.optionalKey(Schema.Struct({
     questions: Schema.optionalKey(ApprovalQuestions),
@@ -46,7 +47,7 @@ class ConfigFileError extends Schema.TaggedError<ConfigFileError>()("ConfigFileE
   reason: Schema.Literals(["read", "schema", "permissions"]),
 }) {}
 
-const fileApiKey = (provider: "zen" | "typesafe") =>
+const fileApiKey = (provider: "zen" | "typesafe" | "openrouter") =>
   Config.redacted("apiKey").pipe(
     Config.nested(provider),
     Config.nested("providers"),
@@ -60,11 +61,16 @@ const RuntimeConfig = Config.all({
   typesafe: Config.option(fileApiKey("typesafe").pipe(
     Config.orElse(() => Config.redacted("TYPESAFE_API_KEY")),
   )),
+  openrouter: Config.option(fileApiKey("openrouter").pipe(
+    Config.orElse(() => Config.redacted("OPENROUTER_API_KEY")),
+  )),
   questions: Config.option(Config.schema(ApprovalQuestions, ["permissions", "questions"])),
 })
 
 const hasCredentials = (document: ConfigDocument): boolean =>
-  document.providers?.zen !== undefined || document.providers?.typesafe !== undefined
+  document.providers?.zen !== undefined ||
+  document.providers?.typesafe !== undefined ||
+  document.providers?.openrouter !== undefined
 
 const readDocument = Effect.fn("JevvyConfig.readDocument")(function*(path: string) {
   const raw = yield* Effect.tryPromise({
@@ -141,6 +147,8 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
   if (Option.isSome(config.zen)) apiKeys = { zen: config.zen.value }
 
   if (Option.isSome(config.typesafe)) apiKeys = { ...apiKeys, typesafe: config.typesafe.value }
+
+  if (Option.isSome(config.openrouter)) apiKeys = { ...apiKeys, openrouter: config.openrouter.value }
 
   if (Option.isNone(config.questions)) return { kind: "default" as const, provider: config.provider, apiKeys }
 
