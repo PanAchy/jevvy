@@ -90,7 +90,7 @@ const run = Effect.fn("JevvyCalibration.runPlan")(function*(
       return yield* Effect.fail(new Error(missingProviderMessage(config.selection.provider)))
     }
 
-    const questionHash = hash(JSON.stringify(toNoulQuestions(config.questions)))
+    const questionHash = hash(JSON.stringify(config.questions))
     const createdAt = yield* Clock.currentTimeMillis
 
     const meta: CalibrationMeta = {

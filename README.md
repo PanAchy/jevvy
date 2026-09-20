@@ -14,11 +14,10 @@ Jevvy adds probabilistic review to your agent harness, clearing routine commands
 </div>
 
 ## Assisted setup
+
 ```bash
 npx @jevvy/permissions init
 ```
-
-The initializer lets you select agent harnesses and a System One provider, stores credentials in the mode-`0600` global configuration, and installs the harness integration. OpenCode is the first available harness.
 
 ## Manual setup
 
@@ -28,12 +27,14 @@ Install the OpenCode plugin:
 opencode plugin add @jevvy/permissions
 ```
 
-Create `~/.config/jevvy/jevvy.jsonc` and select your provider. For example, to use OpenCode Zen with an OpenCode login:
+Create `~/.config/jevvy/jevvy.jsonc` and select your provider.
+
+For example, to use OpenCode Zen with an OpenCode login:
 
 ```jsonc
 {
   "$schema": "https://raw.githubusercontent.com/PanAchy/jevvy/main/config.schema.json",
-  "provider": "zen"
+  "provider": "zen",
 }
 ```
 
@@ -60,7 +61,7 @@ flowchart TD
 
 ## Configuration
 
-Jevvy reads one global file at `~/.config/jevvy/jevvy.jsonc`. Project repositories cannot override it. JSONC comments and trailing commas are supported. Keep `$schema` for editor validation and autocomplete. Without an explicitly selected provider or its required credential, OpenCode marks Jevvy as failed and its remaining permission flow continues unchanged. Run `/plugins` and open the Jevvy entry to see the setup error.
+Jevvy reads one global file at `~/.config/jevvy/jevvy.jsonc`. Project repositories cannot override it. JSONC comments and trailing commas are supported. Keep `$schema` for editor validation and autocomplete.
 
 ```jsonc
 {
@@ -74,17 +75,17 @@ Jevvy reads one global file at `~/.config/jevvy/jevvy.jsonc`. Project repositori
 }
 ```
 
-### Provider
+### Providers
 
-| Setting                       | Required | Purpose                                      |
-| ----------------------------- | -------- | -------------------------------------------- |
-| `provider`                    | yes      | Select `zen`, `typesafe`, `openrouter`, `vercel`, or `custom` |
-| `providers.zen.apiKey`        | no       | Use OpenCode Zen without an OpenCode login   |
-| `providers.typesafe.apiKey`   | no       | Use TypeSafe AI                              |
-| `providers.openrouter.apiKey` | no       | Use OpenRouter                               |
-| `providers.vercel.apiKey`     | no       | Use Vercel AI Gateway                        |
+| Provider          | `provider`   | Credential sources                                            |
+| ----------------- | ------------ | ------------------------------------------------------------- |
+| OpenCode Zen      | `zen`        | OpenCode login, `providers.zen.apiKey`, or `OPENCODE_API_KEY` |
+| TypeSafe AI       | `typesafe`   | `providers.typesafe.apiKey` or `TYPESAFE_API_KEY`             |
+| OpenRouter        | `openrouter` | `providers.openrouter.apiKey` or `OPENROUTER_API_KEY`         |
+| Vercel AI Gateway | `vercel`     | `providers.vercel.apiKey` or `AI_GATEWAY_API_KEY`             |
+| Custom endpoint   | `custom`     | Optional `providers.custom.apiKey`                            |
 
-Jevvy uses only the selected provider and never falls back to another one. For OpenCode Zen, the OpenCode adapter can use an active OpenCode OAuth or API-key login instead of `providers.zen.apiKey`. The built-in providers also read their native environment variables: `OPENCODE_API_KEY`, `TYPESAFE_API_KEY`, `OPENROUTER_API_KEY`, and `AI_GATEWAY_API_KEY`.
+Jevvy uses only the selected provider and never falls back to another one.
 
 ### Custom System One endpoint
 
@@ -98,9 +99,33 @@ Select `custom` to use any HTTP endpoint that accepts the System One request sha
     "custom": {
       "endpoint": "https://system-one.example.com/v1/decisions",
       "model": "your-model",
-      "apiKey": "your-api-key"
-    }
+      "apiKey": "your-api-key",
+    },
   },
+}
+```
+
+`providers.custom.apiKey` is optional. When present, Jevvy sends it as a Bearer token. This supports authenticated hosted routes and unauthenticated local servers. A local model can use the same interface when its server exposes a compatible endpoint.
+
+Custom endpoints use the shipped approval policy unless you replace it. The shipped calibration evidence applies only when the route is verified to serve the calibrated Jev model.
+
+### Approval policy
+
+By default, Jevvy requires all four shipped questions to pass:
+
+| Question  | What it checks                                                                            | Pass condition |
+| --------- | ----------------------------------------------------------------------------------------- | -------------: |
+| Harmful   | Could the command cause meaningful harm that deserves review?                             | Noul ≤ `0.35` |
+| Sensitive | Does the command risk exposing credentials, private data, or security-sensitive material? | Noul ≤ `0.50` |
+| Untrusted | Does the command execute newly obtained, installed, generated, or concealed code?         | Noul ≤ `0.50` |
+| Obscured  | Is the command's consequential behavior hidden, indirect, or materially uncertain?        | Noul ≤ `0.50` |
+
+The four shipped questions, thresholds, and model identities were calibrated together against [`eval/commands.json`](./eval/commands.json). The set includes harmless controls and commands that must remain prompts; any must-ask auto-approval disqualifies a calibration run. Custom policies are not covered by this evidence.
+
+Custom policies replace all shipped questions. Define a non-empty map of risk-oriented System One Nouls, each with a Jevvy threshold:
+
+```jsonc
+{
   "permissions": {
     "questions": {
       "harmful": {
@@ -108,36 +133,16 @@ Select `custom` to use any HTTP endpoint that accepts the System One request sha
         "instructions": "Could this command cause meaningful harm that deserves human review?",
         "criteria": {
           "false": "Routine or harmless",
-          "true": "Potentially harmful"
+          "true": "Potentially harmful",
         },
-        "threshold": {
-          "direction": "atMost",
-          "value": 0.35
-        }
-      }
-    }
-  }
+        "threshold": 0.35,
+      },
+    },
+  },
 }
 ```
 
-`providers.custom.apiKey` is optional. When present, Jevvy sends it as a Bearer token. This supports authenticated hosted routes and unauthenticated local servers. A local model can use the same interface when its server exposes a compatible endpoint.
-
-The `permissions.questions` block above illustrates an optional replacement policy. Custom endpoints use the complete shipped question set when it is omitted. The shipped calibration evidence applies only when the route is verified to serve the calibrated Jev model. Other models can use the same question shape, but they do not inherit that evidence.
-
-### Approval policy
-
-Set `permissions.questions` to a non-empty question map to replace the complete approval policy.
-
-For built-in providers, omitting `permissions.questions` requires all four shipped questions to pass:
-
-| Question  | What it checks                                                                            | Pass condition |
-| --------- | ----------------------------------------------------------------------------------------- | -------------: |
-| Harmful   | Could the command cause meaningful harm that deserves review?                             | score ≤ `0.35` |
-| Sensitive | Does the command risk exposing credentials, private data, or security-sensitive material? | score ≤ `0.50` |
-| Untrusted | Does the command execute newly obtained, installed, generated, or concealed code?         | score ≤ `0.50` |
-| Obscured  | Is the command's consequential behavior hidden, indirect, or materially uncertain?        | score ≤ `0.50` |
-
-The four questions, thresholds, and model identities were calibrated together against [`eval/commands.json`](./eval/commands.json). The set includes harmless controls and commands that must remain prompts; any must-ask auto-approval disqualifies a calibration run. Replacing `permissions.questions` creates a custom policy that is not covered by this evidence.
+A Noul answer is the probability that the answer is yes. Each Inquiry passes only when its answer is no greater than its threshold. See [TypeSafe's Noul documentation](https://docs.typesafe.ai/primitives/noul).
 
 ### Calibrate custom questions
 

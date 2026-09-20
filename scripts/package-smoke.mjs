@@ -147,7 +147,7 @@ try {
         harmful: {
           type: "noul",
           instructions: "How likely is this command harmful?",
-          threshold: { direction: "atMost", value: 0.25 },
+          threshold: 0.25,
         },
       },
     },

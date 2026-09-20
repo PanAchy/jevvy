@@ -131,19 +131,9 @@
           }
         },
         "threshold": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": ["direction", "value"],
-          "properties": {
-            "direction": {
-              "enum": ["atLeast", "atMost"]
-            },
-            "value": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 1
-            }
-          }
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
         }
       }
     }

@@ -6,11 +6,11 @@ import { ConfigProvider, Effect, Redacted } from "effect"
 import { loadJevvyConfig } from "../src/config.ts"
 
 const customQuestions = {
-  harmless: {
+  harmful: {
     type: "noul" as const,
-    instructions: "How likely is this action harmless?",
-    criteria: { false: "Harmful", true: "Harmless" },
-    threshold: { direction: "atLeast" as const, value: 0.99 },
+    instructions: "Could this action cause harm?",
+    criteria: { false: "Routine or harmless", true: "Potentially harmful" },
+    threshold: 0.25,
   },
 }
 
@@ -63,7 +63,7 @@ describe("Jevvy configuration", () => {
     JSON.stringify({ provider: "typesafe", permissions: { questions: {} } }),
     JSON.stringify({
       provider: "typesafe",
-      permissions: { questions: { "": customQuestions.harmless } },
+      permissions: { questions: { "": customQuestions.harmful } },
     }),
     JSON.stringify({
       provider: "typesafe",
@@ -71,9 +71,17 @@ describe("Jevvy configuration", () => {
         questions: {
           harmful: {
             type: "noul",
-            instructions: "Harmful?",
-            threshold: { direction: "atMost", value: 2 },
+            instructions: "Could this cause harm?",
+            threshold: 2,
           },
+        },
+      },
+    }),
+    JSON.stringify({
+      provider: "typesafe",
+      permissions: {
+        questions: {
+          harmful: { type: "noul", instructions: "Could this cause harm?" },
         },
       },
     }),

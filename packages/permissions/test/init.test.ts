@@ -88,8 +88,8 @@ describe("Jevvy initializer", () => {
         "questions": {
           "safe": {
             "type": "noul",
-            "instructions": "Safe?",
-            "threshold": { "direction": "atLeast", "value": 0.9 }
+            "instructions": "Risky?",
+            "threshold": 0.1
           }
         }
       }
@@ -105,7 +105,8 @@ describe("Jevvy initializer", () => {
     expect(rendered).toContain("// Keep this policy.")
     expect(document.provider).toBe("openrouter")
     expect(document.providers.openrouter).toEqual({ apiKey: "new" })
-    expect(document.permissions.questions.safe.instructions).toBe("Safe?")
+    expect(document.permissions.questions.safe.instructions).toBe("Risky?")
+    expect(document.permissions.questions.safe.threshold).toBe(0.1)
   }))
 
   it.effect.each(["[]", "null", '"text"', "42"])(
