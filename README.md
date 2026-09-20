@@ -7,25 +7,36 @@
 Jevvy is a home for plugins that use [Jev](https://typesafe.ai), TypeSafe's System One model, to make fast probabilistic judgments inside coding-agent workflows.
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@jevvy/permissions"><img alt="npm version" src="https://img.shields.io/npm/v/%40jevvy%2Fpermissions?style=flat&labelColor=000000&color=000000" /></a>
   <a href="https://github.com/PanAchy/jevvy/blob/main/LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/PanAchy/jevvy?style=flat&labelColor=000000&color=000000" /></a>
 </p>
 
-![Demo showing git status asks without Jevvy, runs automatically with Jevvy, and rm -rf still asks](https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-demo.gif)
-
 </div>
 
-## Current plugin: `@jevvy/permissions`
+## Jevvy Permissions
+
+<p>
+  <a href="https://www.npmjs.com/package/@jevvy/permissions"><img alt="npm version" src="https://img.shields.io/npm/v/%40jevvy%2Fpermissions?style=flat&labelColor=000000&color=000000" /></a>
+</p>
 
 Jevvy Permissions uses Jev to auto-approve harmless shell permission requests. Anything uncertain continues through your agent's normal permission flow.
 
-## Assisted setup
+### OpenCode
+
+![OpenCode demo showing git status asks without Jevvy Permissions, runs automatically with it, and rm -rf still asks](https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-demo.gif)
+
+### Claude Code
+
+![Claude Code demo showing a routine Bash command asks without Jevvy Permissions, runs after a one-action hook approval with it, and a risky command outside the project still asks](https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-claude-demo.gif)
+
+## Quickstart
+
+Node.js 24 or newer is required.
 
 ```bash
 npx @jevvy/permissions init
 ```
 
-The initializer asks for a provider API key, stores it in the mode-`0600` global configuration, and lets you install Jevvy for OpenCode, Claude Code, or both.
+The initializer asks for a provider API key, stores it in the mode-`0600` global configuration, and lets you install Jevvy Permissions for OpenCode, Claude Code, or both.
 
 ## Manual setup
 
@@ -36,8 +47,6 @@ opencode plugin add @jevvy/permissions
 ```
 
 ### Claude Code
-
-Claude Code 2.1.268 or newer and Node.js 24 or newer are required.
 
 ```text
 /plugin marketplace add PanAchy/jevvy
@@ -55,73 +64,34 @@ Create `~/.config/jevvy/jevvy.jsonc` and select your provider:
 }
 ```
 
-## Quickstart
-
-### OpenCode
-
-Set an API key for the selected provider, then start OpenCode. For the OpenCode Zen configuration above:
-
-```bash
-read -rsp "OpenCode Zen API key: " OPENCODE_API_KEY
-echo
-export OPENCODE_API_KEY
-opencode
-```
-
-### Claude Code
-
-Set an API key for the selected provider, then start Claude Code. For the OpenCode Zen configuration above:
-
-```bash
-read -rsp "OpenCode Zen API key: " OPENCODE_API_KEY
-echo
-export OPENCODE_API_KEY
-claude
-```
+Set the selected provider's API key in its environment variable or in the global configuration, then start your coding agent normally. See [Providers](#providers) for the credential names.
 
 ## How it works
 
-Jevvy reviews a shell command only when the host is ready to ask permission. It approves only the current action when every safety check passes. Otherwise it does nothing, so the host continues as it would without Jevvy.
-
-### OpenCode
-
-OpenCode evaluates its built-in and configured permission rules first. Existing allow and deny decisions stay final. Jevvy reviews only shell commands that OpenCode would otherwise ask you about.
+Each coding agent evaluates its own permission policy first. Existing allow and deny decisions stay final. Jevvy Permissions reviews only unresolved shell approval requests. It approves only the current action when every inquiry passes. Otherwise it abstains, leaving the agent's remaining permission flow unchanged.
 
 ```mermaid
 flowchart TD
-    rules[OpenCode permission rules]
+    rules[Coding agent permission policy]
     rules -->|Allow| run[Run the command]
     rules -->|Deny| block[Block the command]
-    rules -->|Ask| review[Jevvy reviews]
-    review -->|Every question passes| run
-    review -->|Anything else| prompt[Ask you what to do]
+    rules -->|Approval request| review[Jevvy Permissions reviews]
+    review -->|Every inquiry passes| approve[Approve this action]
+    review -->|Anything else| remaining[Continue the remaining permission flow]
+    approve --> proceed[Coding agent continues]
+    proceed -->|No further check| run
+    proceed -->|Prompt or check required| remaining
 ```
 
-### Claude Code
+Jevvy Permissions never creates a durable permission rule or denies a request. Claude Code still enforces explicit ask rules and protected-action checks after an approval. On abstention, each agent continues with its normal prompt or automatic outcome.
 
-Claude Code evaluates its permission rules and automatic checks before sending unresolved Bash approval requests to Jevvy. Existing allow and deny decisions stay final. A Jevvy approval applies only to the current command and never creates a rule. Claude Code still enforces explicit ask rules and protected-action checks. If Jevvy does nothing, Claude Code shows its normal prompt or uses its normal non-interactive denial.
+When a Claude Code session starts, the plugin warns you if its global configuration is invalid or no provider credential is available. The warning disables only its auto-approval and does not change Claude Code's permission decisions.
 
-```mermaid
-flowchart TD
-    rules[Claude Code permission rules and automatic checks]
-    rules -->|Allow| run[Run the command]
-    rules -->|Deny| block[Block the command]
-    rules -->|Approval request| review[Jevvy reviews]
-    review -->|Every check passes| recheck[Claude Code rechecks required prompts]
-    recheck -->|No prompt required| run
-    recheck -->|Prompt required| prompt[Ask you what to do]
-    review -->|Anything else| normal[Claude Code continues normally]
-    normal -->|Interactive| prompt
-    normal -->|Non-interactive| block
-```
-
-When a session starts, Jevvy warns you if its global configuration is invalid or no provider credential is available. The warning disables only Jevvy auto-approval and does not change Claude Code's permission decisions.
-
-`--bare` skips hooks. Cloud sessions use plugins declared by the repository or organization rather than plugins installed only on your local machine.
+In Claude Code, `--bare` skips hooks. Cloud sessions use plugins declared by the repository or organization rather than plugins installed only on your local machine.
 
 ## Configuration
 
-Jevvy reads one global file at `~/.config/jevvy/jevvy.jsonc`. Project repositories cannot override it. JSONC comments and trailing commas are supported. Keep `$schema` for editor validation and autocomplete.
+Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Project repositories cannot override it. JSONC comments and trailing commas are supported. Keep `$schema` for editor validation and autocomplete.
 
 ```jsonc
 {
@@ -140,7 +110,7 @@ Jevvy reads one global file at `~/.config/jevvy/jevvy.jsonc`. Project repositori
 | Vercel AI Gateway | `vercel`     | `providers.vercel.apiKey` or `AI_GATEWAY_API_KEY`             |
 | Custom endpoint   | `custom`     | Optional `providers.custom.apiKey`                            |
 
-Jevvy uses only the selected provider and never falls back to another one.
+The plugin uses only the selected provider and never falls back to another one.
 
 ### Custom System One endpoint
 
@@ -160,7 +130,7 @@ Select `custom` to use any HTTP endpoint that accepts the System One request sha
 }
 ```
 
-`providers.custom.apiKey` is optional. When present, Jevvy sends it as a Bearer token. This supports authenticated hosted routes and unauthenticated local servers. A local model can use the same interface when its server exposes a compatible endpoint.
+`providers.custom.apiKey` is optional. When present, the plugin sends it as a Bearer token. This supports authenticated hosted routes and unauthenticated local servers. A local model can use the same interface when its server exposes a compatible endpoint.
 
 Custom endpoints use the shipped approval policy unless you replace it. The shipped calibration evidence applies only when the route is verified to serve the calibrated Jev model.
 
@@ -168,7 +138,7 @@ Every harness uses credentials from the global Jevvy configuration or the select
 
 ### Approval policy
 
-By default, Jevvy requires all four shipped questions to pass:
+By default, Jevvy Permissions requires all four shipped questions to pass:
 
 | Question  | What it checks                                                                            | Pass condition |
 | --------- | ----------------------------------------------------------------------------------------- | -------------: |
@@ -179,7 +149,7 @@ By default, Jevvy requires all four shipped questions to pass:
 
 The four shipped questions, thresholds, and model identities were calibrated together against [`eval/commands.json`](./eval/commands.json). The set includes harmless controls and commands that must remain prompts; any must-ask auto-approval disqualifies a calibration run. Custom policies are not covered by this evidence.
 
-Custom policies replace all shipped questions. Define a non-empty map of risk-oriented System One Nouls, each with a Jevvy threshold:
+Custom policies replace all shipped questions. Define a non-empty map of risk-oriented System One Nouls, each with a permission threshold:
 
 ```jsonc
 {
@@ -209,4 +179,4 @@ Install the optional [`calibrate-permissions`](./skills/calibrate-permissions/SK
 npx skills add PanAchy/jevvy --skill calibrate-permissions
 ```
 
-The skill runs `jevvy-calibrate` against Jevvy's bundled baseline. Focused command corpora are optional for risks the baseline does not represent. Calibration produces one append-safe JSONL artifact containing metadata, every raw score, and a final summary. Jevvy does not install or activate the skill for you.
+The skill runs `jevvy-calibrate` against the plugin's bundled baseline. Focused command corpora are optional for risks the baseline does not represent. Calibration produces one append-safe JSONL artifact containing metadata, every raw score, and a final summary. The initializer does not install or activate the skill for you.
