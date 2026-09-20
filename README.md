@@ -9,7 +9,7 @@
 
 Jevvy adds probabilistic review to your agent harness, clearing routine commands while preserving human review for anything uncertain.
 
-![Jevvy permission demo](./assets/jevvy-demo.gif)
+![Demo showing git status asks without Jevvy, runs automatically with Jevvy, and rm -rf still asks](./assets/jevvy-demo.gif)
 
 </div>
 
