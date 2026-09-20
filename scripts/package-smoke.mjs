@@ -3,7 +3,7 @@
 // Pack the public permissions product, install it as a consumer, and verify
 // both internal workspaces remain implementation details.
 
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -88,6 +88,9 @@ try {
 
   const permissionsRoot = join(consumer, "node_modules", "@jevvy", "permissions")
   const coreBundle = join(permissionsRoot, "dist", "core.js")
+  const claudeBundle = join(permissionsRoot, "dist", "claude-hook.js")
+  const claudeManifest = JSON.parse(readFileSync(join(permissionsRoot, ".claude-plugin", "plugin.json"), "utf8"))
+  const claudeHooks = JSON.parse(readFileSync(join(permissionsRoot, "hooks", "hooks.json"), "utf8"))
   const readme = readFileSync(join(permissionsRoot, "README.md"), "utf8")
 
   ensure(existsSync(coreBundle), "permissions is missing its bundled core")
@@ -100,11 +103,86 @@ try {
   ensure(existsSync(join(permissionsRoot, "bin", "jevvy.mjs")), "permissions is missing its setup command")
   ensure(existsSync(join(consumer, "node_modules", ".bin", "permissions")), "npx cannot resolve the scoped package setup command")
   ensure(existsSync(join(permissionsRoot, "bin", "jevvy-calibrate.mjs")), "permissions is missing its calibration command")
+  ensure(existsSync(claudeBundle), "permissions is missing its bundled Claude Code hook")
+  ensure(existsSync(join(permissionsRoot, ".claude-plugin", "plugin.json")), "permissions is missing its Claude Code plugin manifest")
+  ensure(existsSync(join(permissionsRoot, "hooks", "hooks.json")), "permissions is missing its Claude Code hook registration")
+  ensure(claudeManifest.name === "jevvy-permissions", "permissions has an unexpected Claude Code plugin name")
+  ensure(claudeHooks.hooks?.PreToolUse === undefined, "Claude Code plugin must not register PreToolUse")
+  ensure(
+    claudeHooks.hooks?.SessionStart?.[0]?.matcher === "startup|resume|clear|fork",
+    "Claude Code plugin does not check setup when sessions start",
+  )
+  ensure(
+    claudeHooks.hooks?.SessionStart?.[0]?.hooks?.[0]?.args?.[0] === "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.js",
+    "Claude Code setup check does not invoke its bundled hook",
+  )
+  ensure(claudeHooks.hooks?.PermissionRequest?.[0]?.matcher === "Bash", "Claude Code plugin does not match Bash approval requests")
+  ensure(
+    claudeHooks.hooks?.PermissionRequest?.[0]?.hooks?.[0]?.args?.[0] === "${CLAUDE_PLUGIN_ROOT}/dist/claude-hook.js",
+    "Claude Code plugin does not invoke its bundled hook",
+  )
   ensure(existsSync(join(permissionsRoot, "dist", "calibration", "commands.json")), "permissions is missing its calibration baseline")
   ensure(existsSync(join(permissionsRoot, "dist", "engine.js")), "installed permissions package is missing its engine")
   ensure(!existsSync(join(consumer, "node_modules", "jevvy")), "legacy public core package was installed")
   ensure(!existsSync(join(consumer, "node_modules", "@jevvy", "core")), "private core became a top-level dependency")
   ensure(!existsSync(join(consumer, "node_modules", "@jevvy", "typesafe-runtime")), "private runtime became an installed dependency")
+
+  const standaloneHook = join(temporary, "claude-hook.mjs")
+
+  writeFileSync(standaloneHook, readFileSync(claudeBundle))
+
+  const hookEnvironment = { ...npmEnvironment, JEVVY_CONFIG: join(temporary, "missing-jevvy.jsonc") }
+
+  delete hookEnvironment.OPENCODE_API_KEY
+  delete hookEnvironment.TYPESAFE_API_KEY
+  delete hookEnvironment.OPENROUTER_API_KEY
+  delete hookEnvironment.AI_GATEWAY_API_KEY
+
+  const runClaudeHook = (input) => spawnSync(process.execPath, [standaloneHook], {
+    input,
+    encoding: "utf8",
+    env: hookEnvironment,
+  })
+
+  const malformedHook = runClaudeHook("not json")
+
+  ensure(malformedHook.status === 0, "Claude Code hook failed on malformed input")
+  ensure(malformedHook.stdout === "", "Claude Code hook wrote stdout for malformed input")
+  ensure(malformedHook.stderr === "", "Claude Code hook wrote stderr for malformed input")
+
+  const missingCredentialHook = runClaudeHook(JSON.stringify({
+    session_id: "package-smoke",
+    prompt_id: "prompt-smoke",
+    transcript_path: join(temporary, "transcript.jsonl"),
+    cwd: temporary,
+    permission_mode: "default",
+    hook_event_name: "PermissionRequest",
+    tool_name: "Bash",
+    tool_input: { command: "pwd" },
+  }))
+
+  ensure(missingCredentialHook.status === 0, "Claude Code hook failed without credentials")
+  ensure(missingCredentialHook.stdout === "", "Claude Code hook wrote stdout without credentials")
+  ensure(missingCredentialHook.stderr === "", "Claude Code hook wrote stderr without credentials")
+
+  const setupNotificationHook = runClaudeHook(JSON.stringify({
+    session_id: "package-smoke",
+    transcript_path: join(temporary, "transcript.jsonl"),
+    cwd: temporary,
+    hook_event_name: "SessionStart",
+    source: "startup",
+  }))
+
+  ensure(setupNotificationHook.status === 0, "Claude Code hook failed to report unavailable setup")
+  ensure(setupNotificationHook.stderr === "", "Claude Code hook wrote stderr while reporting unavailable setup")
+
+  const setupNotification = JSON.parse(setupNotificationHook.stdout)
+
+  ensure(
+    setupNotification.systemMessage?.includes("no provider is configured"),
+    "Claude Code hook did not explain its unavailable setup",
+  )
+  ensure(setupNotification.hookSpecificOutput === undefined, "Claude Code setup notification made a permission decision")
 
   const effect = await import(pathToFileURL(join(consumer, "node_modules", "effect", "dist", "index.js")).href)
 

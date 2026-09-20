@@ -7,17 +7,22 @@ const CONFIG_SCHEMA = "https://raw.githubusercontent.com/PanAchy/jevvy/main/conf
 
 const OPENCODE_PLUGIN = "@jevvy/permissions"
 
-export const InitHarness = Schema.Literals(["opencode"])
+const CLAUDE_MARKETPLACE = "PanAchy/jevvy"
+
+const CLAUDE_PLUGIN = "jevvy-permissions@jevvy"
+
+type InstallOperation =
+  | "install-opencode"
+  | "install-claude-marketplace"
+  | "install-claude-plugin"
+
+export const InitHarness = Schema.Literals(["opencode", "claude"])
 
 export type InitHarness = typeof InitHarness.Type
 
 export type InitProvider =
   | {
-      readonly provider: "zen"
-      readonly apiKey?: Redacted.Redacted<string>
-    }
-  | {
-      readonly provider: "typesafe" | "openrouter" | "vercel"
+      readonly provider: "zen" | "typesafe" | "openrouter" | "vercel"
       readonly apiKey: Redacted.Redacted<string>
     }
   | {
@@ -36,11 +41,18 @@ export interface InitResult {
   readonly configPath: string
   readonly harnesses: readonly InitHarness[]
   readonly provider: InitProvider["provider"]
-  readonly needsOpenCodeLogin: boolean
 }
 
 export class InitError extends Schema.TaggedError<InitError>()("InitError", {
-  operation: Schema.Literals(["read-config", "parse-config", "write-config", "install-opencode", "validate-plan"]),
+  operation: Schema.Literals([
+    "read-config",
+    "parse-config",
+    "write-config",
+    "install-opencode",
+    "install-claude-marketplace",
+    "install-claude-plugin",
+    "validate-plan",
+  ]),
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {}
@@ -90,27 +102,55 @@ export class InitPlatform extends Context.Service<InitPlatform, {
         cause,
       })))
 
-      const installHarness = Effect.fn("InitPlatform.installHarness")(function*(harness: InitHarness) {
-        const code = yield* spawner.exitCode(ChildProcess.make(
-          "opencode",
-          ["plugin", "add", OPENCODE_PLUGIN],
-          { stdin: "inherit", stdout: "inherit", stderr: "inherit" },
-        )).pipe(
-          Effect.mapError((cause) => new InitError({
-            operation: "install-opencode",
-            message: "OpenCode could not install the Jevvy plugin",
-            cause,
-          })),
+      const runInstaller = Effect.fn("InitPlatform.runInstaller")(function*(
+        operation: InstallOperation,
+        failureMessage: string,
+        command: ChildProcess.Command,
+      ) {
+        const code = yield* spawner.exitCode(command).pipe(
+          Effect.mapError((cause) => new InitError({ operation, message: failureMessage, cause })),
         )
 
         if (code !== ChildProcessSpawner.ExitCode(0)) {
           return yield* new InitError({
-            operation: "install-opencode",
-            message: `OpenCode plugin installation exited with code ${code}`,
+            operation,
+            message: `${failureMessage} because the command exited with code ${code}`,
           })
         }
+      })
 
-        return harness
+      const installHarness = Effect.fn("InitPlatform.installHarness")(function*(harness: InitHarness) {
+        if (harness === "opencode") {
+          return yield* runInstaller(
+            "install-opencode",
+            "OpenCode could not install the Jevvy plugin",
+            ChildProcess.make(
+              "opencode",
+              ["plugin", "add", OPENCODE_PLUGIN],
+              { stdin: "inherit", stdout: "inherit", stderr: "inherit" },
+            ),
+          )
+        }
+
+        yield* runInstaller(
+          "install-claude-marketplace",
+          "Claude Code could not add the Jevvy marketplace",
+          ChildProcess.make(
+            "claude",
+            ["plugin", "marketplace", "add", "--scope", "user", CLAUDE_MARKETPLACE],
+            { stdin: "inherit", stdout: "inherit", stderr: "inherit" },
+          ),
+        )
+
+        yield* runInstaller(
+          "install-claude-plugin",
+          "Claude Code could not install the Jevvy plugin",
+          ChildProcess.make(
+            "claude",
+            ["plugin", "install", "--scope", "user", CLAUDE_PLUGIN],
+            { stdin: "inherit", stdout: "inherit", stderr: "inherit" },
+          ),
+        )
       })
 
       return InitPlatform.of({ readConfig, writeConfig, installHarness })
@@ -127,7 +167,7 @@ const providerSettings = (provider: InitProvider): Readonly<Record<string, strin
       : { endpoint: provider.endpoint, model: provider.model, apiKey }
   }
 
-  return apiKey === undefined ? undefined : { apiKey }
+  return { apiKey: Redacted.value(provider.apiKey) }
 }
 
 const formattingOptions = {
@@ -208,6 +248,5 @@ export const initializeJevvy = Effect.fn("Init.initializeJevvy")(function*(
     configPath,
     harnesses: plan.harnesses,
     provider: plan.provider.provider,
-    needsOpenCodeLogin: plan.provider.provider === "zen" && plan.provider.apiKey === undefined,
   }
 })

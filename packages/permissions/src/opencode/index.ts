@@ -1,34 +1,13 @@
-import { createZenClient, JevProviderError } from "../core.ts"
-import type { JevClient } from "../core.ts"
-import { Credential, Plugin } from "@opencode/plugin/effect"
-import type { ConnectionInfo } from "@opencode/client"
+import { Plugin } from "@opencode/plugin/effect"
 import { Effect } from "effect"
 import { globalJevvyConfigPath, loadJevvyConfig } from "../config.ts"
 import { createPermissionReviewer } from "../engine.ts"
+import { createConfiguredProvider } from "../providers.ts"
 import { createEvaluate } from "./evaluate.ts"
 import {
-  credentialToken,
   missingConfigurationMessage,
   missingCredentialMessage,
-  OPENCODE_INTEGRATION,
-  selectOpenCodeProvider,
-} from "./credentials.ts"
-import type { StoredCredential } from "./credentials.ts"
-
-const describeConnection = (connection: ConnectionInfo) =>
-  connection.type === "env"
-    ? { kind: "env" as const, envName: connection.name }
-    : { kind: "credential" as const }
-
-const storedCredentialFrom = (credential: Credential.Value | undefined): StoredCredential | undefined => {
-  if (credential?.type === "key") {
-    return { type: "key", key: credential.key, configuration: credential.configuration }
-  }
-
-  if (credential?.type === "oauth") return { type: "oauth", access: credential.access }
-
-  return undefined
-}
+} from "./setup.ts"
 
 export default Plugin.define({
   id: "jevvy.permissions",
@@ -46,44 +25,7 @@ export default Plugin.define({
       return yield* Effect.die(new Error(missingConfigurationMessage(configPath)))
     }
 
-    const ports = {
-      activeIntegration: (id: string) => ctx.integration.connection.active(id),
-      resolveIntegration: (connection: ConnectionInfo) => ctx.integration.connection.resolve(connection).pipe(
-        Effect.map(storedCredentialFrom),
-        Effect.catch(() => Effect.succeed(undefined)),
-      ),
-      readEnv: (name: string) => process.env[name],
-    }
-
-    const selected = yield* selectOpenCodeProvider(
-      ports,
-      permissionConfig.selection,
-      describeConnection,
-      (): JevClient => ({
-        evaluate: Effect.fn("JevvyPlugin.evaluateWithOpenCodeCredential")(function*(request) {
-          const connection = yield* ctx.integration.connection.active(OPENCODE_INTEGRATION)
-
-          const stored = connection === undefined
-            ? undefined
-            : yield* ctx.integration.connection.resolve(connection).pipe(
-              Effect.map(storedCredentialFrom),
-              Effect.catch(() => Effect.succeed(undefined)),
-            )
-
-          const token = credentialToken(stored)
-
-          if (token === undefined) {
-            return yield* new JevProviderError({
-              provider: "zen",
-              kind: "authentication",
-              message: "OpenCode login is unavailable",
-            })
-          }
-
-          return yield* createZenClient(token).evaluate(request)
-        }),
-      }),
-    )
+    const selected = createConfiguredProvider(permissionConfig.selection)
 
     if (selected === undefined) {
       const provider = permissionConfig.selection.provider

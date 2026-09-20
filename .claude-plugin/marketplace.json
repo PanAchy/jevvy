@@ -1,0 +1,17 @@
+{
+  "name": "jevvy",
+  "description": "Jevvy integrations for coding-agent permission review",
+  "owner": {
+    "name": "Jevvy"
+  },
+  "plugins": [
+    {
+      "name": "jevvy-permissions",
+      "description": "Allow-only review for shell approval requests",
+      "source": {
+        "source": "npm",
+        "package": "@jevvy/permissions"
+      }
+    }
+  ]
+}

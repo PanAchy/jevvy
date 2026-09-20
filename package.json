@@ -20,6 +20,7 @@
     "pretest": "npm run build:core",
     "pretypecheck": "npm run build:core",
     "smoke:package": "node scripts/package-smoke.mjs",
+    "smoke:claude": "node scripts/claude-smoke.mjs",
     "smoke:opencode": "node scripts/opencode-smoke.mjs",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/permissions/tsconfig.json"

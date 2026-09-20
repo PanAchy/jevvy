@@ -17,27 +17,20 @@ import type { InitHarness, InitPlan, InitProvider, InitResult } from "./index.ts
 
 type ProviderName = InitProvider["provider"]
 
-export const openCodeZenAuthenticationPrompt = {
-  message: "How should OpenCode Zen authenticate?",
-  options: [
-    {
-      value: "opencode" as const,
-      label: "Use existing OpenCode login",
-      hint: "OAuth or API key configured in OpenCode",
-    },
-    {
-      value: "jevvy" as const,
-      label: "Enter an OpenCode Zen API key",
-      hint: "store it securely in Jevvy config",
-    },
-  ],
-}
-
-export const openCodeZenApiKeyPrompt = "Enter your OpenCode Zen API key"
-
 const harnessLabels = {
   opencode: "OpenCode",
+  claude: "Claude Code",
 } satisfies Readonly<Record<InitHarness, string>>
+
+export const harnessPrompt = {
+  message: "Which harnesses should use Jevvy?",
+  options: [
+    { value: "opencode" as const, label: harnessLabels.opencode, hint: "permission plugin" },
+    { value: "claude" as const, label: harnessLabels.claude, hint: "PermissionRequest hook" },
+  ],
+  initialValues: ["opencode", "claude"] satisfies readonly InitHarness[],
+  required: true,
+}
 
 const required = (value: string | undefined): string | undefined =>
   value === undefined || value.trim().length === 0 ? "This value is required" : undefined
@@ -73,18 +66,6 @@ const promptApiKey = async (message: string): Promise<Redacted.Redacted<string> 
 const promptProvider = async (
   provider: ProviderName,
 ): Promise<InitProvider | undefined> => {
-  if (provider === "zen") {
-    const credentialSource = await select<"opencode" | "jevvy">(openCodeZenAuthenticationPrompt)
-
-    if (isCancel(credentialSource)) return undefined
-
-    if (credentialSource === "opencode") return { provider: "zen" }
-
-    const apiKey = await promptApiKey(openCodeZenApiKeyPrompt)
-
-    return apiKey === undefined ? undefined : { provider: "zen", apiKey }
-  }
-
   if (provider === "custom") {
     const endpoint = await text({
       message: "System One endpoint",
@@ -121,6 +102,7 @@ const promptProvider = async (
   }
 
   const labels = {
+    zen: "OpenCode Zen API key",
     typesafe: "TypeSafe API key",
     openrouter: "OpenRouter API key",
     vercel: "Vercel AI Gateway key",
@@ -137,29 +119,20 @@ export const initPlanSummary = (plan: InitPlan, configPath: string): string => [
   `Configuration: ${configPath}`,
   plan.provider.apiKey !== undefined
     ? "Credential: stored securely in config"
-    : plan.provider.provider === "zen"
-    ? "Credential: OpenCode login (OAuth or API key)"
     : "Credential: not required by endpoint",
 ].join("\n")
 
 export const promptInitPlan = async (configPath: string): Promise<InitPlan | undefined> => {
   intro("Set up Jevvy")
 
-  const harnesses = await multiselect<InitHarness>({
-    message: "Which harnesses should use Jevvy?",
-    options: [
-      { value: "opencode", label: harnessLabels.opencode, hint: "permission plugin" },
-    ],
-    initialValues: ["opencode"],
-    required: true,
-  })
+  const harnesses = await multiselect<InitHarness>(harnessPrompt)
 
   if (isCancel(harnesses)) return stop()
 
   const providerName = await select<ProviderName>({
     message: "Which System One provider should Jevvy use?",
     options: [
-      { value: "zen", label: providerDisplayName("zen"), hint: "uses OpenCode OAuth or an API key" },
+      { value: "zen", label: providerDisplayName("zen") },
       { value: "typesafe", label: providerDisplayName("typesafe") },
       { value: "openrouter", label: providerDisplayName("openrouter") },
       { value: "vercel", label: providerDisplayName("vercel") },
@@ -191,10 +164,6 @@ export const showInitError = (message: string): void => {
 
 export const showInitResult = (result: InitResult): void => {
   log.success(`Configured ${providerDisplayName(result.provider)} in ${result.configPath}`)
-
-  if (result.needsOpenCodeLogin) {
-    log.info("If needed, run \"opencode auth login opencode\", then restart OpenCode")
-  }
 
   outro(`Jevvy is ready for ${result.harnesses.map((harness) => harnessLabels[harness]).join(", ")}`)
 }
