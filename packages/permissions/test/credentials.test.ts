@@ -1,6 +1,7 @@
 import { Effect, Redacted } from "effect"
 import { describe, expect, it } from "@effect/vitest"
 import {
+  missingConfigurationMessage,
   missingCredentialMessage,
   OPENCODE_INTEGRATION,
   selectOpenCodeProvider,
@@ -29,6 +30,14 @@ const ports = (options: {
 })
 
 describe("OpenCode credential resolution", () => {
+  it("explains assisted and manual setup when no provider is configured", () => {
+    const path = "/home/user/.config/jevvy/jevvy.jsonc"
+
+    expect(missingConfigurationMessage(path)).toBe(
+      `Jevvy cannot start because no provider is configured. Run "npx @jevvy/permissions init", or create ${path} manually. OpenCode's remaining permission flow remains unchanged.`,
+    )
+  })
+
   it.each([
     ["zen", "OpenCode Zen", "opencode auth login opencode", "OPENCODE_API_KEY", "providers.zen.apiKey"],
     ["typesafe", "TypeSafe AI", undefined, "TYPESAFE_API_KEY", "providers.typesafe.apiKey"],
@@ -42,6 +51,7 @@ describe("OpenCode credential resolution", () => {
     expect(message).toContain(config)
     expect(message).toContain("npx @jevvy/permissions init")
     expect(message).toContain("OpenCode's remaining permission flow remains unchanged")
+    expect(message).toMatch(new RegExp(`^${label} has no credential\\. (Run|Set)`))
 
     if (login === undefined) expect(message).not.toContain("opencode auth login")
     else expect(message).toContain(login)
