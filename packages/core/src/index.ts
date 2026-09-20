@@ -1,4 +1,6 @@
-export type { Json, JsonPrimitive, JevClient, JevRequest, JevResult, NoulAnswer, NoulQuestion } from "./types.ts"
+export { JevRequest, JevResult, Json, NoulAnswer, NoulQuestion } from "./types.ts"
+
+export type { JevClient, JsonPrimitive } from "./types.ts"
 
 export {
   isJevProviderError,

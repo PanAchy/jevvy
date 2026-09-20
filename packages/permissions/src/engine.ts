@@ -1,8 +1,13 @@
 import { Cache, Clock, Duration, Effect, Exit, Ref, Schema } from "effect"
-import { isJevProviderError, JevProviderFailure as JevProviderFailureSchema, providerFailureOf } from "./core.ts"
-import type { JevClient, JevProviderFailure, JevResult, NoulAnswer } from "./core.ts"
-import type { ApprovalQuestion, ApprovalQuestions } from "./questions.ts"
-import { defaultApprovalQuestions, toNoulQuestions } from "./questions.ts"
+import {
+  isJevProviderError,
+  JevProviderFailure as JevProviderFailureSchema,
+  NoulAnswer,
+  providerFailureOf,
+} from "./core.ts"
+import type { JevClient, JevProviderFailure, JevResult } from "./core.ts"
+import { ApprovalQuestions, defaultApprovalQuestions, toNoulQuestions } from "./questions.ts"
+import type { ApprovalQuestion } from "./questions.ts"
 
 export type PermissionEffect = "allow" | "ask"
 
@@ -76,8 +81,7 @@ const answerPasses = (answer: number, question: ApprovalQuestion): boolean =>
     ? answer <= question.threshold.value
     : answer >= question.threshold.value
 
-const validAnswer = (answer: NoulAnswer | undefined): answer is NoulAnswer =>
-  answer?.type === "noul" && Number.isFinite(answer.noul) && answer.noul >= 0 && answer.noul <= 1
+const validAnswer = Schema.is(NoulAnswer)
 
 export const permissionEffectOf = (
   answers: Readonly<Record<string, NoulAnswer>>,
@@ -111,26 +115,11 @@ const judgeResult = (
   }
 }
 
-const validateQuestions = (questions: ApprovalQuestions): Effect.Effect<void, ReviewerConfigurationError> => Effect.try({
-  try: () => {
-  const entries = Object.entries(questions)
-
-  if (entries.length === 0) throw new Error("at least one approval question is required")
-
-  for (const [key, question] of entries) {
-    if (key.length === 0) throw new Error("approval question keys cannot be empty")
-
-    if (question.instructions.trim().length === 0) throw new Error(`approval question ${key} has no instructions`)
-
-    if (!Number.isFinite(question.threshold.value) || question.threshold.value < 0 || question.threshold.value > 1) {
-      throw new Error(`approval question ${key} has an invalid threshold`)
-    }
-  }
-  },
-  catch: (cause) => new ReviewerConfigurationError({
-    message: cause instanceof Error ? cause.message : "invalid approval questions",
-  }),
-})
+const validateQuestions = (questions: ApprovalQuestions): Effect.Effect<void, ReviewerConfigurationError> =>
+  Schema.decodeUnknownEffect(ApprovalQuestions, { onExcessProperty: "error" })(questions).pipe(
+    Effect.asVoid,
+    Effect.mapError(() => new ReviewerConfigurationError({ message: "invalid approval questions" })),
+  )
 
 const cacheKey = (action: string, resource: string): string => `${action.length}:${action}${resource}`
 
