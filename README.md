@@ -2,10 +2,10 @@
 
 # Jevvy
 
-**Auto-approve harmless shell commands without handling every permission prompt yourself**
-
 [![npm version](https://img.shields.io/npm/v/%40jevvy%2Fpermissions)](https://www.npmjs.com/package/@jevvy/permissions)
 [![npm downloads](https://img.shields.io/npm/dm/%40jevvy%2Fpermissions)](https://www.npmjs.com/package/@jevvy/permissions)
+
+**Auto-approve harmless shell commands without handling every permission prompt yourself**
 
 Jevvy adds probabilistic review to your agent harness, clearing routine commands while preserving human review for anything uncertain.
 
