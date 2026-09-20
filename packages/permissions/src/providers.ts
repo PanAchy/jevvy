@@ -1,9 +1,11 @@
 import {
   createOpenRouterClient,
   createTypeSafeClient,
+  createVercelClient,
   createZenClient,
   DEFAULT_OPENROUTER_MODEL,
   DEFAULT_TYPESAFE_MODEL,
+  DEFAULT_VERCEL_MODEL,
   DEFAULT_ZEN_MODEL,
   JevProvider,
 } from "./core.ts"
@@ -39,6 +41,11 @@ const providerDefinitions = {
     automaticPriority: 2,
     model: DEFAULT_OPENROUTER_MODEL,
     createClient: createOpenRouterClient,
+  },
+  vercel: {
+    automaticPriority: 3,
+    model: DEFAULT_VERCEL_MODEL,
+    createClient: createVercelClient,
   },
 } satisfies Readonly<Record<JevProviderType, ProviderDefinition>>
 

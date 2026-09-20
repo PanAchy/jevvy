@@ -10,7 +10,7 @@
     },
     "provider": {
       "type": "string",
-      "enum": ["auto", "zen", "typesafe", "openrouter"],
+      "enum": ["auto", "zen", "typesafe", "openrouter", "vercel"],
       "default": "auto"
     },
     "providers": {
@@ -24,6 +24,9 @@
           "$ref": "#/$defs/providerCredential"
         },
         "openrouter": {
+          "$ref": "#/$defs/providerCredential"
+        },
+        "vercel": {
           "$ref": "#/$defs/providerCredential"
         }
       }

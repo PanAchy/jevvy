@@ -1,9 +1,11 @@
 export {
   createOpenRouterClient,
   createTypeSafeClient,
+  createVercelClient,
   createZenClient,
   DEFAULT_OPENROUTER_MODEL,
   DEFAULT_TYPESAFE_MODEL,
+  DEFAULT_VERCEL_MODEL,
   DEFAULT_ZEN_MODEL,
   isJevProviderError,
   JevRequest,

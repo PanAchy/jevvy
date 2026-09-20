@@ -12,7 +12,7 @@ npm run smoke:package
 
 ## Boundaries
 
-- `packages/core` is a private module for generic JSON state, noul questions and answers, plus separate TypeSafe and Zen clients. It is bundled into the permission product.
+- `packages/core` is a private module for generic JSON state, noul questions and answers, plus separate provider clients. It is bundled into the permission product.
 - `packages/permissions` owns harmlessness inquiries, approval policy, caching, and harness adapters.
 - `packages/typesafe-runtime` owns the private TypeSafe Effect version and is bundled into `@jevvy/permissions` through the core module.
 - Only Promise, AbortSignal, and plain data cross the isolated runtime seam.
@@ -26,7 +26,7 @@ Put generic provider tests in `packages/core/test`. Put permission policy and ha
 
 ## Calibration
 
-Question text, default thresholds, and pinned model versions are one policy. Changing any part requires a live maintainer run:
+Question text, default thresholds, and model identity are one policy. A provider-specific model ID may reuse calibration only when its route is verified to serve the same model. Changing any part requires a live maintainer run:
 
 ```bash
 npm run calibrate -- --provider typesafe
