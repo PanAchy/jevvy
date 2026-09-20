@@ -68,6 +68,8 @@ Run `npm run smoke:opencode` to verify the packed plugin reports an actionable s
 
 Run `npm run smoke:package` and `npm run smoke:opencode` as background jobs because they can take several minutes. Do not overlap them with `npm run check` or other builds because the build scripts clean `dist`.
 
+Add the `full-package-smoke` label to a PR for one Linux, Windows, and macOS x64/arm64 package matrix when it changes package files, exports, bins, bundled artifacts, dependencies, build tooling, installers, or platform-specific filesystem or process behavior. Remove the label after the matrix completes so later pushes use normal PR CI.
+
 ## Commit discipline
 
 Never gate a commit on grep of test output. Grep also matches failing summaries. Gate on exit codes and amend immediately if a red commit slips through.
