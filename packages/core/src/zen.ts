@@ -24,11 +24,9 @@ export const parseZenResponse = (
 export const createZenClient = (
   apiKey: string,
   model: string = DEFAULT_ZEN_MODEL,
-  transport: typeof globalThis.fetch = globalThis.fetch,
 ): JevClient => createSystemOneClient({
   provider: "zen",
   url: ZEN_SYSTEMONE_URL,
   model,
   headers: { "x-api-key": apiKey },
-  transport,
 })

@@ -1,4 +1,11 @@
 import { Clock, Effect, Option, Schema } from "effect"
+import {
+  FetchHttpClient,
+  Headers,
+  HttpClient,
+  HttpClientRequest,
+  HttpClientResponse,
+} from "effect/unstable/http"
 import { JevProviderError } from "./provider-error.ts"
 import type { JevProvider, JevProviderErrorKind } from "./provider-error.ts"
 import type { JevClient, JevRequest, JevResult, NoulQuestion } from "./types.ts"
@@ -6,6 +13,21 @@ import type { JevClient, JevRequest, JevResult, NoulQuestion } from "./types.ts"
 const NoulAnswer = Schema.Struct({
   type: Schema.Literal("noul"),
   noul: Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: 1 })),
+})
+
+const NoulQuestion = Schema.Struct({
+  type: Schema.Literal("noul"),
+  instructions: Schema.String,
+  criteria: Schema.optional(Schema.Struct({
+    false: Schema.String,
+    true: Schema.String,
+  })),
+})
+
+const SystemOneRequest = Schema.Struct({
+  model: Schema.NonEmptyString,
+  state: Schema.Json,
+  questions: Schema.Record(Schema.String, NoulQuestion),
 })
 
 const SystemOneResponse = Schema.Struct({
@@ -25,8 +47,6 @@ const ProviderErrorBody = Schema.Union([
 ])
 
 const decodeProviderErrorBody = Schema.decodeUnknownOption(Schema.fromJsonString(ProviderErrorBody))
-
-const decodeSystemOneResponse = Schema.decodeUnknownEffect(SystemOneResponse)
 
 interface ErrorDetails {
   readonly code?: string
@@ -82,18 +102,18 @@ const classifyError = (status: number, code: string | undefined): JevProviderErr
   return "unavailable"
 }
 
-const retryAfter = Effect.fnUntraced(function*(response: Response) {
-  const milliseconds = response.headers.get("retry-after-ms")
+const retryAfter = Effect.fnUntraced(function*(response: HttpClientResponse.HttpClientResponse) {
+  const milliseconds = Option.getOrUndefined(Headers.get(response.headers, "retry-after-ms"))
 
-  if (milliseconds !== null && milliseconds.trim().length > 0) {
+  if (milliseconds !== undefined && milliseconds.trim().length > 0) {
     const parsed = Number(milliseconds)
 
     if (Number.isFinite(parsed) && parsed >= 0) return parsed
   }
 
-  const raw = response.headers.get("retry-after")
+  const raw = Option.getOrUndefined(Headers.get(response.headers, "retry-after"))
 
-  if (raw === null || raw.trim().length === 0) return undefined
+  if (raw === undefined || raw.trim().length === 0) return undefined
 
   const seconds = Number(raw)
 
@@ -131,7 +151,6 @@ export interface SystemOneClientOptions {
   readonly url: string
   readonly model: string
   readonly headers: Readonly<Record<string, string>>
-  readonly transport: typeof globalThis.fetch
 }
 
 export interface SystemOneBodyInput {
@@ -149,23 +168,34 @@ export const createSystemOneClient = (options: SystemOneClientOptions): JevClien
       })
     }
 
-    const response = yield* Effect.tryPromise({
-      try: (signal) => options.transport(options.url, {
-        method: "POST",
-        headers: { ...options.headers, "content-type": "application/json" },
-        body: JSON.stringify({ model: options.model, state: request.state, questions: request.questions }),
-        signal,
+    const httpRequest = yield* HttpClientRequest.post(options.url).pipe(
+      HttpClientRequest.acceptJson,
+      HttpClientRequest.setHeaders(options.headers),
+      HttpClientRequest.schemaBodyJson(SystemOneRequest)({
+        model: options.model,
+        state: request.state,
+        questions: request.questions,
       }),
-      catch: (cause) => new JevProviderError({
+      Effect.mapError((cause) => new JevProviderError({
+        provider: options.provider,
+        kind: "invalid-request",
+        message: `${options.provider} System One request could not be encoded`,
+        cause,
+      })),
+    )
+
+    const response = yield* HttpClient.execute(httpRequest).pipe(
+      Effect.provide(FetchHttpClient.layer),
+      Effect.mapError((cause) => new JevProviderError({
         provider: options.provider,
         kind: "unavailable",
         message: `${options.provider} System One is unavailable`,
         cause,
-      }),
-    })
+      })),
+    )
 
-    if (!response.ok) {
-      const text = yield* Effect.tryPromise(() => response.text()).pipe(
+    if (response.status < 200 || response.status >= 300) {
+      const text = yield* response.text.pipe(
         Effect.orElseSucceed(() => ""),
         Effect.map((body) => body.slice(0, 2_000)),
       )
@@ -182,18 +212,7 @@ export const createSystemOneClient = (options: SystemOneClientOptions): JevClien
       })
     }
 
-    const body = yield* Effect.tryPromise({
-      try: () => response.json(),
-      catch: (cause) => new JevProviderError({
-        provider: options.provider,
-        kind: "invalid-response",
-        message: `${options.provider} System One returned invalid JSON`,
-        status: response.status,
-        cause,
-      }),
-    })
-
-    const result = yield* decodeSystemOneResponse(body).pipe(
+    const result = yield* HttpClientResponse.schemaBodyJson(SystemOneResponse)(response).pipe(
       Effect.mapError((cause) => new JevProviderError({
         provider: options.provider,
         kind: "invalid-response",

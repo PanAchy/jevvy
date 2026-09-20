@@ -49,7 +49,12 @@ Jevvy reads one optional global file at `~/.config/jevvy/jevvy.jsonc`. Project r
 ```jsonc
 {
   "$schema": "https://raw.githubusercontent.com/PanAchy/jevvy/main/config.schema.json",
-  "provider": "auto",
+  "provider": "typesafe",
+  "providers": {
+    "typesafe": {
+      "apiKey": "your-typesafe-api-key",
+    },
+  },
 }
 ```
 

@@ -9,11 +9,9 @@ export const TYPESAFE_SYSTEMONE_URL = "https://api.typesafe.ai/v1/systemone"
 export const createTypeSafeClient = (
   apiKey: string,
   model: string = DEFAULT_TYPESAFE_MODEL,
-  transport: typeof globalThis.fetch = globalThis.fetch,
 ): JevClient => createSystemOneClient({
   provider: "typesafe",
   url: TYPESAFE_SYSTEMONE_URL,
   model,
   headers: { authorization: `Bearer ${apiKey}` },
-  transport,
 })
