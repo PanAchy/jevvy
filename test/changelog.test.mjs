@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 
 import { omitIgnoredThanks } from "../.changeset/changelog.mjs"
@@ -25,5 +26,15 @@ describe("Changesets changelog attribution", () => {
     expect(omitIgnoredThanks(line, ["PanAchy"])).toBe(
       `- [#3](pull) Thanks ${contributor}! - Improve Jevvy together`,
     )
+  })
+})
+
+describe("public release notes", () => {
+  it("uses user-facing headings in the newest release", () => {
+    const changelog = readFileSync(new URL("../packages/permissions/CHANGELOG.md", import.meta.url), "utf8")
+    const newestRelease = changelog.split(/^## /mu)[1]
+
+    expect(newestRelease).toBeDefined()
+    expect(newestRelease).not.toMatch(/^### (?:Major|Minor|Patch) Changes$/mu)
   })
 })
