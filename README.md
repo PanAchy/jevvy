@@ -30,7 +30,7 @@ Jevvy Permissions uses Jev to auto-approve harmless shell permission requests. A
 
 ## Quickstart
 
-Node.js 24 or newer is required.
+Node.js 22.19 or newer is required.
 
 ```bash
 npx @jevvy/permissions init

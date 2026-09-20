@@ -12,6 +12,10 @@ Report invalid Jevvy configuration and missing provider credentials when a Claud
 
 Let `jevvy init` install OpenCode, Claude Code, or both from one multi-select setup flow.
 
+## Reliability
+
+Support Node.js 22.19 and newer for setup, provider review, and Claude Code hooks.
+
 ## Breaking changes
 
 Stop reading OpenCode login credentials for OpenCode Zen. Every harness now uses the selected provider's API key from the global Jevvy configuration or its native environment variable.

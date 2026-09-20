@@ -1,6 +1,6 @@
 # Contributing to Jevvy
 
-Jevvy requires Node 24 or newer.
+Jevvy requires Node 22.19 or newer.
 
 ```bash
 npm install

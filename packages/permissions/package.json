@@ -47,7 +47,7 @@
   ],
   "scripts": {
     "prebuild": "npm run build --workspace=@jevvy/core && node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "tsc -p tsconfig.build.json && esbuild src/core.ts --bundle --platform=node --format=esm --target=node24 --external:effect --external:effect/* --outfile=dist/core.js && esbuild src/claude/main.ts --bundle --platform=node --format=esm --target=node24 --main-fields=module,main --outfile=dist/claude-hook.js && node ../../scripts/copy-calibration-assets.mjs",
+    "build": "tsc -p tsconfig.build.json && esbuild src/core.ts --bundle --platform=node --format=esm --target=node22 --external:effect --external:effect/* --outfile=dist/core.js && esbuild src/claude/main.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --outfile=dist/claude-hook.js && node ../../scripts/copy-calibration-assets.mjs",
     "prepack": "npm run build && node ../../scripts/package-readme.mjs prepare",
     "postpack": "node ../../scripts/package-readme.mjs clean"
   },
@@ -60,6 +60,6 @@
     "jsonc-parser": "^3.3.1"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=22.19.0"
   }
 }
