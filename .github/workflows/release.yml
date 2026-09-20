@@ -31,7 +31,7 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - run: npm install --global npm@${{ env.NPM_VERSION }}
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
       - id: select-mode
         uses: changesets/action/select-mode@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2
 
@@ -50,7 +50,7 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - run: npm install --global npm@${{ env.NPM_VERSION }}
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
       - id: app-token
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
         with:
@@ -81,7 +81,7 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - run: npm install --global npm@${{ env.NPM_VERSION }}
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
       - run: npm run check
       - run: npm run smoke:package
       - id: pack
@@ -105,7 +105,7 @@ jobs:
           node-version: 24
           package-manager-cache: false
       - run: npm install --global npm@${{ env.NPM_VERSION }}
-      - run: npm ci
+      - run: npm ci --no-audit --no-fund
       - uses: changesets/action/publish@ae32849d5ba541f9ae29e40e22a623bc13562f51 # v2
         with:
           pack-dir-artifact-id: ${{ needs.pack.outputs.pack-dir-artifact-id }}

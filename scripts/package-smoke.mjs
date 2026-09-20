@@ -27,6 +27,12 @@ const ensure = (condition, message) => {
   if (!condition) throw new Error(message)
 }
 
+const npmCli = process.env.npm_execpath
+
+ensure(npmCli !== undefined, "package smoke must be run through npm")
+
+const runNpm = (arguments_, options) => execFileSync(process.execPath, [npmCli, ...arguments_], options)
+
 const collectDependencyVersions = (dependencies, packageName, versions = new Set()) => {
   if (dependencies === undefined) return versions
 
@@ -56,7 +62,7 @@ try {
 
   mkdirSync(packDirectory)
 
-  execFileSync("npm", ["pack", "--workspace=@jevvy/permissions", "--pack-destination", packDirectory], {
+  runNpm(["pack", "--workspace=@jevvy/permissions", "--pack-destination", packDirectory], {
     cwd: repo,
     env: npmEnvironment,
     stdio: "pipe",
@@ -74,7 +80,7 @@ try {
 
   mkdirSync(consumer)
   writeFileSync(join(consumer, "package.json"), JSON.stringify({ private: true, type: "module" }))
-  execFileSync("npm", ["install", "--no-audit", "--no-fund", ...tarballs], {
+  runNpm(["install", "--no-audit", "--no-fund", ...tarballs], {
     cwd: consumer,
     env: npmEnvironment,
     stdio: "pipe",
@@ -148,7 +154,7 @@ try {
   ensure(calibrationPlan.calls > 0, "installed calibration command has an empty baseline")
 
   const dependencyTree = JSON.parse(
-    execFileSync("npm", ["ls", "effect", "@effect/platform-node", "@effect/platform-node-shared", "--all", "--json"], {
+    runNpm(["ls", "effect", "@effect/platform-node", "@effect/platform-node-shared", "--all", "--json"], {
       cwd: consumer,
       encoding: "utf8",
       env: npmEnvironment,
