@@ -127,6 +127,30 @@ describe("TypeSafe client", () => {
     })
   }))
 
+  it.effect("maps customer verification gates to exhausted credits", () => Effect.gen(function*() {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+      error: {
+        message: "AI Gateway requires a valid credit card on file before free credits can be used.",
+        type: "customer_verification_required",
+      },
+    }, { status: 403 }))
+
+    const client = createTypeSafeClient("unverified", "jev-test")
+
+    const error = yield* Effect.flip(client.evaluate({
+      state: null,
+      questions: { harmless: { type: "noul", instructions: "Is it harmless?" } },
+    }).pipe(Effect.provideService(FetchHttpClient.Fetch, transport)))
+
+    expect(error).toMatchObject({
+      name: "JevProviderError",
+      provider: "typesafe",
+      kind: "credits-exhausted",
+      status: 403,
+      code: "customer_verification_required",
+    })
+  }))
+
   it.effect("preserves TypeSafe rate limits as transient failures", () => Effect.gen(function*() {
     const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
       message: "Rate limit exceeded",

@@ -51,6 +51,7 @@ const creditCodes = new Set([
   "CreditsError",
   "billing_required",
   "credit_balance_exhausted",
+  "customer_verification_required",
   "insufficient_credits",
   "insufficient_quota",
 ])
