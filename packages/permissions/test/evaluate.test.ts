@@ -86,6 +86,34 @@ describe("OpenCode permission evaluation", () => {
     expect(input.message).toBe("OpenCode needs approval")
   }))
 
+  it.effect("reports structured provider failure evidence", () => Effect.gen(function*() {
+    const report = vi.fn()
+    const input = event()
+
+    const failure = {
+      provider: "zen" as const,
+      kind: "credits-exhausted" as const,
+      message: "Insufficient balance",
+      status: 401,
+      code: "CreditsError",
+    }
+
+    yield* createEvaluate(reviewer({
+      effect: "ask",
+      reason: "unavailable",
+      judgments: [],
+      failure,
+    }, []), { report })(input)
+
+    expect(input.effect).toBe("ask")
+    expect(report).toHaveBeenCalledWith({
+      effect: "ask",
+      reason: "unavailable",
+      resources: 1,
+      failure,
+    })
+  }))
+
   it.effect("ignores non-shell asks", () => Effect.gen(function*() {
     const calls: string[][] = []
     const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {})

@@ -1,4 +1,4 @@
-import { Cache, Duration, Effect, Exit, Schema } from "effect"
+import { Cache, Clock, Duration, Effect, Exit, Ref, Schema } from "effect"
 import { isJevProviderError, JevProviderFailure as JevProviderFailureSchema, providerFailureOf } from "./core.ts"
 import type { JevClient, JevProviderFailure, JevResult, NoulAnswer } from "./core.ts"
 import type { ApprovalQuestion, ApprovalQuestions } from "./questions.ts"
@@ -38,6 +38,27 @@ export interface PermissionReviewerOptions {
   readonly questions?: ApprovalQuestions
   readonly timeoutMs?: number
   readonly cacheCapacity?: number
+}
+
+interface ProviderCooldown {
+  readonly failure: JevProviderFailure
+  readonly untilMs: number
+}
+
+const RATE_LIMIT_COOLDOWN_MS = 60_000
+
+const EXHAUSTED_COOLDOWN_MS = 5 * 60_000
+
+const cooldownMs = (failure: JevProviderFailure): number | undefined => {
+  if (failure.retryAfterMs !== undefined) return failure.retryAfterMs
+
+  if (failure.kind === "rate-limited") return RATE_LIMIT_COOLDOWN_MS
+
+  if (failure.kind === "credits-exhausted" || failure.kind === "quota-exhausted") {
+    return EXHAUSTED_COOLDOWN_MS
+  }
+
+  return undefined
 }
 
 class JudgmentUnavailable extends Schema.TaggedError<JudgmentUnavailable>()("JudgmentUnavailable", {
@@ -142,33 +163,74 @@ export const createPermissionReviewer = Effect.fn("PermissionReviewer.create")(f
   }
 
   const noulQuestions = toNoulQuestions(questions)
+  const providerCooldown = yield* Ref.make<ProviderCooldown | undefined>(undefined)
 
-  const cache = yield* Cache.makeWith(
-      (key: string) => {
-        const separator = key.indexOf(":")
-        const actionLength = Number(key.slice(0, separator))
-        const payload = key.slice(separator + 1)
-        const action = payload.slice(0, actionLength)
-        const resource = payload.slice(actionLength)
+  const activeProviderFailure = Effect.fn("PermissionReviewer.activeProviderFailure")(function*() {
+    const now = yield* Clock.currentTimeMillis
 
-        return client.evaluate({ state: { action, resource }, questions: noulQuestions }).pipe(
-          Effect.timeout(timeoutMs),
-          Effect.flatMap((result) => Effect.try({
-            try: () => judgeResult(resource, result, questions),
-            catch: (cause) => unavailable(cause instanceof Error ? cause : new Error(String(cause))),
-          })),
-          Effect.mapError(unavailable),
-        )
-      },
-      {
-        capacity,
-        timeToLive: (exit) => Exit.isSuccess(exit) ? Duration.infinity : Duration.zero,
+    return yield* Ref.modify(
+      providerCooldown,
+      (current): readonly [JevProviderFailure | undefined, ProviderCooldown | undefined] => {
+        if (current === undefined || current.untilMs <= now) return [undefined, undefined]
+
+        return [current.failure, current]
       },
     )
+  })
+
+  const recordProviderCooldown = Effect.fn("PermissionReviewer.recordProviderCooldown")(function*(
+    failure: JevProviderFailure,
+  ) {
+    const duration = cooldownMs(failure)
+
+    if (duration === undefined) return
+
+    const now = yield* Clock.currentTimeMillis
+    const next = { failure, untilMs: now + duration }
+
+    yield* Ref.update(providerCooldown, (current) =>
+      current === undefined || current.untilMs < next.untilMs ? next : current)
+  })
+
+  const judgeResource = Effect.fn("PermissionReviewer.judgeResource")(function*(key: string) {
+    const separator = key.indexOf(":")
+    const actionLength = Number(key.slice(0, separator))
+    const payload = key.slice(separator + 1)
+    const action = payload.slice(0, actionLength)
+    const resource = payload.slice(actionLength)
+    const disabled = yield* activeProviderFailure()
+
+    if (disabled !== undefined) {
+      return yield* new JudgmentUnavailable({ message: disabled.message, failure: disabled })
+    }
+
+    return yield* client.evaluate({ state: { action, resource }, questions: noulQuestions }).pipe(
+      Effect.timeout(timeoutMs),
+      Effect.flatMap((result) => Effect.try({
+        try: () => judgeResult(resource, result, questions),
+        catch: (cause) => unavailable(cause instanceof Error ? cause : new Error(String(cause))),
+      })),
+      Effect.mapError(unavailable),
+      Effect.tapError((error) => error.failure === undefined
+        ? Effect.succeed(undefined)
+        : recordProviderCooldown(error.failure)),
+    )
+  })
+
+  const cache = yield* Cache.makeWith(judgeResource, {
+    capacity,
+    timeToLive: (exit) => Exit.isSuccess(exit) ? Duration.infinity : Duration.zero,
+  })
 
   return {
     review: Effect.fn("PermissionReviewer.review")(function*(request) {
       if (request.resources.length === 0) return { effect: "ask", reason: "empty", judgments: [] }
+
+      const disabled = yield* activeProviderFailure()
+
+      if (disabled !== undefined) {
+        return { effect: "ask", reason: "unavailable", judgments: [], failure: disabled }
+      }
 
       const judgments: ResourceJudgment[] = []
 
