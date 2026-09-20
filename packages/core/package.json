@@ -1,0 +1,24 @@
+{
+  "name": "@jevvy/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Internal Jev client module for @jevvy/permissions",
+  "type": "module",
+  "license": "MIT",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "prebuild": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "tsc -p tsconfig.build.json && esbuild ../typesafe-runtime/src/index.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/typesafe-runtime.js"
+  },
+  "devDependencies": {
+    "@jevvy/typesafe-runtime": "0.0.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

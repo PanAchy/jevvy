@@ -1,0 +1,57 @@
+{
+  "name": "@jevvy/permissions",
+  "version": "0.0.0",
+  "description": "Auto-approve shell permission requests that Jevvy judges harmless",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://github.com/PanAchy/jevvy#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PanAchy/jevvy.git",
+    "directory": "packages/permissions"
+  },
+  "bugs": {
+    "url": "https://github.com/PanAchy/jevvy/issues"
+  },
+  "keywords": [
+    "opencode",
+    "plugin",
+    "permissions",
+    "agent",
+    "jev"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "jevvy-calibrate": "bin/jevvy-calibrate.mjs"
+  },
+  "files": [
+    "dist",
+    "bin",
+    "LICENSE",
+    "THIRD_PARTY_LICENSES.txt"
+  ],
+  "scripts": {
+    "prebuild": "npm run build --workspace=@jevvy/core && node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "tsc -p tsconfig.build.json && esbuild src/core.ts --bundle --platform=node --format=esm --target=node24 --outfile=dist/core.js && node ../../scripts/copy-calibration-assets.mjs",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.0-rc.112",
+    "@effect/platform-node-shared": "4.0.0-rc.112",
+    "@opencode/client": "2.0.8",
+    "@opencode/plugin": "2.0.8",
+    "effect": "4.0.0-rc.112",
+    "jsonc-parser": "^3.3.1"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

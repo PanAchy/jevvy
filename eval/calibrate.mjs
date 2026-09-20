@@ -8,16 +8,19 @@ import { execFileSync } from "node:child_process"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { config as loadEnv } from "dotenv"
 
 const here = dirname(fileURLToPath(import.meta.url))
 
 const root = resolve(here, "..")
 
+loadEnv({ path: join(root, ".env"), quiet: true })
+
 const usage = `usage: node eval/calibrate.mjs --provider <typesafe|zen> [--model <id>] [--output <path>] [--spacing <ms>] [--dry-run]
 
 Credentials:
   typesafe  TYPESAFE_API_KEY
-  zen       JEVZY_ZEN_TOKEN or OPENCODE_TOKEN`
+  zen       OPENCODE_API_KEY`
 
 const args = process.argv.slice(2)
 
@@ -51,9 +54,11 @@ if (!Number.isFinite(spacing) || spacing < 0) {
   process.exit(2)
 }
 
-const corpus = JSON.parse(readFileSync(join(here, "commands.json"), "utf8"))
+const corpusRaw = readFileSync(join(here, "commands.json"), "utf8")
 
-if (!Array.isArray(corpus.commands) || !Array.isArray(corpus.repeats) || !Array.isArray(corpus.contexts)) {
+const corpus = JSON.parse(corpusRaw)
+
+if (!Array.isArray(corpus.commands) || !Array.isArray(corpus.repeats)) {
   throw new Error("eval/commands.json has an invalid calibration shape")
 }
 
@@ -63,7 +68,9 @@ const repeatCount = corpus.meta?.repeatCount
 
 if (!Number.isInteger(repeatCount) || repeatCount < 1) throw new Error("calibration repeatCount must be a positive integer")
 
-const plan = corpus.commands.map((entry) => ({ kind: "base", ...entry }))
+const corpusName = "eval/commands.json"
+
+const plan = corpus.commands.map((entry) => ({ corpus: corpusName, kind: "base", ...entry }))
 
 for (const command of corpus.repeats) {
   const entry = byCommand.get(command)
@@ -71,11 +78,9 @@ for (const command of corpus.repeats) {
   if (entry === undefined) throw new Error(`repeat command is not in the base corpus: ${command}`)
 
   for (let probe = 1; probe <= repeatCount; probe++) {
-    plan.push({ kind: "repeat", ...entry, probe })
+    plan.push({ corpus: corpusName, kind: "repeat", ...entry, probe })
   }
 }
-
-for (const entry of corpus.contexts) plan.push({ kind: "context", ...entry })
 
 if (dryRun) {
   console.log(JSON.stringify({ provider, model: modelOverride, calls: plan.length, plan }, null, 2))
@@ -83,7 +88,7 @@ if (dryRun) {
 }
 
 const key = provider === "zen"
-  ? process.env.JEVZY_ZEN_TOKEN ?? process.env.OPENCODE_TOKEN
+  ? process.env.OPENCODE_API_KEY
   : process.env.TYPESAFE_API_KEY
 
 if (key === undefined || key.trim().length === 0) {
@@ -91,45 +96,46 @@ if (key === undefined || key.trim().length === 0) {
   process.exit(2)
 }
 
-const [{ classifyCodeTiers }, { defaultThresholds }, providerModule] = await Promise.all([
-  import("../dist/core/floor.js"),
-  import("../dist/core/decision.js"),
-  provider === "zen" ? import("../dist/core/zen.js") : import("../dist/core/judge.js"),
+const [core, questionsModule, engine, calibration] = await Promise.all([
+  import("../packages/core/dist/index.js"),
+  import("../packages/permissions/dist/questions.js"),
+  import("../packages/permissions/dist/engine.js"),
+  import("../packages/permissions/dist/calibration.js"),
 ])
 
-const requestedModel = modelOverride ?? (provider === "zen" ? providerModule.DEFAULT_ZEN_MODEL : providerModule.DEFAULT_MODEL)
+const requestedModel = modelOverride ?? (provider === "zen" ? core.DEFAULT_ZEN_MODEL : core.DEFAULT_TYPESAFE_MODEL)
 
-const judge = provider === "zen"
-  ? providerModule.createZenJudge(key, requestedModel)
-  : providerModule.createJudge(key, requestedModel)
+const client = provider === "zen"
+  ? core.createZenClient(key, requestedModel)
+  : core.createTypeSafeClient(key, requestedModel)
+
+const questions = questionsModule.defaultApprovalQuestions
+
+const noulQuestions = questionsModule.toNoulQuestions(questions)
 
 const timestamp = new Date().toISOString().replaceAll(":", "-").replace(".", "-")
 
 const output = resolve(outputOverride ?? join(root, "docs", "research", `threshold-eval-${provider}-${timestamp}.jsonl`))
 
-const questionSource = readFileSync(join(root, "src", "core", "questions.ts"), "utf8")
-
-const questionHash = createHash("sha256").update(questionSource).digest("hex")
+const questionHash = createHash("sha256").update(JSON.stringify(noulQuestions)).digest("hex")
 
 const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
 
-const lines = [
-  JSON.stringify({
-    meta: true,
-    provider,
-    requestedModel,
-    thresholds: defaultThresholds,
-    questionHash,
-    commit,
-    cwd: basename(root),
-    createdAt: new Date().toISOString(),
-    calls: plan.length,
-  }),
-]
+const meta = {
+  provider,
+  requestedModel,
+  questions,
+  questionHash,
+  commit,
+  cwd: basename(root),
+  createdAt: new Date().toISOString(),
+  calls: plan.length,
+  corpora: [{ name: corpusName, hash: createHash("sha256").update(corpusRaw).digest("hex") }],
+}
 
 mkdirSync(dirname(output), { recursive: true })
 
-writeFileSync(output, `${lines[0]}\n`, { mode: 0o600 })
+writeFileSync(output, `${JSON.stringify(calibration.calibrationMetaRecord(meta))}\n`, { mode: 0o600 })
 
 const sleep = (milliseconds) => new Promise((resolveSleep) => setTimeout(resolveSleep, milliseconds))
 
@@ -137,66 +143,63 @@ const describeError = (error) => String(error).replaceAll(key, "[redacted]").sli
 
 let errors = 0
 
+const records = []
+
 for (let index = 0; index < plan.length; index++) {
   const entry = plan[index]
-
-  const input = {
-    command: entry.command,
-    cwd: basename(root),
-  }
-
-  if (entry.task !== undefined) input.task = entry.task
 
   const started = performance.now()
 
   try {
-    const judged = await judge.judge(input, AbortSignal.timeout(30_000))
+    const judged = await client.evaluate({
+      state: { action: "shell", resource: entry.command },
+      questions: noulQuestions,
+    }, AbortSignal.timeout(30_000))
+
+    const effect = engine.permissionEffectOf(judged.answers, questions)
 
     const record = {
-      kind: entry.kind,
-      want: entry.want,
-      policyWant: entry.policyWant ?? entry.want,
-      command: entry.command,
-      task: entry.task ?? null,
-      probe: entry.probe ?? null,
-      codeTier: classifyCodeTiers(entry.command).tier,
-      axes: judged.risk,
-      context: judged.context ?? null,
+      ...entry,
+      status: "result",
+      effect,
+      answers: calibration.numericAnswers(judged.answers),
       model: judged.model,
       ms: Math.round(performance.now() - started),
       timestamp: new Date().toISOString(),
     }
 
-    lines.push(JSON.stringify(record))
-    writeFileSync(output, `${lines.at(-1)}\n`, { flag: "a" })
+    records.push(record)
+    writeFileSync(output, `${JSON.stringify(record)}\n`, { flag: "a" })
     console.log(`${index + 1}/${plan.length} ${entry.kind.padEnd(7)} ${entry.command.slice(0, 48).padEnd(48)} ${record.ms}ms`)
   } catch (error) {
     errors++
 
     const record = {
-      kind: "error",
-      command: entry.command,
-      task: entry.task ?? null,
-      probe: entry.probe ?? null,
+      ...entry,
+      status: "error",
       error: describeError(error),
       ms: Math.round(performance.now() - started),
       timestamp: new Date().toISOString(),
     }
 
-    lines.push(JSON.stringify(record))
-    writeFileSync(output, `${lines.at(-1)}\n`, { flag: "a" })
+    records.push(record)
+    writeFileSync(output, `${JSON.stringify(record)}\n`, { flag: "a" })
     console.error(`${index + 1}/${plan.length} ERROR ${entry.command}: ${record.error}`)
   }
 
   if (index + 1 < plan.length && spacing > 0) await sleep(spacing)
 }
 
-await judge.dispose?.()
+await client.dispose?.()
 
-console.log(`\n${plan.length} calls, ${errors} errors`)
+const summary = calibration.summarizeCalibration(meta, records)
 
-console.log(`raw: ${output}`)
+writeFileSync(output, `${JSON.stringify(summary)}\n`, { flag: "a" })
 
-console.log(`analyze: node eval/analyze.mjs ${output}`)
+console.log(`\n${plan.length} calls, ${errors} errors, ${summary.mustAskLeaks.length} must-ask false approvals`)
 
-if (errors > 0) process.exitCode = 1
+console.log(`result: ${summary.result}`)
+
+console.log(`output: ${output}`)
+
+if (summary.failed) process.exitCode = 1

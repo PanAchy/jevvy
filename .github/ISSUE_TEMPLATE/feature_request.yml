@@ -1,0 +1,35 @@
+name: Feature request
+description: Propose a focused improvement to Jevvy
+title: "feat: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What user problem should Jevvy solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest useful behavior change.
+    validations:
+      required: true
+
+  - type: textarea
+    id: permission-contract
+    attributes:
+      label: Permission contract
+      description: Explain how this preserves host allow and deny decisions, reviews only shell asks, and abstains on uncertainty.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What can users do today, and why is it insufficient?

@@ -1,13 +1,8 @@
 {
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "strict": true,
-    "skipLibCheck": true,
-    "allowImportingTsExtensions": true,
-    "types": ["node"],
-    "noEmit": true
-  },
-  "include": ["src", "test"]
+  "extends": "./tsconfig.base.json",
+  "files": [],
+  "references": [
+    { "path": "./packages/core" },
+    { "path": "./packages/permissions" }
+  ]
 }

@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/PanAchy/jevvy/main/config.schema.json",
+  "title": "Jevvy configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "provider": {
+      "type": "string",
+      "enum": ["auto", "zen", "typesafe"],
+      "default": "auto"
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "zen": {
+          "$ref": "#/$defs/providerCredential"
+        },
+        "typesafe": {
+          "$ref": "#/$defs/providerCredential"
+        }
+      }
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "questions": {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": {
+            "minLength": 1
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/approvalQuestion"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "providerCredential": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiKey"],
+      "properties": {
+        "apiKey": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "approvalQuestion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "instructions", "threshold"],
+      "properties": {
+        "type": {
+          "const": "noul"
+        },
+        "instructions": {
+          "type": "string",
+          "minLength": 1
+        },
+        "criteria": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["false", "true"],
+          "properties": {
+            "false": {
+              "type": "string",
+              "minLength": 1
+            },
+            "true": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "threshold": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["direction", "value"],
+          "properties": {
+            "direction": {
+              "enum": ["atLeast", "atMost"]
+            },
+            "value": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,66 +1,55 @@
-# Contributing to jevvy
-
-Thanks for helping improve jevvy. The project is pre-v0, so changes currently land as direct local commits. After the first release, changes to `main` will require a pull request with green CI.
-
-## Setup
+# Contributing to Jevvy
 
 Jevvy requires Node 24 or newer.
 
 ```bash
 npm install
 npm run check
+npm run smoke:package
 ```
 
-`npm run check` runs typechecking, lint, unit tests, and the production build. Unit tests are deterministic and never need an API key.
+`npm run check` typechecks, lints, tests, and builds the product and its private modules. Unit tests are deterministic and never need credentials. The package smoke packs `@jevvy/permissions`, installs it as a consumer, verifies its plugin entrypoint and types, and confirms the private core and TypeSafe workspaces did not become top-level dependencies.
 
 ## Boundaries
 
-- `src/core` owns command classification, question text, provider adapters, and verdict policy. It has no OpenCode imports.
-- `src/plugin` adapts the core to OpenCode and owns credentials, budgets, caching, logs, and permission events.
-- Provider and persistence boundaries decode data they do not own.
-- Credentials belong in OpenCode integrations or environment variables, never configuration files, fixtures, logs, or commits.
-- Root `effect` stays pinned to the exact version used by `@opencode/plugin`. `packages/typesafe-runtime` owns its separate Effect version and is bundled into `dist`; only promises, cancellation signals, and plain data may cross that boundary.
-- OpenCode permission policy has precedence. Configured denies remain final, and saved approvals are respected before Jevvy judges an otherwise eligible shell command.
-
-See `AGENTS.md` for the current architecture map and repository-specific implementation rules.
+- `packages/core` is a private module for generic JSON state, noul questions and answers, plus separate TypeSafe and Zen clients. It is bundled into the permission product.
+- `packages/permissions` owns harmlessness inquiries, approval policy, caching, and harness adapters.
+- `packages/typesafe-runtime` owns the private TypeSafe Effect version and is bundled into `@jevvy/permissions` through the core module.
+- Only Promise, AbortSignal, and plain data cross the isolated runtime seam.
+- Provider boundaries decode data they do not own.
+- Credentials belong in OpenCode auth, provider-native environment variables, or the user-global Jevvy file with mode `0600`. Never put them in repositories, fixtures, logs, or commits.
+- OpenCode allow and deny decisions have precedence. Jevvy reviews only existing shell asks.
 
 ## Tests
 
-Pure core behavior belongs in `test/core`. Plugin behavior uses Effect layers and fake services in `test/plugin`. Real provider calls belong in the explicit calibration harness, not Vitest.
-
-A behavior change should include a regression test. A provider adapter needs synthetic boundary tests before live verification.
-
-`npm run build` first emits the root TypeScript build, then replaces the TypeSafe runtime module with its isolated bundle. `npm run smoke:package` packs and installs the artifact to verify that no workspace dependency or second visible Effect tree escapes into the published package.
+Put generic provider tests in `packages/core/test`. Put permission policy and harness adapter tests in `packages/permissions/test`. Every behavior change needs a regression test. Real provider calls belong in calibration, never Vitest.
 
 ## Calibration
 
-Question text, default thresholds, and pinned model versions are one calibrated unit. Changing any of them requires a live maintainer run:
+Question text, default thresholds, and pinned model versions are one policy. Changing any part requires a live maintainer run:
 
 ```bash
 npm run calibrate -- --provider typesafe
-# or, with an explicit Zen token:
+# or
 npm run calibrate -- --provider zen
 ```
 
-The command writes raw JSONL under the gitignored `docs/research/` directory. Analyze it with the command printed when the run completes. A run is disqualified if any `must-ask` command receives an `allow` product verdict.
-
-Calibration is maintainer evidence, not an end-user setup step. Users may override thresholds, but those overrides are outside the evidence established for the defaults.
+The command writes one append-safe JSONL artifact under ignored `docs/research/`. Its final record summarizes the safety gate, model consistency, label mismatches, repeated-command variance, provider errors, and latency. A run is disqualified if any labeled `must-ask` command receives an allow verdict. Custom user questions and thresholds are outside the evidence for shipped defaults.
 
 ## Provider changes
 
-Keep provider credentials bound to their intended endpoint. A new provider is wired into plugin selection only after:
+A provider can be wired into a product only after its response parser, cancellation, and failure behavior have deterministic tests, a real endpoint call confirms the wire format, and calibration covers its selected model.
 
-1. its response boundary has deterministic parser tests;
-2. its cancellation and failure behavior is covered;
-3. a real endpoint call confirms the wire format;
-4. calibration establishes suitable model and threshold behavior.
+## OpenCode checks
 
-## OpenCode plugin checks
+Run `npm run smoke:opencode` to verify the packed plugin loads as `jevvy.permissions` in a credential-free OpenCode host. Keep personal dogfood configuration out of the repository. A session test alone is not proof that a plugin loaded.
 
-Local source loading is normally disabled under `.opencode/plugins-off/jevvy`. Enable it only for live checks, verify the plugin reports `active`, inspect `[jevvy]` log lines, then disable it again. A session command alone is not proof that the plugin loaded successfully.
+## Pull requests
 
-## Commits and releases
+Open a short-lived `feat/*`, `fix/*`, or `chore/*` branch and target `main`. Jevvy does not use a long-lived development branch. Maintainers squash-merge one green commit per pull request.
 
-Keep commits complete and green. Use command exit codes as the gate, not matching text in test output. Do not commit generated `dist/`, local research reports, credentials, or dependency directories.
+Keep changes focused, complete, and green. Gate on command exit codes, not output matching. Do not commit generated `dist/`, credentials, dependency directories, or local calibration reports.
 
-After v0, user-visible changes require a changeset. Releases will use squash merges, a version-packages pull request, and a `v<version>` tag.
+Explain the behavior change and its tests in the pull request. After v0, include a changeset for user-visible changes with `npm run changeset`. Maintenance-only changes do not need a release changeset unless a maintainer asks for one.
+
+Publishing, tagging, GitHub Releases, npm configuration, and release credentials are maintainer-only operations and are not part of a contribution pull request.

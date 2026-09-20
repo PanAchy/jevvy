@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-// Pack exactly what npm will publish, install it as a consumer, and verify
-// that the private TypeSafe workspace became one isolated runtime bundle.
+// Pack the public permissions product, install it as a consumer, and verify
+// both internal workspaces remain implementation details.
 
-import { execFileSync, spawnSync } from "node:child_process"
+import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -27,92 +27,156 @@ const ensure = (condition, message) => {
   if (!condition) throw new Error(message)
 }
 
-const collectEffectVersions = (dependencies, versions = new Set()) => {
+const collectDependencyVersions = (dependencies, packageName, versions = new Set()) => {
   if (dependencies === undefined) return versions
 
   for (const [name, dependency] of Object.entries(dependencies)) {
-    if (name === "effect") versions.add(dependency.version)
+    if (name === packageName) versions.add(dependency.version)
 
-    collectEffectVersions(dependency.dependencies, versions)
+    collectDependencyVersions(dependency.dependencies, packageName, versions)
   }
 
   return versions
+}
+
+const expectedPlatform = process.env.JEVVY_EXPECT_PLATFORM
+
+const expectedArchitecture = process.env.JEVVY_EXPECT_ARCH
+
+if (expectedPlatform !== undefined) {
+  ensure(process.platform === expectedPlatform, `expected platform ${expectedPlatform}, received ${process.platform}`)
+}
+
+if (expectedArchitecture !== undefined) {
+  ensure(process.arch === expectedArchitecture, `expected architecture ${expectedArchitecture}, received ${process.arch}`)
 }
 
 try {
   const packDirectory = join(temporary, "pack")
 
   mkdirSync(packDirectory)
-  execFileSync("npm", ["pack", "--pack-destination", packDirectory], {
+
+  execFileSync("npm", ["pack", "--workspace=@jevvy/permissions", "--pack-destination", packDirectory], {
     cwd: repo,
     env: npmEnvironment,
     stdio: "pipe",
   })
 
-  const tarballs = readdirSync(packDirectory).filter((name) => name.endsWith(".tgz"))
+  const tarballs = readdirSync(packDirectory)
+    .filter((name) => name.endsWith(".tgz"))
+    .map((name) => join(packDirectory, name))
 
   ensure(tarballs.length === 1, `expected one tarball, found ${tarballs.length}`)
 
-  const tarball = join(packDirectory, tarballs[0])
-
-  ensure(statSync(tarball).size < 1_000_000, "package tarball unexpectedly exceeds 1 MB")
+  for (const tarball of tarballs) ensure(statSync(tarball).size < 1_000_000, `${tarball} unexpectedly exceeds 1 MB`)
 
   const consumer = join(temporary, "consumer")
 
   mkdirSync(consumer)
   writeFileSync(join(consumer, "package.json"), JSON.stringify({ private: true, type: "module" }))
-  execFileSync("npm", ["install", "--no-audit", "--no-fund", tarball], {
+  execFileSync("npm", ["install", "--no-audit", "--no-fund", ...tarballs], {
     cwd: consumer,
     env: npmEnvironment,
     stdio: "pipe",
   })
 
-  const packageRoot = join(consumer, "node_modules", "jevvy")
-  const runtimeBundle = join(packageRoot, "dist", "core", "typesafe-runtime.js")
+  const permissionsRoot = join(consumer, "node_modules", "@jevvy", "permissions")
+  const coreBundle = join(permissionsRoot, "dist", "core.js")
 
-  ensure(existsSync(runtimeBundle), "installed package is missing the TypeSafe runtime bundle")
-  ensure(existsSync(join(packageRoot, "THIRD_PARTY_LICENSES.txt")), "installed package is missing bundled-code notices")
-  ensure(!existsSync(join(packageRoot, "packages")), "private build workspace escaped into the package")
-  ensure(!existsSync(join(consumer, "node_modules", "@jevvy", "typesafe-runtime")), "private workspace became an installed dependency")
+  ensure(existsSync(coreBundle), "permissions is missing its bundled core")
+  ensure(existsSync(join(permissionsRoot, "THIRD_PARTY_LICENSES.txt")), "permissions is missing bundled-code notices")
+  ensure(existsSync(join(permissionsRoot, "bin", "jevvy-calibrate.mjs")), "permissions is missing its calibration command")
+  ensure(existsSync(join(permissionsRoot, "dist", "calibration", "commands.json")), "permissions is missing its calibration baseline")
+  ensure(existsSync(join(permissionsRoot, "dist", "engine.js")), "installed permissions package is missing its engine")
+  ensure(!existsSync(join(consumer, "node_modules", "jevvy")), "legacy public core package was installed")
+  ensure(!existsSync(join(consumer, "node_modules", "@jevvy", "core")), "private core became a top-level dependency")
+  ensure(!existsSync(join(consumer, "node_modules", "@jevvy", "typesafe-runtime")), "private runtime became an installed dependency")
 
-  const library = await import(pathToFileURL(join(packageRoot, "dist", "index.js")).href)
-  const judge = library.createJudge("package-smoke-unused-key")
+  const core = await import(pathToFileURL(coreBundle).href)
+  const client = core.createTypeSafeClient("package-smoke-unused-key")
 
-  await judge.dispose?.()
+  await client.dispose?.()
 
-  const cli = spawnSync(
+  const engine = await import(pathToFileURL(join(permissionsRoot, "dist", "engine.js")).href)
+
+  const reviewer = await engine.createPermissionReviewer({
+    evaluate: async () => ({
+      model: "fake",
+      answers: {
+        harmful: { type: "noul", noul: 0 },
+        sensitive: { type: "noul", noul: 0 },
+        untrusted: { type: "noul", noul: 0 },
+        obscured: { type: "noul", noul: 0 },
+      },
+    }),
+  })
+
+  const review = await reviewer.review({ action: "shell", resources: ["pwd"] })
+
+  ensure(review.effect === "allow", `installed permission engine returned ${String(review.effect)}`)
+
+  const permissions = await import(pathToFileURL(join(permissionsRoot, "dist", "index.js")).href)
+
+  ensure(permissions.default.id === "jevvy.permissions", "installed permissions package is missing its OpenCode plugin")
+
+  const calibrationConfig = join(consumer, "jevvy.jsonc")
+
+  writeFileSync(calibrationConfig, JSON.stringify({
+    provider: "typesafe",
+    permissions: {
+      questions: {
+        harmful: {
+          type: "noul",
+          instructions: "How likely is this command harmful?",
+          threshold: { direction: "atMost", value: 0.25 },
+        },
+      },
+    },
+  }))
+
+  const calibrationPlan = JSON.parse(execFileSync(
     process.execPath,
-    [join(packageRoot, "bin", "jevvy.mjs"), "check", "git status", "--no-model", "--json"],
-    { cwd: consumer, encoding: "utf8" },
-  )
+    [join(permissionsRoot, "bin", "jevvy-calibrate.mjs"), "--dry-run", "--config", calibrationConfig],
+    {
+      cwd: consumer,
+      encoding: "utf8",
+      env: { ...npmEnvironment, TYPESAFE_API_KEY: "package-smoke-unused-key" },
+    },
+  ))
 
-  ensure(cli.status === 0, `installed CLI failed: ${cli.stderr}`)
-
-  const verdict = JSON.parse(cli.stdout)
-
-  ensure(verdict.effect === "allow", `installed CLI returned ${String(verdict.effect)}`)
+  ensure(calibrationPlan.meta === true, "installed calibration command did not emit a dry-run plan")
+  ensure(calibrationPlan.calls > 0, "installed calibration command has an empty baseline")
 
   const dependencyTree = JSON.parse(
-    execFileSync("npm", ["ls", "effect", "--all", "--json"], {
+    execFileSync("npm", ["ls", "effect", "@effect/platform-node", "@effect/platform-node-shared", "--all", "--json"], {
       cwd: consumer,
       encoding: "utf8",
       env: npmEnvironment,
     }),
   )
 
-  const effectVersions = [...collectEffectVersions(dependencyTree.dependencies)]
+  const effectVersions = [...collectDependencyVersions(dependencyTree.dependencies, "effect")]
+  const platformNodeVersions = [...collectDependencyVersions(dependencyTree.dependencies, "@effect/platform-node")]
+  const platformNodeSharedVersions = [...collectDependencyVersions(dependencyTree.dependencies, "@effect/platform-node-shared")]
 
   ensure(
     effectVersions.length === 1 && effectVersions[0] === "4.0.0-rc.112",
     `installed dependency tree exposes unexpected Effect versions: ${effectVersions.join(", ")}`,
   )
+  ensure(
+    platformNodeVersions.length === 1 && platformNodeVersions[0] === "4.0.0-rc.112",
+    `installed dependency tree exposes unexpected platform-node versions: ${platformNodeVersions.join(", ")}`,
+  )
+  ensure(
+    platformNodeSharedVersions.length === 1 && platformNodeSharedVersions[0] === "4.0.0-rc.112",
+    `installed dependency tree exposes unexpected platform-node-shared versions: ${platformNodeSharedVersions.join(", ")}`,
+  )
 
   const typeProbe = join(consumer, "smoke.ts")
 
   writeFileSync(typeProbe, [
-    'import { createJudge, type JevJudge } from "jevvy"',
-    'const judge: JevJudge = createJudge("package-smoke-unused-key")',
-    "void judge.dispose?.()",
+    'import plugin from "@jevvy/permissions"',
+    "void plugin.id",
     "",
   ].join("\n"))
 
@@ -133,7 +197,7 @@ try {
     { cwd: consumer, stdio: "pipe" },
   )
 
-  console.log(`package smoke passed: ${statSync(tarball).size} byte tarball`)
+  console.log(`package smoke passed: ${tarballs.map((tarball) => `${statSync(tarball).size} bytes`).join(", ")}`)
 } finally {
   rmSync(temporary, { recursive: true, force: true })
 }
