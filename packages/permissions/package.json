@@ -1,7 +1,7 @@
 {
   "name": "@jevvy/permissions",
   "version": "0.3.0",
-  "description": "Auto-approve shell permission requests that Jevvy judges harmless",
+  "description": "Jev-powered auto-approval for harmless shell permission requests",
   "type": "module",
   "license": "MIT",
   "homepage": "https://github.com/PanAchy/jevvy#readme",
@@ -14,11 +14,13 @@
     "url": "https://github.com/PanAchy/jevvy/issues"
   },
   "keywords": [
+    "claude-code",
     "opencode",
     "plugin",
     "permissions",
     "agent",
-    "jev"
+    "jev",
+    "system-one"
   ],
   "publishConfig": {
     "access": "public"
@@ -32,17 +34,20 @@
   "bin": {
     "jevvy": "bin/jevvy.mjs",
     "permissions": "bin/jevvy.mjs",
-    "jevvy-calibrate": "bin/jevvy-calibrate.mjs"
+    "jevvy-calibrate": "bin/jevvy-calibrate.mjs",
+    "jevvy-claude-hook": "dist/claude-hook.js"
   },
   "files": [
+    ".claude-plugin",
     "dist",
     "bin",
+    "hooks",
     "LICENSE",
     "THIRD_PARTY_LICENSES.txt"
   ],
   "scripts": {
     "prebuild": "npm run build --workspace=@jevvy/core && node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "tsc -p tsconfig.build.json && esbuild src/core.ts --bundle --platform=node --format=esm --target=node24 --external:effect --external:effect/* --outfile=dist/core.js && node ../../scripts/copy-calibration-assets.mjs",
+    "build": "tsc -p tsconfig.build.json && esbuild src/core.ts --bundle --platform=node --format=esm --target=node22 --external:effect --external:effect/* --outfile=dist/core.js && esbuild src/claude/main.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --outfile=dist/claude-hook.js && node ../../scripts/copy-calibration-assets.mjs",
     "prepack": "npm run build && node ../../scripts/package-readme.mjs prepare",
     "postpack": "node ../../scripts/package-readme.mjs clean"
   },
@@ -50,12 +55,11 @@
     "@clack/prompts": "^1.8.1",
     "@effect/platform-node": "4.0.0-rc.112",
     "@effect/platform-node-shared": "4.0.0-rc.112",
-    "@opencode/client": "2.0.8",
     "@opencode/plugin": "2.0.8",
     "effect": "4.0.0-rc.112",
     "jsonc-parser": "^3.3.1"
   },
   "engines": {
-    "node": ">=24"
+    "node": ">=22.19.0"
   }
 }

@@ -50,11 +50,7 @@ const timestamp = (milliseconds: number): string =>
 
 export const missingProviderMessage = (provider: JevProvider): string => {
   if (provider !== "custom") {
-    const login = provider === "zen"
-      ? "; OpenCode login is unavailable to the standalone calibration command"
-      : ""
-
-    return `${providerDisplayName(provider)} calibration needs providers.${provider}.apiKey or ${providerApiKeyEnvironment(provider)}${login}`
+    return `${providerDisplayName(provider)} calibration needs providers.${provider}.apiKey or ${providerApiKeyEnvironment(provider)}`
   }
 
   return "Custom endpoint calibration needs providers.custom.apiKey when the endpoint requires authentication"

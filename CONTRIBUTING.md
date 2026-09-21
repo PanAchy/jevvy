@@ -1,6 +1,6 @@
 # Contributing to Jevvy
 
-Jevvy requires Node 24 or newer.
+Jevvy requires Node 22.19 or newer.
 
 ```bash
 npm install
@@ -17,8 +17,8 @@ npm run smoke:package
 - `packages/typesafe-runtime` owns the private TypeSafe Effect version and is bundled into `@jevvy/permissions` through the core module.
 - Only Promise, AbortSignal, and plain data cross the isolated runtime seam.
 - Provider boundaries decode data they do not own.
-- Credentials belong in OpenCode auth, provider-native environment variables, or the user-global Jevvy file with mode `0600`. Never put them in repositories, fixtures, logs, or commits.
-- OpenCode allow and deny decisions have precedence. Jevvy reviews only existing shell asks.
+- Credentials belong in provider-native environment variables or the user-global Jevvy file with mode `0600`. Never put them in repositories, fixtures, logs, or commits.
+- Harness adapters enter through host approval boundaries rather than general pre-tool events. Finalized host allow and deny decisions have precedence, and each adapter documents any native review that remains after Jevvy.
 
 ## Tests
 
@@ -43,6 +43,10 @@ A dedicated provider can be wired into a product only after its response parser,
 ## OpenCode checks
 
 Run `npm run smoke:opencode` to verify the packed plugin reports an actionable setup failure without configuration and loads as `jevvy.permissions` for a configured credential-free custom endpoint. Keep personal dogfood configuration out of the repository. A session test alone is not proof that a plugin loaded.
+
+## Claude Code checks
+
+Run `npm run build:permissions && npm run smoke:claude` with Claude Code 2.1.278 or newer to validate both manifests and load the plugin into an isolated Claude Code host. `npm run smoke:package` separately proves that the packed standalone hook needs no installed dependencies and emits nothing for malformed input or missing credentials.
 
 ## Pull requests
 

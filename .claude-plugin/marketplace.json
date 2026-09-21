@@ -1,0 +1,17 @@
+{
+  "name": "jevvy",
+  "description": "Jev-powered plugins for coding agents",
+  "owner": {
+    "name": "Jevvy"
+  },
+  "plugins": [
+    {
+      "name": "jevvy-permissions",
+      "description": "Jev-powered auto-approval for harmless shell permission requests",
+      "source": {
+        "source": "npm",
+        "package": "@jevvy/permissions"
+      }
+    }
+  ]
+}

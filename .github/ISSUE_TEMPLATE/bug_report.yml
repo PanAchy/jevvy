@@ -41,7 +41,7 @@ body:
     attributes:
       label: Versions
       description: Include Jevvy, OpenCode, Node.js, operating system, and architecture versions.
-      placeholder: "@jevvy/permissions 0.1.0, OpenCode 2.0.8, Node 24, Linux x64"
+      placeholder: "@jevvy/permissions 0.1.0, OpenCode 2.0.8, Node 22.19, Linux x64"
     validations:
       required: true
 

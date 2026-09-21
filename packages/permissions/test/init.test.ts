@@ -3,7 +3,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { NodeServices } from "@effect/platform-node"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Redacted } from "effect"
+import { Effect, Layer, Redacted, Sink, Stream } from "effect"
+import { ChildProcessSpawner } from "effect/unstable/process"
 import { parse } from "jsonc-parser"
 import {
   initializeJevvy,
@@ -11,52 +12,43 @@ import {
   renderJevvyConfig,
 } from "../src/init/index.ts"
 import {
+  harnessPrompt,
   initPlanSummary,
-  openCodeZenApiKeyPrompt,
-  openCodeZenAuthenticationPrompt,
 } from "../src/init/prompt.ts"
 
 describe("Jevvy initializer", () => {
   it("formats provider and harness names for confirmation", () => {
     expect(initPlanSummary({
-      harnesses: ["opencode"],
+      harnesses: ["opencode", "claude"],
       provider: { provider: "typesafe", apiKey: Redacted.make("secret") },
     }, "/home/user/.config/jevvy/jevvy.jsonc")).toBe([
-      "Harnesses: OpenCode",
+      "Harnesses: OpenCode, Claude Code",
       "Provider: TypeSafe AI",
       "Configuration: /home/user/.config/jevvy/jevvy.jsonc",
       "Credential: stored securely in config",
     ].join("\n"))
   })
 
-  it("describes OpenCode Zen login credentials without exposing a secret", () => {
+  it("offers OpenCode and Claude Code as selected harness checkboxes", () => {
+    expect(harnessPrompt).toEqual({
+      message: "Which harnesses should use Jevvy?",
+      options: [
+        { value: "opencode", label: "OpenCode", hint: "permission plugin" },
+        { value: "claude", label: "Claude Code", hint: "PermissionRequest hook" },
+      ],
+      initialValues: ["opencode", "claude"],
+      required: true,
+    })
+  })
+
+  it("describes stored OpenCode Zen credentials without exposing the secret", () => {
     expect(initPlanSummary({
-      harnesses: ["opencode"],
-      provider: { provider: "zen" },
+      harnesses: ["opencode", "claude"],
+      provider: { provider: "zen", apiKey: Redacted.make("secret") },
     }, "/home/user/.config/jevvy/jevvy.jsonc")).toContain(
-      "Credential: OpenCode login (OAuth or API key)",
+      "Credential: stored securely in config",
     )
   })
-
-  it("explains both OpenCode Zen credential sources", () => {
-    expect(openCodeZenAuthenticationPrompt).toEqual({
-      message: "How should OpenCode Zen authenticate?",
-      options: [
-        {
-          value: "opencode",
-          label: "Use existing OpenCode login",
-          hint: "OAuth or API key configured in OpenCode",
-        },
-        {
-          value: "jevvy",
-          label: "Enter an OpenCode Zen API key",
-          hint: "store it securely in Jevvy config",
-        },
-      ],
-    })
-    expect(openCodeZenApiKeyPrompt).toBe("Enter your OpenCode Zen API key")
-  })
-
 
   it.effect("renders a new custom provider configuration", () => Effect.gen(function*() {
     const rendered = yield* renderJevvyConfig(undefined, {
@@ -112,7 +104,10 @@ describe("Jevvy initializer", () => {
   it.effect.each(["[]", "null", '"text"', "42"])(
     "rejects a non-object JSONC root: %s",
     (existing) => Effect.gen(function*() {
-      const error = yield* renderJevvyConfig(existing, { provider: "zen" }).pipe(Effect.flip)
+      const error = yield* renderJevvyConfig(existing, {
+        provider: "zen",
+        apiKey: Redacted.make("unused"),
+      }).pipe(Effect.flip)
 
       expect(error).toMatchObject({
         operation: "parse-config",
@@ -135,18 +130,56 @@ describe("Jevvy initializer", () => {
     }))
 
     const result = yield* initializeJevvy({
-      harnesses: ["opencode"],
-      provider: { provider: "zen" },
+      harnesses: ["opencode", "claude"],
+      provider: { provider: "typesafe", apiKey: Redacted.make("secret") },
     }, "/home/user/.config/jevvy/jevvy.jsonc").pipe(Effect.provide(layer))
 
-    expect(events).toEqual(["write:zen", "install:opencode"])
+    expect(events).toEqual(["write:typesafe", "install:opencode", "install:claude"])
     expect(result).toEqual({
       configPath: "/home/user/.config/jevvy/jevvy.jsonc",
-      harnesses: ["opencode"],
-      provider: "zen",
-      needsOpenCodeLogin: true,
+      harnesses: ["opencode", "claude"],
+      provider: "typesafe",
     })
   }))
+
+  it.effect("installs Claude Code through its user marketplace", () => {
+    const commands: string[][] = []
+
+    const spawner = ChildProcessSpawner.make((command) => Effect.sync(() => {
+      if (!("command" in command)) throw new Error("unexpected command pipeline")
+
+      commands.push([command.command, ...command.args])
+
+      return ChildProcessSpawner.makeHandle({
+        pid: ChildProcessSpawner.ProcessId(1),
+        stdin: Sink.drain,
+        stdout: Stream.empty,
+        stderr: Stream.empty,
+        all: Stream.empty,
+        exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+        isRunning: Effect.succeed(false),
+        kill: () => Effect.void,
+        getInputFd: () => Sink.drain,
+        getOutputFd: () => Stream.empty,
+        unref: Effect.succeed(Effect.void),
+      })
+    }))
+
+    return Effect.gen(function*() {
+      const platform = yield* InitPlatform
+
+      yield* platform.installHarness("claude")
+
+      expect(commands).toEqual([
+        ["claude", "plugin", "marketplace", "add", "--scope", "user", "PanAchy/jevvy"],
+        ["claude", "plugin", "install", "--scope", "user", "jevvy-permissions@jevvy"],
+      ])
+    }).pipe(
+      Effect.provide(InitPlatform.layer),
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+      Effect.provide(NodeServices.layer),
+    )
+  })
 
   it.effect("writes credential-bearing configuration with mode 0600", () =>
     Effect.acquireUseRelease(

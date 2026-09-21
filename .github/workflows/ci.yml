@@ -9,6 +9,7 @@ permissions:
 
 env:
   NPM_VERSION: 11.19.1
+  CLAUDE_CODE_VERSION: 2.1.278
 
 jobs:
   check:
@@ -18,7 +19,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: 22.19
           cache: npm
       - run: npm install --global npm@${{ env.NPM_VERSION }}
       - run: npm ci --no-audit --no-fund
@@ -61,7 +62,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: 22.19
           cache: npm
       - run: npm install --global npm@${{ env.NPM_VERSION }}
       - run: npm ci --no-audit --no-fund
@@ -77,8 +78,23 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
+          node-version: 22.19
           cache: npm
       - run: npm install --global npm@${{ env.NPM_VERSION }}
       - run: npm ci --no-audit --no-fund
       - run: npm run smoke:opencode
+
+  claude-smoke:
+    name: Claude Code plugin smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22.19
+          cache: npm
+      - run: npm install --global npm@${{ env.NPM_VERSION }}
+      - run: npm ci --no-audit --no-fund
+      - run: npm install --global @anthropic-ai/claude-code@${{ env.CLAUDE_CODE_VERSION }}
+      - run: npm run build:permissions
+      - run: npm run smoke:claude

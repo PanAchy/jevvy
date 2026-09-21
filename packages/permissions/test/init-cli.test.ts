@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Redacted } from "effect"
 import { executeInit } from "../src/init/cli.ts"
 import type { InitFrontend } from "../src/init/cli.ts"
 import { InitError, InitPlatform } from "../src/init/index.ts"
@@ -48,7 +48,7 @@ describe("Jevvy init command", () => {
     const code = yield* executeInit(
       frontend(async () => ({
         harnesses: ["opencode"],
-        provider: { provider: "zen" },
+        provider: { provider: "zen", apiKey: Redacted.make("secret") },
       }), events),
       "/home/user/.config/jevvy/jevvy.jsonc",
     ).pipe(Effect.provide(platform))
