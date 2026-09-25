@@ -3,10 +3,14 @@ import { Effect } from "effect"
 import type { PermissionRequest, PermissionReview, PermissionReviewer } from "../src/engine.ts"
 import { permissionAllowOutput, setupUnavailableOutput } from "../src/claude/evaluate.ts"
 import {
-  createClaudeHookHandler,
+  createClaudeHookHandler as makeClaudeHookHandler,
   missingClaudeConfigurationMessage,
   missingClaudeCredentialMessage,
 } from "../src/claude/hook.ts"
+import type { ClaudeSetupLoader } from "../src/claude/hook.ts"
+
+const createClaudeHookHandler = <E>(load: ClaudeSetupLoader<E>) =>
+  makeClaudeHookHandler(load, () => Effect.succeed([]))
 
 const permissionEvent = (command = "pwd") => ({
   session_id: "ses_test",
@@ -46,6 +50,37 @@ const unavailable = (message = "Jevvy setup is incomplete") => ({
 })
 
 describe("Claude Code hook process mapping", () => {
+  it.effect("leaves an explicit Bash ask for the human without loading Jevvy", () => Effect.gen(function*() {
+    const setup = vi.fn(() => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, []))))
+    const handler = makeClaudeHookHandler(setup, () => Effect.succeed(["Bash(pnpm build)"]))
+
+    expect(yield* handler(JSON.stringify(permissionEvent("pnpm build")))).toBeUndefined()
+    expect(setup).not.toHaveBeenCalled()
+  }))
+
+  it.effect("reviews the complete command when visible ask rules do not match", () => Effect.gen(function*() {
+    const calls: PermissionRequest[] = []
+    const load = () => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, calls)))
+    const handler = makeClaudeHookHandler(load, () => Effect.succeed(["Bash(git push *)"]))
+
+    expect(yield* handler(JSON.stringify(permissionEvent("echo hello && pnpm build")))).toBe(JSON.stringify(permissionAllowOutput))
+    expect(calls).toEqual([{ action: "shell", resources: ["echo hello && pnpm build"] }])
+
+    expect(yield* handler(JSON.stringify(permissionEvent("pnpm build")))).toBe(JSON.stringify(permissionAllowOutput))
+    expect(calls).toEqual([
+      { action: "shell", resources: ["echo hello && pnpm build"] },
+      { action: "shell", resources: ["pnpm build"] },
+    ])
+  }))
+
+  it.effect("abstains when settings cannot be read", () => Effect.gen(function*() {
+    const calls: PermissionRequest[] = []
+    const load = () => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, calls)))
+    const handler = makeClaudeHookHandler(load, () => Effect.succeed(undefined))
+
+    expect(yield* handler(JSON.stringify(permissionEvent()))).toBeUndefined()
+    expect(calls).toHaveLength(0)
+  }))
   it("explains assisted and manual setup when no provider is configured", () => {
     const path = "/home/user/.config/jevvy/jevvy.jsonc"
 

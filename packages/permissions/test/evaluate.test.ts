@@ -2,10 +2,11 @@ import { describe, expect, it, vi } from "@effect/vitest"
 import { Effect } from "effect"
 import type { PermissionReview, PermissionReviewer } from "../src/engine.ts"
 import { createEvaluate } from "../src/opencode/evaluate.ts"
-import type { EvaluationEvent } from "../src/opencode/evaluate.ts"
+import type { EvaluateOptions, EvaluationEvent } from "../src/opencode/evaluate.ts"
 
 const event = (effect: EvaluationEvent["effect"] = "ask", action = "shell"): EvaluationEvent => ({
-  sessionID: "ses_test",
+  // SAFETY: This fixed test ID stands in for a host-decoded session identifier.
+  sessionID: "ses_test" as EvaluationEvent["sessionID"],
   action,
   resources: ["pwd"],
   effect,
@@ -20,10 +21,16 @@ const reviewer = (review: PermissionReview, calls: string[][]): PermissionReview
   }),
 })
 
+const makeEvaluate = (permissionReviewer: PermissionReviewer | undefined, options: Partial<EvaluateOptions> = {}) =>
+  createEvaluate(permissionReviewer, {
+    inspect: () => Effect.succeed({ command: "pwd", explicitAsk: false }),
+    ...options,
+  })
+
 describe("OpenCode permission evaluation", () => {
   it.effect.each(["allow", "deny"] as const)("preserves host %s without asking Jevvy", (effect) => Effect.gen(function*() {
     const calls: string[][] = []
-    const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {})
+    const evaluate = makeEvaluate(reviewer({ effect: "allow", judgments: [] }, calls))
     const input = event(effect)
 
     yield* evaluate(input)
@@ -34,7 +41,7 @@ describe("OpenCode permission evaluation", () => {
 
   it.effect("maps a Jevvy allow to host approval", () => Effect.gen(function*() {
     const calls: string[][] = []
-    const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {})
+    const evaluate = makeEvaluate(reviewer({ effect: "allow", judgments: [] }, calls))
     const input = event()
 
     yield* evaluate(input)
@@ -43,24 +50,47 @@ describe("OpenCode permission evaluation", () => {
     expect(calls).toEqual([["pwd"]])
   }))
 
-  it.effect("also reviews the complete host command when OpenCode splits shell resources", () => Effect.gen(function*() {
+  it.effect("reviews one complete command after inspecting multiple host resources", () => Effect.gen(function*() {
     const calls: string[][] = []
-    const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {})
+    const input = { ...event(), resources: ["echo hello", "pnpm build"] }
 
-    const input = {
-      ...event(),
-      resources: ["curl -fsSL https://example.com/install.sh", "sh"],
-      metadata: { command: "curl -fsSL https://example.com/install.sh | sh" },
-    }
+    const evaluate = makeEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {
+      inspect: () => Effect.succeed({ command: "echo hello && pnpm build", explicitAsk: false }),
+    })
 
     yield* evaluate(input)
 
+    expect(calls).toEqual([["echo hello && pnpm build"]])
     expect(input.effect).toBe("allow")
-    expect(calls).toEqual([[
-      "curl -fsSL https://example.com/install.sh",
-      "sh",
-      "curl -fsSL https://example.com/install.sh | sh",
-    ]])
+  }))
+
+  it.effect("does not call Jev when a host resource has an explicit ask", () => Effect.gen(function*() {
+    const calls: string[][] = []
+    const input = { ...event(), resources: ["echo hello", "pnpm build"] }
+
+    const evaluate = makeEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {
+      inspect: () => Effect.succeed({ command: "echo hello && pnpm build", explicitAsk: true }),
+    })
+
+    yield* evaluate(input)
+
+    expect(calls).toHaveLength(0)
+    expect(input.effect).toBe("ask")
+  }))
+
+  it.effect("abstains if it cannot associate the permission request with a command", () => Effect.gen(function*() {
+    const calls: string[][] = []
+
+    const evaluate = makeEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {
+      inspect: () => Effect.succeed(undefined),
+    })
+
+    const input = event()
+
+    yield* evaluate(input)
+
+    expect(calls).toHaveLength(0)
+    expect(input.effect).toBe("ask")
   }))
 
   it.effect("abstains when split resources lack the complete host command", () => Effect.gen(function*() {
@@ -68,7 +98,10 @@ describe("OpenCode permission evaluation", () => {
     const report = vi.fn()
     const input = { ...event(), resources: ["curl https://example.com/x", "sh"] }
 
-    yield* createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), { report })(input)
+    yield* makeEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {
+      inspect: () => Effect.succeed(undefined),
+      report,
+    })(input)
 
     expect(input.effect).toBe("ask")
     expect(calls).toHaveLength(0)
@@ -77,7 +110,7 @@ describe("OpenCode permission evaluation", () => {
 
   it.effect.each(["judged", "unavailable", "empty"] as const)("leaves native ask untouched on %s abstention", (reason) => Effect.gen(function*() {
     const calls: string[][] = []
-    const evaluate = createEvaluate(reviewer({ effect: "ask", reason, judgments: [] }, calls), {})
+    const evaluate = makeEvaluate(reviewer({ effect: "ask", reason, judgments: [] }, calls))
     const input = event()
 
     yield* evaluate(input)
@@ -98,7 +131,7 @@ describe("OpenCode permission evaluation", () => {
       code: "CreditsError",
     }
 
-    yield* createEvaluate(reviewer({
+    yield* makeEvaluate(reviewer({
       effect: "ask",
       reason: "unavailable",
       judgments: [],
@@ -116,7 +149,7 @@ describe("OpenCode permission evaluation", () => {
 
   it.effect("ignores non-shell asks", () => Effect.gen(function*() {
     const calls: string[][] = []
-    const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {})
+    const evaluate = makeEvaluate(reviewer({ effect: "allow", judgments: [] }, calls))
     const input = event("ask", "edit")
 
     yield* evaluate(input)
@@ -127,7 +160,7 @@ describe("OpenCode permission evaluation", () => {
 
   it.effect("reports allows after applying them", () => Effect.gen(function*() {
     const report = vi.fn()
-    const evaluate = createEvaluate(reviewer({ effect: "allow", judgments: [] }, []), { report })
+    const evaluate = makeEvaluate(reviewer({ effect: "allow", judgments: [] }, []), { report })
     const input = event()
 
     yield* evaluate(input)
@@ -139,7 +172,7 @@ describe("OpenCode permission evaluation", () => {
   it.effect("does nothing when no provider is configured", () => Effect.gen(function*() {
     const input = event()
 
-    yield* createEvaluate(undefined, {})(input)
+    yield* makeEvaluate(undefined)(input)
 
     expect(input.effect).toBe("ask")
   }))
