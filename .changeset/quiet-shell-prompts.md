@@ -2,4 +2,4 @@
 "@jevvy/permissions": patch
 ---
 
-Preserve visible configured shell asks for human approval and review complete OpenCode compound commands as one action.
+Preserve visible configured shell asks as human prompts in OpenCode and Claude Code. Review eligible shell requests as complete final commands, including OpenCode plugin rewrites; when Jevvy does not approve, leave the host's permission flow unchanged.

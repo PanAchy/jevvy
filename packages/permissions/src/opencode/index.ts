@@ -44,8 +44,9 @@ export default Plugin.define({
     const reviewer = yield* createPermissionReviewer(selected.client, { questions }).pipe(Effect.orDie)
     const capture = createCommandCapture()
 
-    yield* ctx.tool.hook("execute.before", (event) => Effect.sync(() => capture.before(event)))
-    yield* ctx.tool.hook("execute.after", (event) => Effect.sync(() => capture.after(event)))
+    yield* ctx.tool.hook("execute.before", capture.before)
+    yield* ctx.shell.hook("create.before", capture.shellBefore)
+    yield* ctx.tool.hook("execute.after", capture.after)
 
     const evaluate = createEvaluate(reviewer, {
       inspect: (event) => Effect.gen(function*() {
