@@ -64,6 +64,11 @@ export type PermissionAllowOutput = typeof permissionAllowOutput
 
 export const setupUnavailableOutput = (message: string) => ({ systemMessage: message }) as const
 
+export const sessionStartOutput = (message: string | undefined) =>
+  message === undefined ? undefined : setupUnavailableOutput(message)
+
+export type ClaudeHookOutput = PermissionAllowOutput | ReturnType<typeof setupUnavailableOutput>
+
 export const decodeClaudeHookEvent = (raw: string): ClaudeHookEvent | undefined =>
   Schema.decodeUnknownOption(ClaudeHookEventJson)(raw).pipe(
     Option.filter((event) =>

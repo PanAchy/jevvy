@@ -8,13 +8,17 @@ import {
   providerDisplayName,
 } from "../providers.ts"
 import type { BuiltInProvider } from "../providers.ts"
-import { createClaudeEvaluate, decodeClaudeHookEvent, setupUnavailableOutput } from "./evaluate.ts"
+import { loadAskRules, mustPromptForAskRule } from "./ask-rules.ts"
+import { createClaudeEvaluate, decodeClaudeHookEvent, sessionStartOutput } from "./evaluate.ts"
+import type { ClaudeHookOutput } from "./evaluate.ts"
 
 export type ClaudeReviewerSetup =
   | { readonly kind: "ready"; readonly reviewer: PermissionReviewer }
   | { readonly kind: "unavailable"; readonly message: string }
 
 export type ClaudeSetupLoader<E> = () => Effect.Effect<ClaudeReviewerSetup, E>
+
+export type ClaudeAskLoader = (cwd: string) => Effect.Effect<readonly string[] | undefined>
 
 const setupWarning = (summary: string, actions: readonly string[]): string => [
   "\n⚠ Jevvy setup required!",
@@ -81,11 +85,18 @@ export const loadClaudeSetup = Effect.fn("ClaudeCode.loadSetup")(function*() {
 
 export const createClaudeHookHandler = <E>(
   loadSetup: ClaudeSetupLoader<E>,
-): ((raw: string) => Effect.Effect<string | undefined>) =>
+  loadAsks: ClaudeAskLoader = loadAskRules,
+): ((raw: string) => Effect.Effect<ClaudeHookOutput | undefined>) =>
   Effect.fn("ClaudeCode.handleHookEvent")(function*(raw) {
     const event = decodeClaudeHookEvent(raw)
 
     if (event === undefined) return undefined
+
+    if (event.hook_event_name === "PermissionRequest") {
+      const asks = yield* loadAsks(event.cwd)
+
+      if (asks === undefined || mustPromptForAskRule(event.tool_input.command, asks)) return undefined
+    }
 
     const setup = yield* loadSetup().pipe(
       Effect.match({
@@ -97,14 +108,10 @@ export const createClaudeHookHandler = <E>(
     if (setup === undefined) return undefined
 
     if (event.hook_event_name === "SessionStart") {
-      return setup.kind === "unavailable"
-        ? JSON.stringify(setupUnavailableOutput(setup.message))
-        : undefined
+      return sessionStartOutput(setup.kind === "unavailable" ? setup.message : undefined)
     }
 
     if (setup.kind === "unavailable") return undefined
 
-    const output = yield* createClaudeEvaluate(setup.reviewer)(event)
-
-    return output === undefined ? undefined : JSON.stringify(output)
+    return yield* createClaudeEvaluate(setup.reviewer)(event)
   })

@@ -19,11 +19,15 @@ The permissions plugin auto-approves harmless shell permission requests. Anythin
 
 ### OpenCode (v2)
 
-![OpenCode demo showing git status asks without Jevvy Permissions, runs automatically with it, and rm -rf still asks](./assets/jevvy-demo.gif)
+![OpenCode demo showing a configured shell ask stays a human prompt, Jev approves a nonmatching complete command, and a risky command stays a human prompt](./assets/jevvy-demo.gif)
+
+In this isolated demo, a test reviewer requests the nonmatching OpenCode approvals.
 
 ### Claude Code
 
-![Claude Code demo showing a routine Bash command asks without Jevvy Permissions, runs after a one-action hook approval with it, and a risky command outside the project still asks](./assets/jevvy-claude-demo.gif)
+![Claude Code demo showing a configured Bash ask stays a human prompt, Jev approves a nonmatching complete command, and a risky command stays a human prompt](./assets/jevvy-claude-demo.gif)
+
+Claude checks readable ask settings; managed, command-line, and session-only rules are not visible to its hook.
 
 ## Quickstart
 
@@ -50,16 +54,17 @@ opencode plugin add @jevvy/permissions
 
 ## How it works
 
-Each coding agent evaluates its own permission policy first. Existing allow and deny decisions stay final. Jevvy Permissions reviews only unresolved shell approval requests. It approves only the current action when every inquiry passes. Otherwise it abstains, leaving the agent's remaining permission flow unchanged.
+Each coding agent evaluates its own permission policy first. Existing allow and deny decisions stay final. Visible configured `ask` rules remain human prompts. Jevvy Permissions reviews other unresolved shell approval requests as complete commands. It approves only the current action when every inquiry passes. Otherwise it abstains, leaving the agent's remaining permission flow unchanged.
 
 ```mermaid
 flowchart TD
     rules[Coding agent permission policy]
     rules -->|Allow| run[Run the command]
     rules -->|Deny| block[Block the command]
-    rules -->|Approval request| review[Jevvy Permissions reviews]
+    rules -->|Configured ask| remaining[Continue the remaining permission flow]
+    rules -->|Other approval request| review[Jevvy Permissions reviews]
     review -->|Every inquiry passes| approve[Approve this action]
-    review -->|Anything else| remaining[Continue the remaining permission flow]
+    review -->|Anything else| remaining
     approve --> proceed[Coding agent continues]
     proceed -->|No further check| run
     proceed -->|Prompt or check required| remaining

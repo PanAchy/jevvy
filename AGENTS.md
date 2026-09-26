@@ -33,12 +33,13 @@ Providers and harnesses are independent dimensions inside the product. OpenRoute
 - Enter through a host approval boundary, never a general pre-tool event.
 - Preserve every host `allow` or `deny` finalized before Jevvy without a Jev call. When a harness exposes the finalized effect, review only `ask`.
 - Document where each adapter runs and which native reviewers, prompts, or automatic outcomes remain after abstention.
-- Judge each resource separately. Every resource and inquiry must allow.
+- Review the complete shell command as one resource so operators, redirects, and working-directory changes remain visible to Jev. Every inquiry must allow.
+- Preserve a human prompt when a shell command matches an explicit host-configured `ask` rule Jevvy can inspect. OpenCode supplies effective agent and session rules; Claude Code's command hook does not expose matched rules, so inspect visible settings files and document uncovered sources. Abstain if the complete command or inspected configuration cannot be identified reliably.
 - Map Jev allow to one-action host approval without creating a durable rule.
 - Map Jev ask, timeout, malformed output, missing credentials, and provider failure to abstention. Abstention leaves the host's remaining permission flow unchanged.
 - Surface actionable setup failures through host diagnostics without turning them into permission decisions.
-- Never add local command verdicts, task authorization, approval matching, credential detection, redaction, durable rules, or persistent decision records.
-- Read user configuration only from the global Jevvy path. Repositories must not control provider credentials, questions, or thresholds.
+- Limit local host-rule matching to detecting explicit `ask` rules for abstention. Never add local command verdicts, task authorization, credential detection, redaction, durable rules, or persistent decision records.
+- Read Jevvy provider credentials, questions, and thresholds only from the global Jevvy path. Host configuration may be read solely to honor explicit `ask` rules; repositories must not control Jevvy's provider credentials, questions, or thresholds.
 - Cache valid allow and ask judgments for the owning process lifetime. Do not cache unavailable results.
 
 Question wording, thresholds, and model identity are one calibrated policy. A provider-specific model ID may reuse calibration only when its route is verified to serve the same model. Custom questions are supported, but only shipped defaults can carry Jevvy calibration evidence.

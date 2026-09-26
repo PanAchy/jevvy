@@ -1,27 +1,23 @@
 import type { PermissionEvaluation } from "@opencode/plugin/effect/permission"
-import { Effect, Option, Schema } from "effect"
+import { Effect } from "effect"
 import type { PermissionReviewer } from "../engine.ts"
 import type { JevProviderFailure } from "../core.ts"
 
 export interface EvaluationEvent {
-  readonly sessionID: string
+  readonly sessionID: PermissionEvaluation["sessionID"]
+  readonly agent?: PermissionEvaluation["agent"]
+  readonly source?: PermissionEvaluation["source"]
   readonly action: string
   readonly resources: PermissionEvaluation["resources"]
-  readonly metadata?: PermissionEvaluation["metadata"]
   effect: PermissionEvaluation["effect"]
   message?: string
 }
 
-const CommandMetadata = Schema.Struct({ command: Schema.NonEmptyString })
-
-const commandFrom = (metadata: PermissionEvaluation["metadata"]): string | undefined =>
-  Schema.decodeUnknownOption(CommandMetadata)(metadata).pipe(
-    Option.map(({ command }) => command.trim()),
-    Option.filter((command) => command.length > 0),
-    Option.getOrUndefined,
-  )
-
 export interface EvaluateOptions {
+  readonly inspect: (event: EvaluationEvent) => Effect.Effect<{
+    readonly command: string
+    readonly explicitAsk: boolean
+  } | undefined>
   readonly report?: (entry: {
     readonly effect: "allow" | "ask"
     readonly reason: "judged" | "unavailable" | "empty"
@@ -37,25 +33,23 @@ export const createEvaluate = (
   Effect.fn("OpenCode.evaluatePermission")(function*(event) {
     if (event.effect !== "ask" || event.action !== "shell" || reviewer === undefined) return
 
-    const command = commandFrom(event.metadata)
+    const inspection = yield* options.inspect(event)
 
-    if (event.resources.length > 1 && command === undefined) {
+    if (inspection === undefined) {
       options.report?.({ effect: "ask", reason: "unavailable", resources: event.resources.length })
 
       return
     }
 
-    const resources = command === undefined
-      ? event.resources
-      : [...new Set([...event.resources, command])]
+    if (inspection.explicitAsk) return
 
-    const review = yield* reviewer.review({ action: event.action, resources })
+    const review = yield* reviewer.review({ action: event.action, resources: [inspection.command] })
     const reason = review.effect === "ask" ? review.reason : "judged"
 
     if (review.effect === "ask" && review.failure !== undefined) {
-      options.report?.({ effect: review.effect, reason, resources: resources.length, failure: review.failure })
+      options.report?.({ effect: review.effect, reason, resources: 1, failure: review.failure })
     } else {
-      options.report?.({ effect: review.effect, reason, resources: resources.length })
+      options.report?.({ effect: review.effect, reason, resources: 1 })
     }
 
     if (review.effect === "allow") event.effect = "allow"

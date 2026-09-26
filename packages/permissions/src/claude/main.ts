@@ -18,7 +18,7 @@ const run = async (): Promise<void> => {
     const handle = createClaudeHookHandler(() => loadClaudeSetup())
     const output = await Effect.runPromise(handle(await readStdin()))
 
-    if (output !== undefined) process.stdout.write(output)
+    if (output !== undefined) process.stdout.write(JSON.stringify(output))
   } catch {
     // Process failures are abstentions. Keep both output streams empty.
   }
