@@ -129,10 +129,18 @@ const globMatch = (input: string, pattern: string): boolean => {
   return new RegExp(`^${bare}$`, "s").test(input)
 }
 
+const controlFlow = /^(?:if|then|elif|else|fi|for|while|until|do|done|case|esac|select)(?:\s|$)/
+
 const simpleCommands = (command: string): readonly string[] | undefined => {
   if (/[\\'"`$()<>{}]/.test(command)) return undefined
 
   const parts = command.split(/&&|\|\||[;&|\r\n]/).map((part) => part.trim())
+
+  // Claude can match ask rules inside control-flow bodies. These fragments
+  // are not independent commands, so we cannot safely match them ourselves.
+  if (parts.some((part) => controlFlow.test(part) || /^!\s/.test(part))) {
+    return undefined
+  }
 
   return parts.every((part) => part.length > 0) ? parts : undefined
 }

@@ -58,15 +58,24 @@ describe("Claude Code hook process mapping", () => {
     expect(setup).not.toHaveBeenCalled()
   }))
 
+  it.effect("leaves an ask inside shell control flow for the human", () => Effect.gen(function*() {
+    const setup = vi.fn(() => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, []))))
+    const handler = makeClaudeHookHandler(setup, () => Effect.succeed(["Bash(git push *)"]))
+
+    expect(yield* handler(JSON.stringify(permissionEvent("if true; then git push origin main; fi")))).toBeUndefined()
+    expect(yield* handler(JSON.stringify(permissionEvent("! git push origin main")))).toBeUndefined()
+    expect(setup).not.toHaveBeenCalled()
+  }))
+
   it.effect("reviews the complete command when visible ask rules do not match", () => Effect.gen(function*() {
     const calls: PermissionRequest[] = []
     const load = () => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, calls)))
     const handler = makeClaudeHookHandler(load, () => Effect.succeed(["Bash(git push *)"]))
 
-    expect(yield* handler(JSON.stringify(permissionEvent("echo hello && pnpm build")))).toBe(JSON.stringify(permissionAllowOutput))
+    expect(yield* handler(JSON.stringify(permissionEvent("echo hello && pnpm build")))).toEqual(permissionAllowOutput)
     expect(calls).toEqual([{ action: "shell", resources: ["echo hello && pnpm build"] }])
 
-    expect(yield* handler(JSON.stringify(permissionEvent("pnpm build")))).toBe(JSON.stringify(permissionAllowOutput))
+    expect(yield* handler(JSON.stringify(permissionEvent("pnpm build")))).toEqual(permissionAllowOutput)
     expect(calls).toEqual([
       { action: "shell", resources: ["echo hello && pnpm build"] },
       { action: "shell", resources: ["pnpm build"] },
@@ -117,11 +126,11 @@ Claude Code permissions are unchanged.`,
     const load = () => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, calls)))
     const output = yield* createClaudeHookHandler(load)(JSON.stringify(permissionEvent("  git status  ")))
 
-    expect(output).toBe(JSON.stringify(permissionAllowOutput))
+    expect(output).toEqual(permissionAllowOutput)
     expect(calls).toEqual([{ action: "shell", resources: ["  git status  "] }])
-    expect(output).not.toContain("deny")
-    expect(output).not.toContain("updatedInput")
-    expect(output).not.toContain("updatedPermissions")
+    expect(JSON.stringify(output)).not.toContain("deny")
+    expect(JSON.stringify(output)).not.toContain("updatedInput")
+    expect(JSON.stringify(output)).not.toContain("updatedPermissions")
   }))
 
   it.effect.each(["judged", "unavailable", "empty"] as const)(
@@ -148,8 +157,8 @@ Claude Code permissions are unchanged.`,
       JSON.stringify(sessionStartEvent()),
     )
 
-    expect(output).toBe(JSON.stringify(setupUnavailableOutput(setup.message)))
-    expect(output).not.toContain("decision")
+    expect(output).toEqual(setupUnavailableOutput(setup.message))
+    expect(JSON.stringify(output)).not.toContain("decision")
   }))
 
   it.effect("keeps stdout empty at session start when setup is ready", () => Effect.gen(function*() {
@@ -206,7 +215,7 @@ Claude Code permissions are unchanged.`,
       const load = () => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, [])))
       const input = { ...permissionEvent(), permission_mode: permissionMode }
 
-      expect(yield* createClaudeHookHandler(load)(JSON.stringify(input))).toBe(JSON.stringify(permissionAllowOutput))
+      expect(yield* createClaudeHookHandler(load)(JSON.stringify(input))).toEqual(permissionAllowOutput)
     }),
   )
 
@@ -219,7 +228,7 @@ Claude Code permissions are unchanged.`,
         JSON.stringify(sessionStartEvent(source)),
       )
 
-      expect(output).toBe(JSON.stringify(setupUnavailableOutput(setup.message)))
+      expect(output).toEqual(setupUnavailableOutput(setup.message))
     }),
   )
 
@@ -231,6 +240,6 @@ Claude Code permissions are unchanged.`,
       permission_suggestions: [{ type: "addRules", behavior: "allow", destination: "localSettings" }],
     }
 
-    expect(yield* createClaudeHookHandler(load)(JSON.stringify(input))).toBe(JSON.stringify(permissionAllowOutput))
+    expect(yield* createClaudeHookHandler(load)(JSON.stringify(input))).toEqual(permissionAllowOutput)
   }))
 })
