@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { describe, expect, it } from "@effect/vitest"
@@ -7,6 +8,13 @@ import { Effect } from "effect"
 import { loadAskRules, mustPromptForAskRule } from "../src/claude/ask-rules.ts"
 
 const exec = promisify(execFile)
+
+const makeScratch = (prefix: string) => Effect.gen(function*() {
+  const parent = join(tmpdir(), "opencode")
+  yield* Effect.promise(() => mkdir(parent, { recursive: true }))
+
+  return yield* Effect.promise(() => mkdtemp(join(parent, prefix)))
+})
 
 describe("Claude Code configured asks", () => {
   it("matches a whole-tool or Bash command rule and conservatively preserves compound prompts", () => {
@@ -30,7 +38,7 @@ describe("Claude Code configured asks", () => {
   })
 
   it.effect("reads user, shared project, and local settings without changing user configuration", () => Effect.gen(function*() {
-    const root = yield* Effect.promise(() => mkdtemp("/tmp/opencode/claude-asks-"))
+    const root = yield* makeScratch("claude-asks-")
     const project = join(root, "project")
     const directory = join(project, ".claude")
     const user = join(root, "user")
@@ -52,7 +60,7 @@ describe("Claude Code configured asks", () => {
   }))
 
   it.effect("reads project-local approvals from the repository root when invoked in a subdirectory", () => Effect.gen(function*() {
-    const root = yield* Effect.promise(() => mkdtemp("/tmp/opencode/claude-repo-"))
+    const root = yield* makeScratch("claude-repo-")
     const nested = join(root, "packages", "app")
     const local = join(root, ".claude")
 
