@@ -19,11 +19,13 @@ The permissions plugin auto-approves harmless shell permission requests. Anythin
 
 ### OpenCode (v2)
 
-![OpenCode demo in an isolated test showing a configured shell ask stays a human prompt and another approval request runs after one complete-command review](./assets/jevvy-demo.gif)
+![OpenCode demo showing a configured shell ask stays a human prompt, Jev approves a nonmatching complete command, and a risky command stays a human prompt](./assets/jevvy-demo.gif)
+
+In this isolated demo, a test reviewer requests the nonmatching OpenCode approvals.
 
 ### Claude Code
 
-![Claude Code demo showing a routine Bash command asks without Jevvy Permissions, runs after a one-action hook approval with it, and a risky command outside the project still asks](./assets/jevvy-claude-demo.gif)
+![Claude Code demo showing a configured Bash ask stays a human prompt, Jev approves a nonmatching complete command, and a risky command stays a human prompt](./assets/jevvy-claude-demo.gif)
 
 Claude checks readable ask settings; managed, command-line, and session-only rules are not visible to its hook.
 
