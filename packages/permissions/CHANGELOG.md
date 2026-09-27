@@ -2,13 +2,13 @@
 
 ## 0.5.0
 
-### Minor Changes
+Jevvy 0.5.0 adds Laya as a provider and keeps explicit host-configured shell asks in the human permission flow.
 
-- [#28](https://github.com/PanAchy/jevvy/pull/28) [`b8a6350`](https://github.com/PanAchy/jevvy/commit/b8a6350aba91d02cc933a709df9ae0d138abfa6f) - ## New providers
-  
-  Add Laya with a default local endpoint, configurable server URL, checkpoint and Bearer-key settings, and routed-checkpoint verification. Its policy is scoped to Laya and bound to a checkpoint rather than inheriting Jev's thresholds. Calibration records both the verified checkpoint and Laya's reported model family.
+### New providers
 
-### Patch Changes
+- [#28](https://github.com/PanAchy/jevvy/pull/28) [`b8a6350`](https://github.com/PanAchy/jevvy/commit/b8a6350aba91d02cc933a709df9ae0d138abfa6f) - Add Laya with a default local endpoint, configurable server URL, checkpoint and Bearer-key settings, and routed-checkpoint verification. Its policy is scoped to Laya and bound to a checkpoint rather than inheriting Jev's thresholds. Calibration records both the verified checkpoint and Laya's reported model family.
+
+### Permission behavior
 
 - [#26](https://github.com/PanAchy/jevvy/pull/26) [`b206d12`](https://github.com/PanAchy/jevvy/commit/b206d12e3702926e65e64dbad57523ff1a5450c9) - Preserve visible configured shell asks as human prompts in OpenCode and Claude Code. Review eligible shell requests as complete final commands, including OpenCode plugin rewrites; when Jevvy does not approve, leave the host's permission flow unchanged.
 
