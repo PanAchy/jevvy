@@ -168,6 +168,106 @@ describe("Jevvy configuration", () => {
       })
     }))
 
+  it.effect("requires an explicit permission policy for Laya", () => Effect.gen(function*() {
+    const config = yield* withConfigFile(JSON.stringify({ provider: "laya" }), load)
+
+    expect(config).toMatchObject({
+      kind: "invalid",
+      message: expect.stringContaining("Laya requires providers.laya.policy"),
+    })
+  }))
+
+  it.effect("loads a local Laya server with an explicit policy and no credential", () => Effect.gen(function*() {
+    const raw = JSON.stringify({
+      provider: "laya",
+      providers: { laya: { policy: { checkpoint: "english", questions: customQuestions } } },
+    })
+
+    expect(yield* withConfigFile(raw, load)).toEqual({
+      kind: "custom-policy",
+      selection: { provider: "laya", endpoint: undefined, model: undefined, apiKey: undefined },
+      questions: customQuestions,
+    })
+  }))
+
+  it.effect("loads a Laya endpoint, checkpoint, and optional environment key", () => Effect.gen(function*() {
+    const raw = JSON.stringify({
+      provider: "laya",
+      providers: { laya: {
+        endpoint: "http://127.0.0.1:18871/v1/systemone",
+        model: "multilingual",
+        policy: { checkpoint: "multilingual", questions: customQuestions },
+      } },
+    })
+
+    const environment = ConfigProvider.fromUnknown({ LAYA_API_KEY: "local-secret" })
+    const config = yield* withConfigFile(raw, (path) => load(path, environment))
+
+    expect(config.kind).toBe("custom-policy")
+
+    if (config.kind !== "custom-policy" || config.selection.provider !== "laya") return
+
+    expect(config.selection.endpoint).toBe("http://127.0.0.1:18871/v1/systemone")
+    expect(config.selection.model).toBe("multilingual")
+    expect(config.selection.apiKey === undefined ? undefined : Redacted.value(config.selection.apiKey)).toBe("local-secret")
+  }))
+
+  it.effect.each(["file:///tmp/laya", "ftp://example.com/systemone"])(
+    "rejects a non-HTTP Laya endpoint: %s",
+    (endpoint) => Effect.gen(function*() {
+      const raw = JSON.stringify({
+        provider: "laya",
+        providers: { laya: { endpoint, policy: { checkpoint: "english", questions: customQuestions } } },
+      })
+
+      expect(yield* withConfigFile(raw, load)).toMatchObject({ kind: "invalid" })
+    }),
+  )
+
+  it.effect.each([
+    { providers: { laya: { model: "jev-1.13.0", policy: { checkpoint: "english", questions: customQuestions } } } },
+    { providers: { laya: { policy: { checkpoint: "english", questions: { harmful: { type: "noul", instructions: "Risk?", threshold: 2 } } } } } },
+    { providers: { laya: { policy: { checkpoint: "english", questions: { harmful: { type: "choice", instructions: "Risk?", threshold: 0.2 } } } } } },
+  ])("rejects a malformed manually configured Laya model or policy", (fields) => Effect.gen(function*() {
+    const raw = JSON.stringify({ provider: "laya", ...fields })
+
+    expect(yield* withConfigFile(raw, load)).toMatchObject({ kind: "invalid" })
+  }))
+
+  it.effect("does not accept top-level questions as a Laya policy", () => Effect.gen(function*() {
+    const raw = JSON.stringify({ provider: "laya", permissions: { questions: customQuestions } })
+
+    expect(yield* withConfigFile(raw, load)).toMatchObject({ kind: "invalid", message: expect.stringContaining("providers.laya.policy") })
+  }))
+
+  it.effect("rejects top-level questions even when a Laya policy exists", () => Effect.gen(function*() {
+    const raw = JSON.stringify({
+      provider: "laya",
+      providers: { laya: { policy: { checkpoint: "english", questions: customQuestions } } },
+      permissions: { questions: customQuestions },
+    })
+
+    expect(yield* withConfigFile(raw, load)).toMatchObject({ kind: "invalid" })
+  }))
+
+  it.effect("rejects a Laya policy after the selected checkpoint changes", () => Effect.gen(function*() {
+    const raw = JSON.stringify({
+      provider: "laya",
+      providers: { laya: { model: "multilingual", policy: { checkpoint: "english", questions: customQuestions } } },
+    })
+
+    expect(yield* withConfigFile(raw, load)).toMatchObject({ kind: "invalid", message: expect.stringContaining("matching checkpoint") })
+  }))
+
+  it.effect("does not apply a nested Laya policy to another provider", () => Effect.gen(function*() {
+    const raw = JSON.stringify({
+      provider: "typesafe",
+      providers: { laya: { policy: { checkpoint: "english", questions: customQuestions } } },
+    })
+
+    expect(yield* withConfigFile(raw, load)).toMatchObject({ kind: "shipped-policy", selection: { provider: "typesafe" } })
+  }))
+
   it.effect("uses shipped questions when a custom provider does not configure questions", () =>
     Effect.gen(function*() {
       const raw = JSON.stringify({

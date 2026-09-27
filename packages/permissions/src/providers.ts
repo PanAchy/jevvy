@@ -1,10 +1,13 @@
 import {
   createCustomSystemOneClient,
+  createLayaClient,
   createOpenRouterClient,
   createTypeSafeClient,
   createVercelClient,
   createZenClient,
   DEFAULT_OPENROUTER_MODEL,
+  DEFAULT_LAYA_ENDPOINT,
+  DEFAULT_LAYA_MODEL,
   DEFAULT_TYPESAFE_MODEL,
   DEFAULT_VERCEL_MODEL,
   DEFAULT_ZEN_MODEL,
@@ -13,13 +16,19 @@ import {
 import type { JevClient, JevProvider as JevProviderType } from "./core.ts"
 import { Redacted, Schema } from "effect"
 
-export const BuiltInProvider = Schema.Literals(["zen", "typesafe", "openrouter", "vercel"])
+export const BuiltInProvider = Schema.Literals(["zen", "typesafe", "openrouter", "vercel", "laya"])
 
 export type BuiltInProvider = Schema.Schema.Type<typeof BuiltInProvider>
 
 export type ProviderSelection =
   | {
-      readonly provider: BuiltInProvider
+      readonly provider: Exclude<BuiltInProvider, "laya">
+      readonly apiKey?: Redacted.Redacted<string>
+    }
+  | {
+      readonly provider: "laya"
+      readonly endpoint?: string
+      readonly model?: string
       readonly apiKey?: Redacted.Redacted<string>
     }
   | {
@@ -60,6 +69,12 @@ const providerDefinitions = {
     apiKeyEnvironment: "AI_GATEWAY_API_KEY",
     model: DEFAULT_VERCEL_MODEL,
     createClient: createVercelClient,
+  },
+  laya: {
+    displayName: "Laya",
+    apiKeyEnvironment: "LAYA_API_KEY",
+    model: DEFAULT_LAYA_MODEL,
+    createClient: (apiKey: string) => createLayaClient({ apiKey }),
   },
 } satisfies Readonly<Record<BuiltInProvider, ProviderDefinition>>
 
@@ -106,6 +121,21 @@ export const createConfiguredProvider = (
       client: createCustomSystemOneClient({
         endpoint: selection.endpoint,
         model: selection.model,
+        apiKey,
+      }),
+      redact: redactWith(apiKey),
+    }
+  }
+
+  if (selection.provider === "laya") {
+    const model = selection.model ?? DEFAULT_LAYA_MODEL
+
+    return {
+      provider: "laya",
+      model,
+      client: createLayaClient({
+        endpoint: selection.endpoint ?? DEFAULT_LAYA_ENDPOINT,
+        model,
         apiKey,
       }),
       redact: redactWith(apiKey),

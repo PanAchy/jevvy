@@ -35,6 +35,11 @@ export const missingClaudeConfigurationMessage = (configPath: string): string =>
     `Or configure ${configPath} manually.`,
   ])
 
+export const invalidClaudeConfigurationMessage = (configPath: string, detail: string): string =>
+  setupWarning(`Auto-approval is off because ${configPath} is invalid: ${detail}.`, [
+    "Fix the file before enabling auto-approval.",
+  ])
+
 export const missingClaudeCredentialMessage = (provider: BuiltInProvider, configPath: string): string =>
   setupWarning(`Auto-approval is off because ${providerDisplayName(provider)} has no credential available to Claude Code.`, [
     `Set ${providerApiKeyEnvironment(provider)} or add providers.${provider}.apiKey to ${configPath}.`,
@@ -48,9 +53,7 @@ export const loadClaudeSetup = Effect.fn("ClaudeCode.loadSetup")(function*() {
   if (config.kind === "invalid") {
     return {
       kind: "unavailable",
-      message: setupWarning(`Auto-approval is off because ${configPath} is invalid: ${config.message}.`, [
-        "Fix the file, or move it aside and run: npx @jevvy/permissions init",
-      ]),
+      message: invalidClaudeConfigurationMessage(configPath, config.message),
     } as const
   }
 

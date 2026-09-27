@@ -145,4 +145,21 @@ writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
 
 await inspectPlugin(4097, "active")
 
-console.log("OpenCode host smoke passed: setup failures are actionable and configured no-key endpoints activate")
+writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
+  provider: "laya",
+  providers: { laya: {} },
+}, null, 2)}\n`, { mode: 0o600 })
+
+await inspectPlugin(4098, "failed", "providers.laya.policy")
+
+writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
+  provider: "laya",
+  providers: { laya: { policy: {
+    checkpoint: "english",
+    questions: { harmful: { type: "noul", instructions: "Is this command risky?", threshold: 0 } },
+  } } },
+}, null, 2)}\n`, { mode: 0o600 })
+
+await inspectPlugin(4099, "active")
+
+console.log("OpenCode host smoke passed: setup failures are actionable; configured custom and Laya endpoints activate")

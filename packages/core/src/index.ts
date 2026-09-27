@@ -6,6 +6,10 @@ export { createCustomSystemOneClient } from "./custom.ts"
 
 export type { CustomSystemOneClientOptions } from "./custom.ts"
 
+export { createLayaClient, DEFAULT_LAYA_ENDPOINT, DEFAULT_LAYA_MODEL } from "./laya.ts"
+
+export type { LayaClientOptions } from "./laya.ts"
+
 export {
   createOpenRouterClient,
   DEFAULT_OPENROUTER_MODEL,

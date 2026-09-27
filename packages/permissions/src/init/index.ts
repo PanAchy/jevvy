@@ -2,6 +2,8 @@ import { Context, Effect, FileSystem, Layer, Path, Redacted, Schema } from "effe
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { applyEdits, modify, parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
+import { DEFAULT_LAYA_ENDPOINT, DEFAULT_LAYA_MODEL } from "../core.ts"
+import { LayaPolicy } from "../config.ts"
 
 const CONFIG_SCHEMA = "https://raw.githubusercontent.com/PanAchy/jevvy/main/config.schema.json"
 
@@ -24,6 +26,12 @@ export type InitProvider =
   | {
       readonly provider: "zen" | "typesafe" | "openrouter" | "vercel"
       readonly apiKey: Redacted.Redacted<string>
+    }
+  | {
+      readonly provider: "laya"
+      readonly endpoint?: string
+      readonly model?: string
+      readonly apiKey?: Redacted.Redacted<string>
     }
   | {
       readonly provider: "custom"
@@ -167,6 +175,18 @@ const providerSettings = (provider: InitProvider): Readonly<Record<string, strin
       : { endpoint: provider.endpoint, model: provider.model, apiKey }
   }
 
+  if (provider.provider === "laya") {
+    const settings: Record<string, string> = {}
+
+    if (provider.endpoint !== undefined) settings.endpoint = provider.endpoint
+
+    if (provider.model !== undefined) settings.model = provider.model
+
+    if (apiKey !== undefined) settings.apiKey = apiKey
+
+    return Object.keys(settings).length === 0 ? undefined : settings
+  }
+
   return { apiKey: Redacted.value(provider.apiKey) }
 }
 
@@ -211,7 +231,7 @@ export const renderJevvyConfig = Effect.fn("Init.renderJevvyConfig")(function*(
     })
   }
 
-  yield* Schema.decodeUnknownEffect(ConfigRoot)(decoded).pipe(
+  const document = yield* Schema.decodeUnknownEffect(ConfigRoot)(decoded).pipe(
     Effect.mapError((cause) => new InitError({
       operation: "parse-config",
       message: "Existing jevvy.jsonc must contain an object",
@@ -219,9 +239,59 @@ export const renderJevvyConfig = Effect.fn("Init.renderJevvyConfig")(function*(
     })),
   )
 
+  const hasQuestions = Schema.is(ConfigRoot)(document.permissions) && "questions" in document.permissions
+
+  if (hasQuestions && (provider.provider === "laya" || document.provider === "laya")) {
+    const message = document.provider === "laya" && provider.provider !== "laya"
+      ? "Move the old top-level Laya questions to providers.laya.policy before switching providers; your config was not changed"
+      : "Move or remove top-level permission questions before selecting Laya; its policy belongs under providers.laya.policy. Your config was not changed"
+
+    return yield* new InitError({
+      operation: "validate-plan",
+      message,
+    })
+  }
+
+  let preserveLayaPolicy = false
+
+  if (provider.provider === "laya") {
+    const providers = Schema.is(ConfigRoot)(document.providers) ? document.providers : undefined
+    const previous = Schema.is(ConfigRoot)(providers?.laya) ? providers.laya : undefined
+
+    if (previous !== undefined && "policy" in previous) {
+      if (!Schema.is(LayaPolicy)(previous.policy)) {
+        return yield* new InitError({
+          operation: "validate-plan",
+          message: "Existing Laya policy is malformed; fix it before running init. Your config was not changed",
+        })
+      }
+
+      const priorEndpoint = previous.endpoint ?? DEFAULT_LAYA_ENDPOINT
+      const nextEndpoint = provider.endpoint ?? DEFAULT_LAYA_ENDPOINT
+      const priorModel = previous.model ?? DEFAULT_LAYA_MODEL
+      const nextModel = provider.model ?? DEFAULT_LAYA_MODEL
+
+      if (priorEndpoint !== nextEndpoint || priorModel !== nextModel) {
+        return yield* new InitError({
+          operation: "validate-plan",
+          message: "Laya server or checkpoint changed. Move the existing policy aside and recalibrate before running init; your config was not changed",
+        })
+      }
+
+      preserveLayaPolicy = true
+    }
+  }
+
   let updated = updateJsonc(existing, ["$schema"], CONFIG_SCHEMA)
   updated = updateJsonc(updated, ["provider"], provider.provider)
-  updated = updateJsonc(updated, ["providers", provider.provider], settings)
+
+  if (provider.provider === "laya" && preserveLayaPolicy) {
+    for (const field of ["endpoint", "model", "apiKey"] as const) {
+      updated = updateJsonc(updated, ["providers", "laya", field], settings?.[field])
+    }
+  } else {
+    updated = updateJsonc(updated, ["providers", provider.provider], provider.provider === "laya" ? settings ?? {} : settings)
+  }
 
   return updated.endsWith("\n") ? updated : `${updated}\n`
 })

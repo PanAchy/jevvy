@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import {
+  invalidConfigurationMessage,
   missingConfigurationMessage,
   missingCredentialMessage,
 } from "../src/opencode/setup.ts"
@@ -11,6 +12,18 @@ describe("OpenCode setup guidance", () => {
     expect(missingConfigurationMessage(path)).toBe(
       `Jevvy cannot start because no provider is configured. Run "npx @jevvy/permissions init", or create ${path} manually. OpenCode's remaining permission flow remains unchanged.`,
     )
+  })
+
+  it("explains an incomplete manual Laya policy without suggesting init would calibrate it", () => {
+    const message = invalidConfigurationMessage(
+      "/home/user/.config/jevvy/jevvy.jsonc",
+      "Laya requires providers.laya.policy with matching checkpoint and questions",
+    )
+
+    expect(message).toContain("Laya requires providers.laya.policy with matching checkpoint and questions")
+    expect(message).toContain("Fix the file before enabling auto-approval")
+    expect(message).toContain("OpenCode's remaining permission flow remains unchanged")
+    expect(message).not.toContain("run \"npx @jevvy/permissions init\"")
   })
 
   it.each([

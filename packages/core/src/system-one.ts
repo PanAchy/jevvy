@@ -16,6 +16,16 @@ const SystemOneRequest = Schema.Struct({
   ...JevRequest.fields,
 })
 
+const SystemOneResponse = Schema.Struct({
+  model: JevResult.fields.model,
+  answers: JevResult.fields.answers,
+})
+
+const RoutedSystemOneResponse = Schema.Struct({
+  ...SystemOneResponse.fields,
+  routing: Schema.Struct({ model: Schema.NonEmptyString }),
+})
+
 const ProviderErrorDetails = Schema.Struct({
   message: Schema.optional(Schema.String),
   type: Schema.optional(Schema.String),
@@ -133,6 +143,7 @@ export interface SystemOneClientOptions {
   readonly url: string
   readonly model: string
   readonly headers: Readonly<Record<string, string>>
+  readonly modelIdentity?: "model" | "routing.model"
 }
 
 export interface SystemOneBodyInput {
@@ -194,7 +205,15 @@ export const createSystemOneClient = (options: SystemOneClientOptions): JevClien
       })
     }
 
-    const result = yield* HttpClientResponse.schemaBodyJson(JevResult)(response).pipe(
+    const decoded = yield* (options.modelIdentity === "routing.model"
+      ? HttpClientResponse.schemaBodyJson(RoutedSystemOneResponse)(response).pipe(
+        Effect.map(({ model, answers, routing }) => ({
+          model: routing.model,
+          answers,
+          reportedModel: model,
+        })),
+      )
+      : HttpClientResponse.schemaBodyJson(SystemOneResponse)(response)).pipe(
       Effect.mapError((cause) => new JevProviderError({
         provider: options.provider,
         kind: "invalid-response",
@@ -204,7 +223,16 @@ export const createSystemOneClient = (options: SystemOneClientOptions): JevClien
       })),
     )
 
-    return yield* validateRequestedAnswers(options.provider, result, request.questions)
+    if (options.modelIdentity === "routing.model" && decoded.model !== options.model) {
+      return yield* new JevProviderError({
+        provider: options.provider,
+        kind: "invalid-response",
+        message: `${options.provider} System One served ${decoded.model} instead of ${options.model}`,
+        status: response.status,
+      })
+    }
+
+    return yield* validateRequestedAnswers(options.provider, decoded, request.questions)
   }),
 })
 

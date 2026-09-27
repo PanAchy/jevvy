@@ -77,7 +77,7 @@ const run = Effect.fn("JevvyCalibration.runPlan")(function*(
     }
 
     if (config.kind !== "custom-policy") {
-      return yield* Effect.fail(new Error("calibration requires permissions.questions in jevvy.jsonc"))
+      return yield* Effect.fail(new Error("calibration requires permissions.questions or providers.laya.policy in jevvy.jsonc"))
     }
 
     const selected = createConfiguredProvider(config.selection)
@@ -144,6 +144,7 @@ const run = Effect.fn("JevvyCalibration.runPlan")(function*(
               effect: permissionEffectOf(outcome.judged.answers, config.questions),
               answers: numericAnswers(outcome.judged.answers),
               model: outcome.judged.model,
+              reportedModel: outcome.judged.reportedModel,
               ...timing,
             }
           : {
