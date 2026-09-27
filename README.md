@@ -83,14 +83,14 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 
 ### Providers
 
-| Provider          | `provider`   | Credential sources                                            |
-| ----------------- | ------------ | ------------------------------------------------------------- |
-| OpenCode Zen      | `zen`        | `providers.zen.apiKey` or `OPENCODE_API_KEY`                  |
-| TypeSafe AI       | `typesafe`   | `providers.typesafe.apiKey` or `TYPESAFE_API_KEY`             |
-| OpenRouter        | `openrouter` | `providers.openrouter.apiKey` or `OPENROUTER_API_KEY`         |
-| Vercel AI Gateway | `vercel`     | `providers.vercel.apiKey` or `AI_GATEWAY_API_KEY`             |
-| [Laya][laya-guide] | `laya`       | Optional `providers.laya.apiKey` or `LAYA_API_KEY`            |
-| Custom endpoint   | `custom`     | Optional `providers.custom.apiKey`                            |
+| Provider                          | `provider`   | Credential sources                                            |
+| --------------------------------- | ------------ | ------------------------------------------------------------- |
+| OpenCode Zen                      | `zen`        | `providers.zen.apiKey` or `OPENCODE_API_KEY`                  |
+| TypeSafe AI                       | `typesafe`   | `providers.typesafe.apiKey` or `TYPESAFE_API_KEY`             |
+| OpenRouter                        | `openrouter` | `providers.openrouter.apiKey` or `OPENROUTER_API_KEY`         |
+| Vercel AI Gateway                 | `vercel`     | `providers.vercel.apiKey` or `AI_GATEWAY_API_KEY`             |
+| Laya ([setup guide][laya-guide])  | `laya`       | Optional `providers.laya.apiKey` or `LAYA_API_KEY`            |
+| Custom endpoint                   | `custom`     | Optional `providers.custom.apiKey`                            |
 
 [laya-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/laya.md
 

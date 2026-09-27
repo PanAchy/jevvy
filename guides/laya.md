@@ -2,7 +2,7 @@
 
 **Review shell approvals through a Laya System One endpoint you control**
 
-Connect Jevvy to a Laya server and calibrate permission questions for its checkpoint before enabling auto-approval.
+Connect Jevvy to a server from the [official Laya project](https://github.com/NandhaKishorM/laya) and calibrate permission questions for its checkpoint before enabling auto-approval.
 
 ## Quickstart
 
