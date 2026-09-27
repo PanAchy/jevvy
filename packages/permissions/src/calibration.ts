@@ -54,6 +54,7 @@ export interface CalibrationResultRecord extends CalibrationRecordBase {
   readonly effect: "allow" | "ask"
   readonly answers: Readonly<Record<string, number>>
   readonly model: string
+  readonly reportedModel?: string
 }
 
 export interface CalibrationErrorRecord extends CalibrationRecordBase {

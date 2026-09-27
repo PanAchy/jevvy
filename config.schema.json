@@ -11,7 +11,7 @@
     },
     "provider": {
       "type": "string",
-      "enum": ["zen", "typesafe", "openrouter", "vercel", "custom"]
+      "enum": ["zen", "typesafe", "openrouter", "vercel", "laya", "custom"]
     },
     "providers": {
       "type": "object",
@@ -28,6 +28,9 @@
         },
         "vercel": {
           "$ref": "#/$defs/providerCredential"
+        },
+        "laya": {
+          "$ref": "#/$defs/layaProvider"
         },
         "custom": {
           "$ref": "#/$defs/customSystemOneProvider"
@@ -52,6 +55,37 @@
     }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "provider": {
+            "const": "laya"
+          }
+        },
+        "required": ["provider"]
+      },
+      "then": {
+        "not": {
+          "required": ["permissions"],
+          "properties": {
+            "permissions": {
+              "required": ["questions"]
+            }
+          }
+        },
+        "required": ["providers"],
+        "properties": {
+          "providers": {
+            "required": ["laya"],
+            "properties": {
+              "laya": {
+                "required": ["policy"]
+              }
+            }
+          }
+        }
+      }
+    },
     {
       "if": {
         "properties": {
@@ -83,6 +117,16 @@
         }
       }
     },
+    "approvalQuestions": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {
+        "minLength": 1
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/approvalQuestion"
+      }
+    },
     "customSystemOneProvider": {
       "type": "object",
       "additionalProperties": false,
@@ -102,6 +146,67 @@
           "minLength": 1
         }
       }
+    },
+    "layaProvider": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://"
+        },
+        "model": {
+          "type": "string",
+          "enum": ["english", "multilingual", "typed-decisions"]
+        },
+        "apiKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["checkpoint", "questions"],
+          "properties": {
+            "checkpoint": {
+              "type": "string",
+              "enum": ["english", "multilingual", "typed-decisions"]
+            },
+            "questions": {
+              "$ref": "#/$defs/approvalQuestions"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "model": { "const": "english" } }
+          },
+          "then": {
+            "properties": { "policy": { "properties": { "checkpoint": { "const": "english" } } } }
+          }
+        },
+        {
+          "if": {
+            "required": ["model"],
+            "properties": { "model": { "const": "multilingual" } }
+          },
+          "then": {
+            "properties": { "policy": { "properties": { "checkpoint": { "const": "multilingual" } } } }
+          }
+        },
+        {
+          "if": {
+            "required": ["model"],
+            "properties": { "model": { "const": "typed-decisions" } }
+          },
+          "then": {
+            "properties": { "policy": { "properties": { "checkpoint": { "const": "typed-decisions" } } } }
+          }
+        }
+      ]
     },
     "approvalQuestion": {
       "type": "object",

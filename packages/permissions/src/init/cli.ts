@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 import { Command } from "effect/unstable/cli"
 import { globalJevvyConfigPath } from "../config.ts"
-import { initializeJevvy } from "./index.ts"
+import { initializeJevvy, InitPlatform } from "./index.ts"
 import type { InitPlan, InitResult } from "./index.ts"
 import {
   promptInitPlan,
@@ -16,7 +16,7 @@ class InitPromptError extends Schema.TaggedError<InitPromptError>()("InitPromptE
 }) {}
 
 export interface InitFrontend {
-  readonly prompt: (configPath: string) => Promise<InitPlan | undefined>
+  readonly prompt: (configPath: string, existing: string | undefined) => Promise<InitPlan | undefined>
   readonly showProgress: () => void
   readonly showError: (message: string) => void
   readonly showResult: (result: InitResult) => void
@@ -33,8 +33,11 @@ export const executeInit = Effect.fn("InitCli.execute")(function*(
   frontend: InitFrontend,
   configPath: string,
 ) {
+  const platform = yield* InitPlatform
+  const existing = yield* platform.readConfig(configPath)
+
   const plan = yield* Effect.tryPromise({
-    try: () => frontend.prompt(configPath),
+    try: () => frontend.prompt(configPath, existing),
     catch: (cause) => new InitPromptError({ message: "Interactive setup failed", cause }),
   })
 

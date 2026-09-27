@@ -7,6 +7,7 @@ import { createEvaluate } from "./evaluate.ts"
 import { createCommandCapture } from "./command-capture.ts"
 import { hasExplicitAsk } from "./ask-rule.ts"
 import {
+  invalidConfigurationMessage,
   missingConfigurationMessage,
   missingCredentialMessage,
 } from "./setup.ts"
@@ -18,9 +19,7 @@ export default Plugin.define({
     const permissionConfig = yield* loadJevvyConfig(configPath)
 
     if (permissionConfig.kind === "invalid") {
-      return yield* Effect.die(new Error(
-        `Jevvy cannot start because ${configPath} is invalid: ${permissionConfig.message}. Fix the file, or move it aside and run "npx @jevvy/permissions init". OpenCode's remaining permission flow remains unchanged.`,
-      ))
+      return yield* Effect.die(new Error(invalidConfigurationMessage(configPath, permissionConfig.message)))
     }
 
     if (permissionConfig.kind === "unconfigured") {

@@ -2,11 +2,13 @@ import { Redacted } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   DEFAULT_OPENROUTER_MODEL,
+  DEFAULT_LAYA_ENDPOINT,
+  DEFAULT_LAYA_MODEL,
   DEFAULT_TYPESAFE_MODEL,
   DEFAULT_VERCEL_MODEL,
   DEFAULT_ZEN_MODEL,
 } from "../src/core.ts"
-import { createConfiguredProvider } from "../src/providers.ts"
+import { createConfiguredProvider, providerDisplayName } from "../src/providers.ts"
 
 describe("configured provider creation", () => {
   it.each([
@@ -38,6 +40,17 @@ describe("configured provider creation", () => {
       provider: "custom",
       model: "laya-typed-decisions",
     })
+  })
+
+  it("constructs the local Laya provider without a credential", () => {
+    const selected = createConfiguredProvider({ provider: "laya" })
+
+    expect(selected).toMatchObject({ provider: "laya", model: DEFAULT_LAYA_MODEL })
+    expect(DEFAULT_LAYA_ENDPOINT).toBe("http://127.0.0.1:8000/v1/systemone")
+  })
+
+  it("labels Laya independently of where its endpoint runs", () => {
+    expect(providerDisplayName("laya")).toBe("Laya")
   })
 
   it("redacts configured credentials without exposing them to callers", () => {

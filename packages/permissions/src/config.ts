@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { Config, ConfigProvider, Effect, Option, Redacted, Schema } from "effect"
 import { parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
-import { JevProvider } from "./core.ts"
+import { DEFAULT_LAYA_MODEL, JevProvider } from "./core.ts"
 import { ApprovalQuestions } from "./questions.ts"
 import { providerApiKeyEnvironment } from "./providers.ts"
 import type { BuiltInProvider, ProviderSelection } from "./providers.ts"
@@ -19,6 +19,20 @@ const CustomProviderSchema = Schema.Struct({
   apiKey: Schema.optionalKey(Schema.NonEmptyString),
 })
 
+export const LayaPolicy = Schema.Struct({
+  checkpoint: Schema.Literals(["english", "multilingual", "typed-decisions"]),
+  questions: ApprovalQuestions,
+})
+
+export interface LayaPolicy extends Schema.Schema.Type<typeof LayaPolicy> {}
+
+const LayaProviderSchema = Schema.Struct({
+  endpoint: Schema.optionalKey(Schema.URLFromString),
+  model: Schema.optionalKey(Schema.Literals(["english", "multilingual", "typed-decisions"])),
+  apiKey: Schema.optionalKey(Schema.NonEmptyString),
+  policy: Schema.optionalKey(LayaPolicy),
+})
+
 const JevvyConfigSchema = Schema.Struct({
   $schema: Schema.optionalKey(Schema.String),
   provider: JevProvider,
@@ -27,6 +41,7 @@ const JevvyConfigSchema = Schema.Struct({
     typesafe: Schema.optionalKey(ProviderCredentialSchema),
     openrouter: Schema.optionalKey(ProviderCredentialSchema),
     vercel: Schema.optionalKey(ProviderCredentialSchema),
+    laya: Schema.optionalKey(LayaProviderSchema),
     custom: Schema.optionalKey(CustomProviderSchema),
   })),
   permissions: Schema.optionalKey(Schema.Struct({
@@ -49,7 +64,7 @@ export type JevvyConfig =
 class ConfigMissing extends Schema.TaggedError<ConfigMissing>()("ConfigMissing", {}) {}
 
 class ConfigFileError extends Schema.TaggedError<ConfigFileError>()("ConfigFileError", {
-  reason: Schema.Literals(["read", "schema", "permissions"]),
+  reason: Schema.Literals(["read", "schema", "permissions", "policy"]),
 }) {}
 
 const EnvironmentApiKeys = Config.all({
@@ -57,6 +72,7 @@ const EnvironmentApiKeys = Config.all({
   typesafe: Config.option(Config.redacted(providerApiKeyEnvironment("typesafe"))),
   openrouter: Config.option(Config.redacted(providerApiKeyEnvironment("openrouter"))),
   vercel: Config.option(Config.redacted(providerApiKeyEnvironment("vercel"))),
+  laya: Config.option(Config.redacted(providerApiKeyEnvironment("laya"))),
 })
 
 type EnvironmentApiKeys = Config.Success<typeof EnvironmentApiKeys>
@@ -66,6 +82,7 @@ const hasCredentials = (document: ConfigDocument): boolean =>
   document.providers?.typesafe !== undefined ||
   document.providers?.openrouter !== undefined ||
   document.providers?.vercel !== undefined ||
+  document.providers?.laya?.apiKey !== undefined ||
   document.providers?.custom?.apiKey !== undefined
 
 const readDocument = Effect.fn("JevvyConfig.readDocument")(function*(path: string) {
@@ -107,6 +124,10 @@ const readDocument = Effect.fn("JevvyConfig.readDocument")(function*(path: strin
 })
 
 const invalidMessage = (reason: ConfigFileError["reason"]): string => {
+  if (reason === "policy") {
+    return "Laya requires providers.laya.policy with matching checkpoint and questions; calibrate it before enabling auto-approval (top-level permissions.questions cannot configure Laya)"
+  }
+
   if (reason === "permissions") return "credential-bearing jevvy.jsonc could not be secured"
 
   if (reason === "read") return "jevvy.jsonc could not be read"
@@ -151,6 +172,24 @@ const providerSelection = (
     })
   }
 
+  if (document.provider === "laya") {
+    const laya = document.providers?.laya
+
+    if (laya?.endpoint !== undefined && laya.endpoint.protocol !== "http:" && laya.endpoint.protocol !== "https:") {
+      return new ConfigFileError({ reason: "schema" })
+    }
+
+    const fileApiKey = laya?.apiKey
+    const apiKey = fileApiKey === undefined ? environmentApiKey("laya", environment) : Redacted.make(fileApiKey)
+
+    return Effect.succeed({
+      provider: "laya",
+      endpoint: laya?.endpoint?.href,
+      model: laya?.model,
+      apiKey,
+    })
+  }
+
   const fileApiKey = document.providers?.[document.provider]?.apiKey
 
   const apiKey = fileApiKey === undefined
@@ -173,6 +212,18 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
   )
 
   const selection = yield* providerSelection(document.value, environmentKeys)
+
+  if (selection.provider === "laya") {
+    const policy = document.value.providers?.laya?.policy
+
+    if (document.value.permissions?.questions !== undefined || policy === undefined ||
+      policy.checkpoint !== (selection.model ?? DEFAULT_LAYA_MODEL)) {
+      return yield* new ConfigFileError({ reason: "policy" })
+    }
+
+    return { kind: "custom-policy" as const, selection, questions: policy.questions }
+  }
+
   const questions = document.value.permissions?.questions
 
   if (questions === undefined) return { kind: "shipped-policy" as const, selection }

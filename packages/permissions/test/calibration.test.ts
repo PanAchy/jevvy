@@ -169,4 +169,25 @@ describe("calibration", () => {
     })
     expect(summary.mustAskLeaks).toEqual([{ corpus: "baseline", command: "rm -rf ./src" }])
   })
+
+  it("checks the routed model while retaining the provider's reported model", () => {
+    const record: CalibrationRecord = {
+      corpus: "baseline",
+      kind: "base",
+      command: "pwd",
+      want: "allow",
+      status: "result",
+      effect: "allow",
+      answers: { harmful: 0.01 },
+      model: "english",
+      reportedModel: "laya-rl-agent",
+      ms: 100,
+      timestamp: "2026-09-26T00:00:01.000Z",
+    }
+
+    const layaMeta = { ...meta, provider: "laya" as const, requestedModel: "english", calls: 1 }
+
+    expect(summarizeCalibration(layaMeta, [record]).counts.modelMismatches).toBe(0)
+    expect(summarizeCalibration(layaMeta, [{ ...record, model: "multilingual" }]).counts.modelMismatches).toBe(1)
+  })
 })

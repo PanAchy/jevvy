@@ -36,6 +36,7 @@ export interface JevRequest extends Schema.Schema.Type<typeof JevRequest> {}
 export const JevResult = Schema.Struct({
   model: Schema.NonEmptyString,
   answers: Schema.Record(Schema.String, NoulAnswer),
+  reportedModel: Schema.optionalKey(Schema.NonEmptyString),
 })
 
 export interface JevResult extends Schema.Schema.Type<typeof JevResult> {}

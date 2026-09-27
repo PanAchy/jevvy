@@ -1,10 +1,13 @@
 export {
   createCustomSystemOneClient,
+  createLayaClient,
   createOpenRouterClient,
   createTypeSafeClient,
   createVercelClient,
   createZenClient,
   DEFAULT_OPENROUTER_MODEL,
+  DEFAULT_LAYA_ENDPOINT,
+  DEFAULT_LAYA_MODEL,
   DEFAULT_TYPESAFE_MODEL,
   DEFAULT_VERCEL_MODEL,
   DEFAULT_ZEN_MODEL,

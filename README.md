@@ -89,7 +89,10 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 | TypeSafe AI       | `typesafe`   | `providers.typesafe.apiKey` or `TYPESAFE_API_KEY`             |
 | OpenRouter        | `openrouter` | `providers.openrouter.apiKey` or `OPENROUTER_API_KEY`         |
 | Vercel AI Gateway | `vercel`     | `providers.vercel.apiKey` or `AI_GATEWAY_API_KEY`             |
+| [Laya][laya-guide] | `laya`       | Optional `providers.laya.apiKey` or `LAYA_API_KEY`            |
 | Custom endpoint   | `custom`     | Optional `providers.custom.apiKey`                            |
+
+[laya-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/laya.md
 
 The plugin uses only the selected provider and never falls back to another one.
 
@@ -111,11 +114,11 @@ Select `custom` to use any HTTP endpoint that accepts the System One request sha
 }
 ```
 
-Custom endpoints use the shipped approval policy unless you replace it. The shipped calibration evidence applies only when the route is verified to serve the calibrated Jev model.
+Custom endpoints use Jevvy's default approval policy unless you replace it. Its calibration evidence applies only when the route is verified to serve the calibrated Jev model.
 
 ### Approval policy
 
-By default, Jevvy Permissions requires all four shipped questions to pass:
+Jevvy's default approval policy requires all four questions to pass:
 
 | Question  | What it checks                                                                            | Pass condition |
 | --------- | ----------------------------------------------------------------------------------------- | -------------: |
@@ -124,9 +127,9 @@ By default, Jevvy Permissions requires all four shipped questions to pass:
 | Untrusted | Does the command execute newly obtained, installed, generated, or concealed code?         | Noul ≤ `0.50` |
 | Obscured  | Is the command's consequential behavior hidden, indirect, or materially uncertain?        | Noul ≤ `0.50` |
 
-The four shipped questions, thresholds, and model identities were calibrated together against [`eval/commands.json`](./eval/commands.json). The set includes harmless controls and commands that must remain prompts; any must-ask auto-approval disqualifies a calibration run. Custom policies are not covered by this evidence.
+The default questions, thresholds, and model identities were calibrated together against [`eval/commands.json`](./eval/commands.json). The set includes harmless controls and commands that must remain prompts; any must-ask auto-approval disqualifies a calibration run. Custom policies are not covered by this evidence.
 
-Custom policies replace all shipped questions. Define a non-empty map of risk-oriented System One Nouls, each with a permission threshold:
+For providers other than Laya, `permissions.questions` replaces Jevvy's default questions. Define a non-empty map of risk-oriented System One Nouls, each with a permission threshold:
 
 ```jsonc
 {
