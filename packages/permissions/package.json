@@ -55,7 +55,7 @@
     "@clack/prompts": "^1.8.1",
     "@effect/platform-node": "4.0.0-rc.112",
     "@effect/platform-node-shared": "4.0.0-rc.112",
-    "@opencode/plugin": "2.0.8",
+    "@opencode/plugin": "2.0.26",
     "effect": "4.0.0-rc.112",
     "jsonc-parser": "^3.3.1"
   },

@@ -312,6 +312,14 @@ export const layaNextSteps = (result: InitResult): string => {
   return steps.join("\n")
 }
 
+export const opencodeNextSteps = (): string => [
+  "To enable shell review, add this rule to OpenCode's permissions before specific shell rules:",
+  '{ "action": "shell", "resource": "*", "effect": "ask" }',
+  "Existing allow and deny stay final; specific asks stay human-only. Last matching rule wins.",
+  "Without this rule, default-allowed shell commands are not reviewed by Jevvy.",
+  "Reload OpenCode after updating permissions.",
+].join("\n")
+
 export const promptInitPlan = async (configPath: string, existing?: string): Promise<InitPlan | undefined> => {
   intro(accent("Set up Jevvy"))
 
@@ -359,6 +367,8 @@ export const showInitError = (message: string): void => {
 
 export const showInitResult = (result: InitResult): void => {
   log.success(`Installed Jevvy in ${result.harnesses.map((harness) => harnessLabels[harness]).join(" + ")}`)
+
+  if (result.harnesses.includes("opencode")) log.message(opencodeNextSteps())
 
   if (result.provider === "laya") {
     log.message(layaNextSteps(result))

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "@effect/vitest"
 import { Effect } from "effect"
 import type { PermissionReview, PermissionReviewer } from "../src/engine.ts"
 import { createEvaluate } from "../src/opencode/evaluate.ts"
+import { hasExplicitAsk } from "../src/opencode/ask-rule.ts"
 import type { EvaluateOptions, EvaluationEvent } from "../src/opencode/evaluate.ts"
 
 const event = (effect: EvaluationEvent["effect"] = "ask", action = "shell"): EvaluationEvent => ({
@@ -48,6 +49,28 @@ describe("OpenCode permission evaluation", () => {
 
     expect(input.effect).toBe("allow")
     expect(calls).toEqual([["pwd"]])
+  }))
+
+  it.effect("reviews a complete command under the configured catch-all shell ask", () => Effect.gen(function*() {
+    const calls: string[][] = []
+    const input = { ...event(), resources: ["echo hello", "pwd"] }
+
+    const rules = [
+      { action: "*", resource: "*", effect: "allow" as const },
+      { action: "shell", resource: "*", effect: "ask" as const },
+    ]
+
+    const evaluate = makeEvaluate(reviewer({ effect: "allow", judgments: [] }, calls), {
+      inspect: (request) => Effect.succeed({
+        command: "echo hello && pwd",
+        explicitAsk: hasExplicitAsk(request.action, request.resources, rules),
+      }),
+    })
+
+    yield* evaluate(input)
+
+    expect(calls).toEqual([["echo hello && pwd"]])
+    expect(input.effect).toBe("allow")
   }))
 
   it.effect("reviews one complete command after inspecting multiple host resources", () => Effect.gen(function*() {

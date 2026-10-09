@@ -17,9 +17,17 @@ import {
   initConfirmationMessage,
   initPlanSummary,
   layaNextSteps,
+  opencodeNextSteps,
 } from "../src/init/prompt.ts"
 
 describe("Jevvy initializer", () => {
+  it("tells OpenCode users how to opt shell requests into review without changing their policy", () => {
+    expect(opencodeNextSteps()).toContain('{ "action": "shell", "resource": "*", "effect": "ask" }')
+    expect(opencodeNextSteps()).toContain("before specific shell rules")
+    expect(opencodeNextSteps()).toContain("allow and deny stay final; specific asks stay human-only")
+    expect(opencodeNextSteps()).toContain("not reviewed by Jevvy")
+  })
+
   it("formats provider and harness names for confirmation", () => {
     expect(initPlanSummary({
       harnesses: ["opencode", "claude"],
