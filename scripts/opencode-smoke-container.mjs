@@ -3,8 +3,11 @@
 import { spawn, spawnSync } from "node:child_process"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { withPermissionSmoke } from "./opencode-permission-smoke.mjs"
 
 const root = "/tmp/jevvy-opencode-smoke"
+
+const opencodeVersion = process.env.JEVVY_OPENCODE_VERSION ?? "2.0.26"
 
 const project = join(root, "project")
 
@@ -18,7 +21,7 @@ writeFileSync(join(root, "package.json"), JSON.stringify({ private: true, type: 
 
 const install = spawnSync(
   "npm",
-  ["install", "--no-audit", "--no-fund", "--ignore-scripts=false", "/tmp/jevvy.tgz", "@opencode/cli@2.0.8"],
+  ["install", "--no-audit", "--no-fund", "--ignore-scripts=false", "/tmp/jevvy.tgz", `@opencode/cli@${opencodeVersion}`],
   {
     cwd: root,
     env: {
@@ -51,12 +54,13 @@ const environment = {
   OPENCODE_PASSWORD: serverPassword,
   OPENCODE_API_KEY: "",
   TYPESAFE_API_KEY: "",
+  JEVVY_SMOKE_MODEL_KEY: "credential-free-smoke",
   NO_COLOR: "1",
 }
 
 const executable = join(root, "node_modules", ".bin", "opencode")
 
-const inspectPlugin = async (port, expectedStatus, expectedError) => {
+const inspectPlugin = async (port, expectedStatus, expectedError, exercise) => {
   const server = spawn(executable, ["serve", "--hostname", "127.0.0.1", "--port", String(port)], {
     cwd: project,
     env: environment,
@@ -113,6 +117,30 @@ const inspectPlugin = async (port, expectedStatus, expectedError) => {
           throw new Error(`Jevvy plugin error was not actionable: ${JSON.stringify(lastPlugin)}`)
         }
 
+        if (exercise !== undefined) {
+          const api = async (method, path, body) => {
+            const options = {
+              method,
+              headers: { authorization, "content-type": "application/json" },
+              signal: AbortSignal.timeout(20_000),
+            }
+
+            if (body !== undefined) options.body = JSON.stringify(body)
+
+            const result = await fetch(`${baseUrl}${path}`, options)
+
+            if (!result.ok) throw new Error(`${method} ${path}: ${result.status} ${await result.text()}`)
+
+            return result.status === 204 ? undefined : result.json()
+          }
+
+          try {
+            await exercise(api)
+          } catch (error) {
+            throw new Error(`shell permission smoke failed\n${diagnostics.join("").slice(-4000)}`, { cause: error })
+          }
+        }
+
         return
       }
 
@@ -162,4 +190,13 @@ writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
 
 await inspectPlugin(4099, "active")
 
-console.log("OpenCode host smoke passed: setup failures are actionable; configured custom and Laya endpoints activate")
+await withPermissionSmoke(project, async (endpoint, exercise) => {
+  writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
+    provider: "custom",
+    providers: { custom: { endpoint, model: "smoke-model" } },
+  }, null, 2)}\n`, { mode: 0o600 })
+
+  await inspectPlugin(4100, "active", undefined, exercise)
+})
+
+console.log(`OpenCode ${opencodeVersion} host smoke passed: setup diagnostics, activation, and real shell permission review`)
