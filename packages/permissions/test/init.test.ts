@@ -266,7 +266,11 @@ describe("Jevvy initializer", () => {
 
         return existing
       }),
-      writeConfig: () => Effect.sync(() => { events.push("write") }),
+      updateConfig: (_path, edit) => Effect.gen(function*() {
+        events.push("read")
+        yield* edit(existing)
+        events.push("write")
+      }),
       installHarness: () => Effect.sync(() => { events.push("install") }),
     }))
 
@@ -366,7 +370,8 @@ describe("Jevvy initializer", () => {
 
     const layer = Layer.succeed(InitPlatform, InitPlatform.of({
       readConfig: () => Effect.succeed(undefined),
-      writeConfig: (_path, content) => Effect.sync(() => {
+      updateConfig: (_path, edit) => Effect.gen(function*() {
+        const content = yield* edit(undefined)
         events.push(`write:${parse(content).provider}`)
       }),
       installHarness: (harness) => Effect.sync(() => {
@@ -433,7 +438,7 @@ describe("Jevvy initializer", () => {
         const path = join(directory, "jevvy.jsonc")
         const platform = yield* InitPlatform
 
-        yield* platform.writeConfig(path, "{\"apiKey\":\"secret\"}\n")
+        yield* platform.updateConfig(path, () => Effect.succeed("{\"apiKey\":\"secret\"}\n"))
         expect((yield* Effect.promise(() => stat(path))).mode & 0o777).toBe(0o600)
       }).pipe(
         Effect.provide(InitPlatform.layer),

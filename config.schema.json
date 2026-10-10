@@ -41,6 +41,12 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "opencode": {
+          "$ref": "#/$defs/harnessReview"
+        },
+        "claude": {
+          "$ref": "#/$defs/harnessReview"
+        },
         "questions": {
           "type": "object",
           "minProperties": 1,
@@ -106,6 +112,17 @@
     }
   ],
   "$defs": {
+    "harnessReview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Jevvy review for this harness. Disabled review leaves host permission handling unchanged."
+        }
+      }
+    },
     "providerCredential": {
       "type": "object",
       "additionalProperties": false,

@@ -1,29 +1,53 @@
 import { Plugin } from "@opencode/plugin/effect"
-import { Effect } from "effect"
+import { Effect, Layer, Schema } from "effect"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as NodePath from "@effect/platform-node/NodePath"
 import { globalJevvyConfigPath, loadJevvyConfig } from "../config.ts"
 import { createPermissionReviewer } from "../engine.ts"
 import { createConfiguredProvider } from "../providers.ts"
 import { createEvaluate } from "./evaluate.ts"
 import { createCommandCapture } from "./command-capture.ts"
 import { hasExplicitAsk } from "./ask-rule.ts"
+import { createReviewControl } from "../review-control.ts"
+import type { ReviewSnapshot } from "../review-control.ts"
+import { JevvyControl } from "./rpc.ts"
 import {
   invalidConfigurationMessage,
   missingConfigurationMessage,
   missingCredentialMessage,
 } from "./setup.ts"
 
+class PluginSetupError extends Schema.TaggedError<PluginSetupError>()("PluginSetupError", { message: Schema.String }) {}
+
 export default Plugin.define({
   id: "jevvy.permissions",
   effect: Effect.fn("JevvyPlugin.setup")(function*(ctx) {
     const configPath = globalJevvyConfigPath()
+    const control = yield* createReviewControl(configPath).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
+    let problem: string | undefined
+
+    const registration = yield* ctx.rpc.register(JevvyControl, {
+      get: () => control.read("opencode").pipe(Effect.match({
+        onFailure: () => ({ problem: problem ?? `Jevvy could not read ${configPath}. Run npx @jevvy/permissions init or fix the configuration.` }),
+        onSuccess: (state) => problem === undefined ? state : { ...state, problem },
+      })),
+      toggle: (): Effect.Effect<ReviewSnapshot> => Effect.gen(function*() {
+        const state = yield* control.change("opencode").pipe(Effect.orDie)
+        yield* registration.events.emit("changed", state).pipe(Effect.orDie)
+
+        return state
+      }),
+    }).pipe(Effect.orDie)
+
+    yield* Effect.gen(function*() {
     const permissionConfig = yield* loadJevvyConfig(configPath)
 
     if (permissionConfig.kind === "invalid") {
-      return yield* Effect.die(new Error(invalidConfigurationMessage(configPath, permissionConfig.message)))
+      return yield* new PluginSetupError({ message: invalidConfigurationMessage(configPath, permissionConfig.message) })
     }
 
     if (permissionConfig.kind === "unconfigured") {
-      return yield* Effect.die(new Error(missingConfigurationMessage(configPath)))
+      return yield* new PluginSetupError({ message: missingConfigurationMessage(configPath) })
     }
 
     const selected = createConfiguredProvider(permissionConfig.selection)
@@ -32,10 +56,10 @@ export default Plugin.define({
       const provider = permissionConfig.selection.provider
 
       if (provider === "custom") {
-        return yield* Effect.die(new Error("Jevvy could not construct the configured custom provider"))
+        return yield* new PluginSetupError({ message: "Jevvy could not construct the configured custom provider" })
       }
 
-      return yield* Effect.die(new Error(missingCredentialMessage(provider, configPath)))
+      return yield* new PluginSetupError({ message: missingCredentialMessage(provider, configPath) })
     }
 
     const questions = permissionConfig.kind === "custom-policy" ? permissionConfig.questions : undefined
@@ -48,6 +72,7 @@ export default Plugin.define({
     yield* ctx.tool.hook("execute.after", capture.after)
 
     const evaluate = createEvaluate(reviewer, {
+      control,
       inspect: (event) => Effect.gen(function*() {
         const command = capture.commandFor(event)
 
@@ -93,5 +118,9 @@ export default Plugin.define({
         autoApproval: "enabled",
       })
     })
+    }).pipe(Effect.catchTag("PluginSetupError", (error) => Effect.sync(() => {
+      problem = error.message
+      console.warn(problem)
+    })))
   }),
 })

@@ -59,6 +59,13 @@ try {
   }
 
   console.log("Claude Code host smoke passed: jevvy-permissions enabled in an isolated host")
+
+  const controls = spawnSync(process.execPath, ["--experimental-vm-modules", join(root, "scripts", "claude-controls-smoke.mjs"), plugin], {
+    cwd: root,
+    stdio: "inherit",
+  })
+
+  if (controls.status !== 0) throw new Error("Claude Code native controls smoke failed")
 } finally {
   rmSync(temporary, { recursive: true, force: true })
 }

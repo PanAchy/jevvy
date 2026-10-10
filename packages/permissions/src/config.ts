@@ -6,6 +6,7 @@ import { parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
 import { DEFAULT_LAYA_MODEL, JevProvider } from "./core.ts"
 import { ApprovalQuestions } from "./questions.ts"
+import { HarnessReviewConfig } from "./review-control.ts"
 import { providerApiKeyEnvironment } from "./providers.ts"
 import type { BuiltInProvider, ProviderSelection } from "./providers.ts"
 
@@ -46,6 +47,8 @@ const JevvyConfigSchema = Schema.Struct({
   })),
   permissions: Schema.optionalKey(Schema.Struct({
     questions: Schema.optionalKey(ApprovalQuestions),
+    opencode: Schema.optionalKey(HarnessReviewConfig),
+    claude: Schema.optionalKey(HarnessReviewConfig),
   })),
 })
 

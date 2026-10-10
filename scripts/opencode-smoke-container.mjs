@@ -60,7 +60,7 @@ const environment = {
 
 const executable = join(root, "node_modules", ".bin", "opencode")
 
-const inspectPlugin = async (port, expectedStatus, expectedError, exercise) => {
+const inspectPlugin = async (port, expectedProblem, exercise) => {
   const server = spawn(executable, ["serve", "--hostname", "127.0.0.1", "--port", String(port)], {
     cwd: project,
     env: environment,
@@ -112,9 +112,22 @@ const inspectPlugin = async (port, expectedStatus, expectedError, exercise) => {
 
       lastPlugin = body.data?.find((entry) => entry.id === "jevvy.permissions")
 
-      if (lastPlugin?.state?.status === expectedStatus) {
-        if (expectedError !== undefined && !lastPlugin.state.error?.includes(expectedError)) {
-          throw new Error(`Jevvy plugin error was not actionable: ${JSON.stringify(lastPlugin)}`)
+      if (lastPlugin?.state?.status === "active") {
+        const status = await fetch(`${baseUrl}/api/rpc/jevvy.permissions.control/get?location[directory]=${encodeURIComponent(project)}`, {
+          method: "POST",
+          headers: { authorization, "content-type": "application/json" },
+          body: JSON.stringify({}),
+        })
+
+        if (!status.ok) throw new Error(`Jevvy controls were not available: ${status.status} ${await status.text()}`)
+        const control = await status.json()
+
+        if (expectedProblem !== undefined && !control.output?.problem?.includes(expectedProblem)) {
+          throw new Error(`Jevvy setup diagnostic was not actionable: ${JSON.stringify(control)}`)
+        }
+
+        if (expectedProblem === undefined && control.output?.enabled !== true) {
+          throw new Error(`Jevvy controls did not default to enabled: ${JSON.stringify(control)}`)
         }
 
         if (exercise !== undefined) {
@@ -151,7 +164,7 @@ const inspectPlugin = async (port, expectedStatus, expectedError, exercise) => {
       await new Promise((resolveWait) => setTimeout(resolveWait, 250))
     }
 
-    throw new Error(`Jevvy plugin did not reach ${expectedStatus}: ${JSON.stringify(lastPlugin)}\n${diagnostics.join("").slice(-4000)}`)
+    throw new Error(`Jevvy plugin did not activate: ${JSON.stringify(lastPlugin)}\n${diagnostics.join("").slice(-4000)}`)
   } finally {
     server.kill("SIGTERM")
 
@@ -159,7 +172,7 @@ const inspectPlugin = async (port, expectedStatus, expectedError, exercise) => {
   }
 }
 
-await inspectPlugin(4096, "failed", "npx @jevvy/permissions init")
+await inspectPlugin(4096, "npx @jevvy/permissions init")
 
 writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
   provider: "custom",
@@ -171,14 +184,14 @@ writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
   },
 }, null, 2)}\n`, { mode: 0o600 })
 
-await inspectPlugin(4097, "active")
+await inspectPlugin(4097)
 
 writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
   provider: "laya",
   providers: { laya: {} },
 }, null, 2)}\n`, { mode: 0o600 })
 
-await inspectPlugin(4098, "failed", "providers.laya.policy")
+await inspectPlugin(4098, "providers.laya.policy")
 
 writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
   provider: "laya",
@@ -188,7 +201,7 @@ writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
   } } },
 }, null, 2)}\n`, { mode: 0o600 })
 
-await inspectPlugin(4099, "active")
+await inspectPlugin(4099)
 
 await withPermissionSmoke(project, async (endpoint, exercise) => {
   writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
@@ -196,7 +209,7 @@ await withPermissionSmoke(project, async (endpoint, exercise) => {
     providers: { custom: { endpoint, model: "smoke-model" } },
   }, null, 2)}\n`, { mode: 0o600 })
 
-  await inspectPlugin(4100, "active", undefined, exercise)
+  await inspectPlugin(4100, undefined, exercise)
 })
 
 console.log(`OpenCode ${opencodeVersion} host smoke passed: setup diagnostics, activation, and real shell permission review`)

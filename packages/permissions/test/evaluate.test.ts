@@ -1,13 +1,14 @@
 import { describe, expect, it, vi } from "@effect/vitest"
-import { Effect } from "effect"
+import { Deferred, Effect, Fiber } from "effect"
+import { createPermissionReviewer } from "../src/engine.ts"
 import type { PermissionReview, PermissionReviewer } from "../src/engine.ts"
 import { createEvaluate } from "../src/opencode/evaluate.ts"
 import { hasExplicitAsk } from "../src/opencode/ask-rule.ts"
+import { Session } from "@opencode/schema/session"
 import type { EvaluateOptions, EvaluationEvent } from "../src/opencode/evaluate.ts"
 
 const event = (effect: EvaluationEvent["effect"] = "ask", action = "shell"): EvaluationEvent => ({
-  // SAFETY: This fixed test ID stands in for a host-decoded session identifier.
-  sessionID: "ses_test" as EvaluationEvent["sessionID"],
+  sessionID: Session.ID.make("ses_test"),
   action,
   resources: ["pwd"],
   effect,
@@ -29,6 +30,65 @@ const makeEvaluate = (permissionReviewer: PermissionReviewer | undefined, option
   })
 
 describe("OpenCode permission evaluation", () => {
+  it.effect("OFF skips cached approvals and inspection, and ON reuses the process cache", () => Effect.gen(function*() {
+    let enabled = true
+
+    const provider = vi.fn(() => Effect.succeed({ model: "fake", answers: {
+      harmless: { type: "noul" as const, noul: 0 },
+    } }))
+
+    const cachedReviewer = yield* createPermissionReviewer({ evaluate: provider }, {
+      questions: { harmless: { type: "noul", instructions: "Is this harmful?", threshold: 0.5 } },
+    })
+
+    const review = vi.fn(cachedReviewer.review)
+    const inspect = vi.fn(() => Effect.succeed({ command: "pwd", explicitAsk: false }))
+    const read = vi.fn(() => Effect.succeed({ enabled }))
+    const evaluate = makeEvaluate({ review }, { control: { read }, inspect })
+    const first = event()
+    yield* evaluate(first)
+    expect(first.effect).toBe("allow")
+    enabled = false
+    const paused = event()
+    yield* evaluate(paused)
+    expect(paused.effect).toBe("ask")
+    expect(paused.message).toBe("OpenCode needs approval")
+    expect(review).toHaveBeenCalledOnce()
+    expect(inspect).toHaveBeenCalledOnce()
+    enabled = true
+    const resumed = event()
+    yield* evaluate(resumed)
+    expect(resumed.effect).toBe("allow")
+    expect(review).toHaveBeenCalledTimes(2)
+    expect(provider).toHaveBeenCalledOnce()
+  }))
+
+  it.effect("OFF preserves an admitted approval but does not admit the next review", () => Effect.gen(function*() {
+    let enabled = true
+    const entered = yield* Deferred.make<void>()
+    const finish = yield* Deferred.make<void>()
+
+    const review = vi.fn(() => Effect.gen(function*() {
+      yield* Deferred.succeed(entered, undefined)
+      yield* Deferred.await(finish)
+
+      return { effect: "allow" as const, judgments: [] }
+    }))
+
+    const evaluate = makeEvaluate({ review }, { control: { read: () => Effect.succeed({ enabled }) } })
+    const admitted = event()
+    const running = yield* evaluate(admitted).pipe(Effect.forkChild)
+    yield* Deferred.await(entered)
+    enabled = false
+    const paused = event()
+    yield* evaluate(paused)
+    yield* Deferred.succeed(finish, undefined)
+    yield* Fiber.join(running)
+    expect(admitted.effect).toBe("allow")
+    expect(paused.effect).toBe("ask")
+    expect(review).toHaveBeenCalledOnce()
+  }))
+
   it.effect.each(["allow", "deny"] as const)("preserves host %s without asking Jevvy", (effect) => Effect.gen(function*() {
     const calls: string[][] = []
     const evaluate = makeEvaluate(reviewer({ effect: "allow", judgments: [] }, calls))

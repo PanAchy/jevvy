@@ -26,7 +26,7 @@ describe("Jevvy init command", () => {
 
         return '{ "provider": "laya" }'
       }),
-      writeConfig: () => Effect.die("writeConfig should not run"),
+      updateConfig: () => Effect.die("updateConfig should not run"),
       installHarness: () => Effect.die("installHarness should not run"),
     }))
 
@@ -48,7 +48,7 @@ describe("Jevvy init command", () => {
 
     const platform = Layer.succeed(InitPlatform, InitPlatform.of({
       readConfig: () => new InitError({ operation: "read-config", message: "Jevvy configuration could not be read" }),
-      writeConfig: () => Effect.die("writeConfig should not run"),
+      updateConfig: () => Effect.die("updateConfig should not run"),
       installHarness: () => Effect.die("installHarness should not run"),
     }))
 
@@ -65,7 +65,7 @@ describe("Jevvy init command", () => {
 
     const platform = Layer.succeed(InitPlatform, InitPlatform.of({
       readConfig: () => Effect.succeed(undefined),
-      writeConfig: () => new InitError({
+      updateConfig: () => new InitError({
         operation: "write-config",
         message: "configuration is read-only",
       }),
@@ -104,7 +104,9 @@ describe("Jevvy init command", () => {
 
         return existing
       }),
-      writeConfig: (_path, content) => Effect.sync(() => {
+      updateConfig: (_path, edit) => Effect.gen(function*() {
+        events.push("read")
+        const content = yield* edit(existing)
         written = content
         events.push("write")
       }),
