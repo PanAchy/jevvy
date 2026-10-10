@@ -8,9 +8,11 @@ import {
   providerDisplayName,
 } from "../providers.ts"
 import type { BuiltInProvider } from "../providers.ts"
-import { loadAskRules, mustPromptForAskRule } from "./ask-rules.ts"
+import { hasHostAsk, loadAskRules } from "./ask-rules.ts"
 import { createClaudeEvaluate, decodeClaudeHookEvent, sessionStartOutput } from "./evaluate.ts"
 import type { ClaudeHookOutput } from "./evaluate.ts"
+import { withReviewEnabled } from "../review-control.ts"
+import type { ReviewControl } from "../review-control.ts"
 
 export type ClaudeReviewerSetup =
   | { readonly kind: "ready"; readonly reviewer: PermissionReviewer }
@@ -89,32 +91,41 @@ export const loadClaudeSetup = Effect.fn("ClaudeCode.loadSetup")(function*() {
 export const createClaudeHookHandler = <E>(
   loadSetup: ClaudeSetupLoader<E>,
   loadAsks: ClaudeAskLoader = loadAskRules,
+  control?: Pick<ReviewControl, "read">,
 ): ((raw: string) => Effect.Effect<ClaudeHookOutput | undefined>) =>
   Effect.fn("ClaudeCode.handleHookEvent")(function*(raw) {
     const event = decodeClaudeHookEvent(raw)
 
     if (event === undefined) return undefined
 
-    if (event.hook_event_name === "PermissionRequest") {
-      const asks = yield* loadAsks(event.cwd)
+    const review = Effect.gen(function*() {
+      if (event.hook_event_name === "PermissionRequest") {
+        const asks = yield* loadAsks(event.cwd)
 
-      if (asks === undefined || mustPromptForAskRule(event.tool_input.command, asks)) return undefined
+        if (asks === undefined || hasHostAsk(event.tool_input.command, asks)) return undefined
+      }
+
+      const setup = yield* loadSetup().pipe(
+        Effect.match({
+          onFailure: () => undefined,
+          onSuccess: (loaded) => loaded,
+        }),
+      )
+
+      if (setup === undefined) return undefined
+
+      if (event.hook_event_name === "SessionStart") {
+        return sessionStartOutput(setup.kind === "unavailable" ? setup.message : undefined)
+      }
+
+      if (setup.kind === "unavailable") return undefined
+
+      return yield* createClaudeEvaluate(setup.reviewer)(event)
+    })
+
+    if (event.hook_event_name === "PermissionRequest" && control !== undefined) {
+      return yield* withReviewEnabled(control, "claude", review)
     }
 
-    const setup = yield* loadSetup().pipe(
-      Effect.match({
-        onFailure: () => undefined,
-        onSuccess: (loaded) => loaded,
-      }),
-    )
-
-    if (setup === undefined) return undefined
-
-    if (event.hook_event_name === "SessionStart") {
-      return sessionStartOutput(setup.kind === "unavailable" ? setup.message : undefined)
-    }
-
-    if (setup.kind === "unavailable") return undefined
-
-    return yield* createClaudeEvaluate(setup.reviewer)(event)
+    return yield* review
   })

@@ -29,7 +29,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./tui": "./dist/opencode/tui.js"
   },
   "bin": {
     "jevvy": "bin/jevvy.mjs",
@@ -47,7 +48,7 @@
   ],
   "scripts": {
     "prebuild": "npm run build --workspace=@jevvy/core && node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "tsc -p tsconfig.build.json && esbuild src/core.ts --bundle --platform=node --format=esm --target=node22 --external:effect --external:effect/* --outfile=dist/core.js && esbuild src/claude/main.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --outfile=dist/claude-hook.js && node ../../scripts/copy-calibration-assets.mjs",
+    "build": "tsc -p tsconfig.build.json && esbuild src/core.ts --bundle --platform=node --format=esm --target=node22 --external:effect --external:effect/* --outfile=dist/core.js && esbuild claude-hook=src/claude/main.ts claude-control=src/claude/control.ts --bundle --platform=node --format=esm --target=node22 --main-fields=module,main --banner:js=\"import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);\" --outdir=dist && esbuild src/claude/controls.js --bundle --platform=browser --format=esm --target=es2023 --outfile=dist/claude-controls.js && node ../../scripts/copy-calibration-assets.mjs",
     "prepack": "npm run build && node ../../scripts/package-readme.mjs prepare",
     "postpack": "node ../../scripts/package-readme.mjs clean"
   },
@@ -57,7 +58,18 @@
     "@effect/platform-node-shared": "4.0.0-rc.112",
     "@opencode/plugin": "2.0.26",
     "effect": "4.0.0-rc.112",
-    "jsonc-parser": "^3.3.1"
+    "jsonc-parser": "^3.3.1",
+    "proper-lockfile": "4.1.2"
+  },
+  "peerDependencies": {
+    "@opentui/core": ">=0.5.17",
+    "@opentui/solid": ">=0.5.17",
+    "solid-js": ">=1.9.12"
+  },
+  "peerDependenciesMeta": {
+    "@opentui/core": { "optional": true },
+    "@opentui/solid": { "optional": true },
+    "solid-js": { "optional": true }
   },
   "engines": {
     "node": ">=22.19.0"

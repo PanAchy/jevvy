@@ -108,6 +108,17 @@ try {
   ensure(existsSync(join(consumer, "node_modules", ".bin", "permissions")), "npx cannot resolve the scoped package setup command")
   ensure(existsSync(join(permissionsRoot, "bin", "jevvy-calibrate.mjs")), "permissions is missing its calibration command")
   ensure(existsSync(claudeBundle), "permissions is missing its bundled Claude Code hook")
+  ensure(existsSync(join(permissionsRoot, "dist", "claude-control.js")), "permissions is missing its Claude Code control executable")
+  ensure(existsSync(join(permissionsRoot, "dist", "claude-controls.js")), "permissions is missing its Claude Code native controls")
+  ensure(existsSync(join(permissionsRoot, "dist", "opencode", "tui.js")), "permissions is missing its OpenCode native controls")
+  ensure(claudeHooks.modules?.[0] === "../dist/claude-controls.js", "Claude Code native controls are not registered")
+
+  const nativeControls = spawnSync(process.execPath, ["--experimental-vm-modules", join(repo, "scripts", "claude-controls-smoke.mjs"), permissionsRoot], {
+    cwd: consumer,
+    stdio: "inherit",
+  })
+
+  ensure(nativeControls.status === 0, "packed Claude Code native controls failed in the sandbox")
   ensure(existsSync(join(permissionsRoot, ".claude-plugin", "plugin.json")), "permissions is missing its Claude Code plugin manifest")
   ensure(existsSync(join(permissionsRoot, "hooks", "hooks.json")), "permissions is missing its Claude Code hook registration")
   ensure(claudeManifest.name === "jevvy-permissions", "permissions has an unexpected Claude Code plugin name")

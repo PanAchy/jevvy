@@ -129,58 +129,59 @@ const globMatch = (input: string, pattern: string): boolean => {
   return new RegExp(`^${bare}$`, "s").test(input)
 }
 
-const controlFlow = /^(?:if|then|elif|else|fi|for|while|until|do|done|case|esac|select)(?:\s|$)/
+type AskRule =
+  | { readonly kind: "review" | "other-tool" | "host" }
+  | { readonly kind: "host-command"; readonly pattern: string }
 
-const simpleCommands = (command: string): readonly string[] | undefined => {
+const classifyAskRule = (rule: string): AskRule => {
+  if (rule === "Bash" || rule === "Bash(*)") return { kind: "review" }
+
+  const parsed = /^([^()]+)(?:\((.*)\))?$/.exec(rule)
+
+  if (parsed === null) {
+    return { kind: rule.includes("Bash") || rule.includes("*") ? "host" : "other-tool" }
+  }
+
+  if (!globMatch("Bash", parsed[1])) return { kind: "other-tool" }
+
+  if (parsed[2] === undefined) return { kind: "host" }
+
+  const pattern = parsed[2].endsWith(":*") ? `${parsed[2].slice(0, -2)} *` : parsed[2]
+
+  return /^[A-Za-z_][A-Za-z0-9_]*:/.test(pattern)
+    ? { kind: "host" }
+    : { kind: "host-command", pattern }
+}
+
+const isIndirectCommand = (command: string): boolean =>
+  /^(?:if|then|elif|else|fi|for|while|until|do|done|case|esac|select)(?:\s|$)/.test(command) ||
+  /^!\s/.test(command) ||
+  /^(?:timeout|time|nice|nohup|stdbuf|command|builtin|noglob|xargs|env)(?:\s|$)/.test(command) ||
+  /^[A-Za-z_][A-Za-z0-9_]*=/.test(command)
+
+const literalCommandParts = (command: string): readonly string[] | undefined => {
   if (/[\\'"`$()<>{}]/.test(command)) return undefined
 
   const parts = command.split(/&&|\|\||[;&|\r\n]/).map((part) => part.trim())
 
-  // Claude can match ask rules inside control-flow bodies. These fragments
-  // are not independent commands, so we cannot safely match them ourselves.
-  if (parts.some((part) => controlFlow.test(part) || /^!\s/.test(part))) {
-    return undefined
-  }
-
-  return parts.every((part) => part.length > 0) ? parts : undefined
+  return parts.every((part) => part.length > 0 && !isIndirectCommand(part)) ? parts : undefined
 }
 
-export const mustPromptForAskRule = (command: string, rules: readonly string[]): boolean => {
-  const parts = simpleCommands(command)
-  let hasBashAsk = false
+export const hasHostAsk = (command: string, rules: readonly string[]): boolean => {
+  const parts = literalCommandParts(command)
 
-  for (const rule of rules) {
-    const parsed = /^([^()]+)(?:\((.*)\))?$/.exec(rule)
+  return rules.some((rule) => {
+    const ask = classifyAskRule(rule)
 
-    if (parsed === null) {
-      if (rule.includes("Bash") || rule.includes("*")) return true
-
-      continue
+    switch (ask.kind) {
+      case "review":
+      case "other-tool":
+        return false
+      case "host":
+        return true
+      case "host-command":
+        return parts === undefined || globMatch(command, ask.pattern) ||
+          parts.some((part) => globMatch(part, ask.pattern))
     }
-
-    if (!globMatch("Bash", parsed[1])) continue
-
-    hasBashAsk = true
-
-    if (parsed[2] === undefined) return true
-
-    const pattern = parsed[2].endsWith(":*") ? `${parsed[2].slice(0, -2)} *` : parsed[2]
-
-    // Rules matching tool-input parameters need the whole Bash input, not just its command.
-    if (/^[A-Za-z_][A-Za-z0-9_]*:/.test(pattern)) return true
-
-    if (globMatch(command, pattern) || parts?.some((part) => globMatch(part, pattern))) return true
-  }
-
-  if (!hasBashAsk) return false
-
-  // Substitutions and wrappers can cause a host rule to match a different
-  // command than the literal text checked above.
-  if (parts === undefined) return true
-
-  if (parts.some((part) => /^(?:timeout|time|nice|nohup|stdbuf|command|builtin|noglob|xargs|env)(?:\s|$)/.test(part))) return true
-
-  if (parts.some((part) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(part))) return true
-
-  return false
+  })
 }

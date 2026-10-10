@@ -4,6 +4,7 @@ import { applyEdits, modify, parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
 import { DEFAULT_LAYA_ENDPOINT, DEFAULT_LAYA_MODEL } from "../core.ts"
 import { LayaPolicy } from "../config.ts"
+import { createConfigFile } from "../config-file.ts"
 
 const CONFIG_SCHEMA = "https://raw.githubusercontent.com/PanAchy/jevvy/main/config.schema.json"
 
@@ -67,7 +68,7 @@ export class InitError extends Schema.TaggedError<InitError>()("InitError", {
 
 export class InitPlatform extends Context.Service<InitPlatform, {
   readonly readConfig: (path: string) => Effect.Effect<string | undefined, InitError>
-  readonly writeConfig: (path: string, content: string) => Effect.Effect<void, InitError>
+  readonly updateConfig: (path: string, edit: (raw: string | undefined) => Effect.Effect<string, InitError>) => Effect.Effect<void, InitError>
   readonly installHarness: (harness: InitHarness) => Effect.Effect<void, InitError>
 }>()("@jevvy/permissions/InitPlatform") {
   static readonly layer = Layer.effect(
@@ -89,26 +90,20 @@ export class InitPlatform extends Context.Service<InitPlatform, {
         cause,
       })))
 
-      const writeConfig = Effect.fn("InitPlatform.writeConfig")(function*(path: string, content: string) {
-        const directory = paths.dirname(path)
+      const updateConfig = Effect.fn("InitPlatform.updateConfig")(function*(
+        path: string,
+        edit: (raw: string | undefined) => Effect.Effect<string, InitError>,
+      ) {
+        const file = yield* createConfigFile(path).pipe(Effect.provide(Context.make(FileSystem.FileSystem, fs).pipe(Context.add(Path.Path, paths))))
 
-        yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 })
-
-        const temporary = yield* fs.makeTempFile({ directory, prefix: ".jevvy-", suffix: ".tmp" })
-
-        yield* Effect.gen(function*() {
-          yield* fs.writeFileString(temporary, content, { mode: 0o600 })
-          yield* fs.chmod(temporary, 0o600)
-          yield* fs.rename(temporary, path)
-          yield* fs.chmod(path, 0o600)
-        }).pipe(
-          Effect.ensuring(fs.remove(temporary, { force: true }).pipe(Effect.ignore)),
-        )
-      }, Effect.mapError((cause) => new InitError({
-        operation: "write-config",
-        message: "Jevvy configuration could not be written",
-        cause,
-      })))
+        return yield* file.update((raw) => edit(raw).pipe(
+          Effect.map((content) => ({ content, value: undefined })),
+        )).pipe(Effect.catchTag("ConfigFileError", (cause) => new InitError({
+          operation: cause.operation === "read" ? "read-config" : "write-config",
+          message: "Jevvy configuration could not be updated",
+          cause,
+        })))
+      })
 
       const runInstaller = Effect.fn("InitPlatform.runInstaller")(function*(
         operation: InstallOperation,
@@ -161,7 +156,7 @@ export class InitPlatform extends Context.Service<InitPlatform, {
         )
       })
 
-      return InitPlatform.of({ readConfig, writeConfig, installHarness })
+      return InitPlatform.of({ readConfig, updateConfig, installHarness })
     }),
   )
 }
@@ -308,10 +303,7 @@ export const initializeJevvy = Effect.fn("Init.initializeJevvy")(function*(
   }
 
   const platform = yield* InitPlatform
-  const existing = yield* platform.readConfig(configPath)
-  const content = yield* renderJevvyConfig(existing, plan.provider)
-
-  yield* platform.writeConfig(configPath, content)
+  yield* platform.updateConfig(configPath, (existing) => renderJevvyConfig(existing, plan.provider))
   yield* Effect.forEach(plan.harnesses, platform.installHarness, { discard: true })
 
   return {
