@@ -71,11 +71,11 @@ class ConfigFileError extends Schema.TaggedError<ConfigFileError>()("ConfigFileE
 }) {}
 
 const EnvironmentApiKeys = Config.all({
-  zen: Config.option(Config.redacted(providerApiKeyEnvironment("zen"))),
-  typesafe: Config.option(Config.redacted(providerApiKeyEnvironment("typesafe"))),
-  openrouter: Config.option(Config.redacted(providerApiKeyEnvironment("openrouter"))),
-  vercel: Config.option(Config.redacted(providerApiKeyEnvironment("vercel"))),
-  laya: Config.option(Config.redacted(providerApiKeyEnvironment("laya"))),
+  zen: Config.option(Config.Redacted(providerApiKeyEnvironment("zen"))),
+  typesafe: Config.option(Config.Redacted(providerApiKeyEnvironment("typesafe"))),
+  openrouter: Config.option(Config.Redacted(providerApiKeyEnvironment("openrouter"))),
+  vercel: Config.option(Config.Redacted(providerApiKeyEnvironment("vercel"))),
+  laya: Config.option(Config.Redacted(providerApiKeyEnvironment("laya"))),
 })
 
 type EnvironmentApiKeys = Config.Success<typeof EnvironmentApiKeys>

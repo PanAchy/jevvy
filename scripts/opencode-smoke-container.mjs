@@ -4,10 +4,11 @@ import { spawn, spawnSync } from "node:child_process"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { withPermissionSmoke } from "./opencode-permission-smoke.mjs"
+import { verifyControlCommand } from "./opencode-control-smoke.mjs"
 
 const root = "/tmp/jevvy-opencode-smoke"
 
-const opencodeVersion = process.env.JEVVY_OPENCODE_VERSION ?? "2.0.26"
+const opencodeVersion = process.env.JEVVY_OPENCODE_VERSION ?? "2.0.27"
 
 const project = join(root, "project")
 
@@ -184,7 +185,7 @@ writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
   },
 }, null, 2)}\n`, { mode: 0o600 })
 
-await inspectPlugin(4097)
+await inspectPlugin(4097, undefined, (api) => verifyControlCommand(api, project))
 
 writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
   provider: "laya",

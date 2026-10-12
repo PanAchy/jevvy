@@ -37,7 +37,6 @@ export default Plugin.define({
         title: "Toggle Jevvy",
         group: "Jevvy",
         palette: true,
-        slash: { name: "jevvy" },
         run: () => runtime.runPromise(presentation.toggle),
       }],
     }))

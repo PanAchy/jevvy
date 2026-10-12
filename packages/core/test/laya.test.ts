@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "@effect/vitest"
 import { Effect } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { createLayaClient, DEFAULT_LAYA_ENDPOINT } from "../src/laya.ts"
 
 afterEach(() => vi.restoreAllMocks())

@@ -9,8 +9,9 @@ import { createEvaluate } from "./evaluate.ts"
 import { createCommandCapture } from "./command-capture.ts"
 import { hasExplicitAsk } from "./ask-rule.ts"
 import { createReviewControl } from "../review-control.ts"
-import type { ReviewSnapshot } from "../review-control.ts"
+import type { ReviewControlError, ReviewSnapshot } from "../review-control.ts"
 import { JevvyControl } from "./rpc.ts"
+import { createReviewCommand } from "./command.ts"
 import {
   invalidConfigurationMessage,
   missingConfigurationMessage,
@@ -26,18 +27,24 @@ export default Plugin.define({
     const control = yield* createReviewControl(configPath).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer)))
     let problem: string | undefined
 
+    const toggle = Effect.fn("JevvyPlugin.toggle")(function*(): Effect.fn.Return<ReviewSnapshot, ReviewControlError> {
+      const state = yield* control.change("opencode")
+      yield* registration.events.emit("changed", state).pipe(Effect.orDie)
+
+      return state
+    })
+
     const registration = yield* ctx.rpc.register(JevvyControl, {
       get: () => control.read("opencode").pipe(Effect.match({
         onFailure: () => ({ problem: problem ?? `Jevvy could not read ${configPath}. Run npx @jevvy/permissions init or fix the configuration.` }),
         onSuccess: (state) => problem === undefined ? state : { ...state, problem },
       })),
-      toggle: (): Effect.Effect<ReviewSnapshot> => Effect.gen(function*() {
-        const state = yield* control.change("opencode").pipe(Effect.orDie)
-        yield* registration.events.emit("changed", state).pipe(Effect.orDie)
-
-        return state
-      }),
+      toggle: () => toggle().pipe(Effect.orDie),
     }).pipe(Effect.orDie)
+
+    yield* ctx.command.transform((editor) => {
+      editor.add(createReviewCommand(toggle(), ctx.session, () => problem))
+    })
 
     yield* Effect.gen(function*() {
     const permissionConfig = yield* loadJevvyConfig(configPath)

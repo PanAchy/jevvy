@@ -272,15 +272,15 @@ try {
   const platformNodeSharedVersions = [...collectDependencyVersions(dependencyTree.dependencies, "@effect/platform-node-shared")]
 
   ensure(
-    effectVersions.length === 1 && effectVersions[0] === "4.0.0-rc.112",
+    effectVersions.length === 1 && effectVersions[0] === "4.0.1",
     `installed dependency tree exposes unexpected Effect versions: ${effectVersions.join(", ")}`,
   )
   ensure(
-    platformNodeVersions.length === 1 && platformNodeVersions[0] === "4.0.0-rc.112",
+    platformNodeVersions.length === 1 && platformNodeVersions[0] === "4.0.1",
     `installed dependency tree exposes unexpected platform-node versions: ${platformNodeVersions.join(", ")}`,
   )
   ensure(
-    platformNodeSharedVersions.length === 1 && platformNodeSharedVersions[0] === "4.0.0-rc.112",
+    platformNodeSharedVersions.length === 1 && platformNodeSharedVersions[0] === "4.0.1",
     `installed dependency tree exposes unexpected platform-node-shared versions: ${platformNodeSharedVersions.join(", ")}`,
   )
 

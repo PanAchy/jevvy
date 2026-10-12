@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "@effect/vitest"
 import { Effect } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import {
   createOpenRouterClient,
   OPENROUTER_SYSTEMONE_URL,

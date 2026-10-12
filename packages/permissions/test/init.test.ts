@@ -5,7 +5,7 @@ import { stripVTControlCharacters } from "node:util"
 import { NodeServices } from "@effect/platform-node"
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Layer, Redacted, Sink, Stream } from "effect"
-import { ChildProcessSpawner } from "effect/unstable/process"
+import { ChildProcessSpawner } from "effect/process"
 import { parse } from "jsonc-parser"
 import {
   initializeJevvy,

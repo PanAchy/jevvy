@@ -16,7 +16,7 @@
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "effect": "4.0.0-rc.112"
+    "effect": "4.0.1"
   },
   "engines": {
     "node": ">=22.19.0"

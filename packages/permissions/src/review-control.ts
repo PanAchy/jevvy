@@ -13,12 +13,16 @@ export type ReviewHarness = typeof ReviewHarness.Type
 
 export const HarnessReviewConfig = Schema.Struct({
   enabled: Schema.optionalKey(Schema.Boolean),
-}).annotate({ parseOptions: { onExcessProperty: "error" } })
+})
+
+const decodeHarnessControl = Schema.decodeUnknownEffect(Schema.UndefinedOr(HarnessReviewConfig), {
+  onExcessProperty: "error",
+})
 
 const ControlDocument = Schema.Struct({
   permissions: Schema.optionalKey(Schema.Struct({
-    opencode: Schema.optionalKey(HarnessReviewConfig),
-    claude: Schema.optionalKey(HarnessReviewConfig),
+    opencode: Schema.optionalKey(Schema.Unknown),
+    claude: Schema.optionalKey(Schema.Unknown),
   })),
 })
 
@@ -32,7 +36,14 @@ const decodeControls = Effect.fn("ReviewControl.decode")(function*(raw: string) 
 
   if (errors.length > 0) return yield* new ReviewControlError({ operation: "parse" })
 
-  return yield* Schema.decodeUnknownEffect(ControlDocument)(value).pipe(
+  return yield* Effect.gen(function*() {
+    const document = yield* Schema.decodeUnknownEffect(ControlDocument)(value)
+
+    return { permissions: {
+      opencode: yield* decodeHarnessControl(document.permissions?.opencode),
+      claude: yield* decodeHarnessControl(document.permissions?.claude),
+    } }
+  }).pipe(
     Effect.mapError(() => new ReviewControlError({ operation: "parse" })),
   )
 })
