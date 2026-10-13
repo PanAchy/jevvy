@@ -54,8 +54,8 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.8.1",
-    "@effect/platform-node": "4.0.1",
-    "@effect/platform-node-shared": "4.0.1",
+    "@effect/platform-node": "4.0.2",
+    "@effect/platform-node-shared": "4.0.2",
     "@opencode/plugin": "2.0.27",
     "effect": "4.0.1",
     "jsonc-parser": "^3.3.1",
