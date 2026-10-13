@@ -2,6 +2,8 @@ import type { PermissionEvaluation } from "@opencode/plugin/effect/permission"
 import { Effect } from "effect"
 import type { PermissionReviewer } from "../engine.ts"
 import type { JevProviderFailure } from "../core.ts"
+import { withReviewEnabled } from "../review-control.ts"
+import type { ReviewControl } from "../review-control.ts"
 
 export interface EvaluationEvent {
   readonly sessionID: PermissionEvaluation["sessionID"]
@@ -14,6 +16,7 @@ export interface EvaluationEvent {
 }
 
 export interface EvaluateOptions {
+  readonly control?: Pick<ReviewControl, "read">
   readonly inspect: (event: EvaluationEvent) => Effect.Effect<{
     readonly command: string
     readonly explicitAsk: boolean
@@ -33,17 +36,25 @@ export const createEvaluate = (
   Effect.fn("OpenCode.evaluatePermission")(function*(event) {
     if (event.effect !== "ask" || event.action !== "shell" || reviewer === undefined) return
 
-    const inspection = yield* options.inspect(event)
+    const reviewCommand = Effect.gen(function*() {
+      const inspection = yield* options.inspect(event)
 
-    if (inspection === undefined) {
-      options.report?.({ effect: "ask", reason: "unavailable", resources: event.resources.length })
+      if (inspection === undefined) {
+        options.report?.({ effect: "ask", reason: "unavailable", resources: event.resources.length })
 
-      return
-    }
+        return undefined
+      }
 
-    if (inspection.explicitAsk) return
+      if (inspection.explicitAsk) return undefined
 
-    const review = yield* reviewer.review({ action: event.action, resources: [inspection.command] })
+      return yield* reviewer.review({ action: event.action, resources: [inspection.command] })
+    })
+
+    const review = yield* options.control === undefined
+      ? reviewCommand
+      : withReviewEnabled(options.control, "opencode", reviewCommand)
+
+    if (review === undefined) return
     const reason = review.effect === "ask" ? review.reason : "judged"
 
     if (review.effect === "ask" && review.failure !== undefined) {

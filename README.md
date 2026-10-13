@@ -41,8 +41,16 @@ npx @jevvy/permissions init
 
 ### OpenCode
 
+OpenCode 2.0.27 or newer is required.
+
 ```bash
 opencode plugin add @jevvy/permissions
+```
+
+For OpenCode v2 versions before 2.0.27:
+
+```bash
+opencode plugin add @jevvy/permissions@0.5.1
 ```
 
 ### Claude Code

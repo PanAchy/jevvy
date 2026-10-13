@@ -1,5 +1,5 @@
 import { Effect, Schema } from "effect"
-import { Command } from "effect/unstable/cli"
+import { Command } from "effect/cli"
 import { globalJevvyConfigPath } from "../config.ts"
 import { initializeJevvy, InitPlatform } from "./index.ts"
 import type { InitPlan, InitResult } from "./index.ts"

@@ -1,6 +1,8 @@
 import type { LintConfig } from "oxlint/config"
+import { recommended } from "@effect/tsgo/oxlint-presets"
 
 const config: LintConfig = {
+  extends: [recommended],
   ignorePatterns: [
     ".agent/**",
     ".agents/**",

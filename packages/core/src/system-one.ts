@@ -5,7 +5,7 @@ import {
   HttpClient,
   HttpClientRequest,
   HttpClientResponse,
-} from "effect/unstable/http"
+} from "effect/http"
 import { JevProviderError } from "./provider-error.ts"
 import type { JevProvider, JevProviderErrorKind } from "./provider-error.ts"
 import { JevRequest, JevResult } from "./types.ts"

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "@effect/vitest"
 import { Effect } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { createTypeSafeClient } from "../src/typesafe.ts"
 
 afterEach(() => vi.restoreAllMocks())

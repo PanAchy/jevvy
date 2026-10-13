@@ -273,6 +273,22 @@ export const withPermissionSmoke = async (project, runHost) => {
     }
 
     assert.deepEqual((await api("GET", "/api/permission/saved")).data, [], "all approvals must remain one-action")
+    const controlPath = `/api/rpc/jevvy.permissions.control/toggle?location[directory]=${encodeURIComponent(project)}`
+    assert.equal((await api("POST", controlPath, {})).output.enabled, false)
+    const pausedSession = await createSession()
+    const beforePause = judgments.length
+    const paused = await run(pausedSession, "echo jevvy-reviewed")
+    assert.equal(paused.pending.length, 1, "OFF must leave even cached approvals to the host")
+    assert.equal(judgments.length, beforePause, "OFF must not call Jev")
+    await api("POST", `/api/session/${pausedSession}/permission/${paused.pending[0].id}/reply`, { decision: "reject" })
+    await api("POST", `/api/experimental/session/${pausedSession}/wait`)
+    assert.equal((await api("POST", controlPath, {})).output.enabled, true)
+    answer = "allow"
+    const resumedSession = await createSession()
+    const resumed = await run(resumedSession, "echo jevvy-reviewed")
+    assertExecuted(resumed, "jevvy-reviewed")
+    assert.equal(judgments.length, beforePause, "ON must reuse valid process-lifetime cached judgments")
+    await api("POST", `/api/experimental/session/${resumedSession}/wait`)
   }
 
   try {

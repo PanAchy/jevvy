@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "@effect/vitest"
 import { Effect } from "effect"
-import { FetchHttpClient } from "effect/unstable/http"
+import { FetchHttpClient } from "effect/http"
 import { createZenClient, parseZenResponse, ZEN_SYSTEMONE_URL } from "../src/zen.ts"
 
 afterEach(() => vi.restoreAllMocks())

@@ -34,12 +34,14 @@ Providers and harnesses are independent dimensions inside the product. OpenRoute
 - Preserve every host `allow` or `deny` finalized before Jevvy without a Jev call. When a harness exposes the finalized effect, review only `ask`.
 - Document where each adapter runs and which native reviewers, prompts, or automatic outcomes remain after abstention.
 - Review the complete shell command as one resource so operators, redirects, and working-directory changes remain visible to Jev. Every inquiry must allow.
-- In OpenCode, the exact `shell / * / ask` rule opts into Jevvy review. Preserve human prompts for other winning configured `ask` rules. OpenCode supplies effective agent and session rules; Claude Code preserves every visible configured ask because its command hook does not expose matched rules, so inspect visible settings files and document uncovered sources. Abstain if the complete command or inspected configuration cannot be identified reliably.
+- A review ask invites Jevvy review: OpenCode's exact `shell / * / ask`, or Claude Code's exact `Bash` or `Bash(*)` entry in `permissions.ask`. Other matching configured asks are host asks and remain untouched by Jevvy. The host may prompt or automatically accept after abstention.
+- OpenCode supplies effective agent and session rules. Claude Code's command hook does not expose matched rules, so inspect visible settings files and preserve matching host asks regardless of review-ask ordering; document uncovered sources. Abstain if the complete command or inspected configuration cannot be identified reliably.
 - Map Jev allow to one-action host approval without creating a durable rule.
 - Map Jev ask, timeout, malformed output, missing credentials, and provider failure to abstention. Abstention leaves the host's remaining permission flow unchanged.
+- Read each harness's toggle when starting a review. OFF skips new reviews and cache lookups; started reviews finish normally. The toggle never changes host prompting or automatic acceptance.
 - Surface actionable setup failures through host diagnostics without turning them into permission decisions.
-- Limit local host-rule matching to distinguishing the OpenCode review baseline from human-only `ask` rules. Never add local command verdicts, task authorization, credential detection, redaction, durable rules, or persistent decision records.
-- Read Jevvy provider credentials, questions, and thresholds only from the global Jevvy path. Host configuration may be read solely to identify reviewable and human-only `ask` rules; repositories must not control Jevvy's provider credentials, questions, or thresholds.
+- Limit local host-rule matching to distinguishing review asks from host asks. Never add local command verdicts, task authorization, credential detection, redaction, durable rules, or persistent decision records.
+- Read Jevvy provider credentials, questions, and thresholds only from the global Jevvy path. Host configuration may be read solely to distinguish review asks from host asks; repositories must not control Jevvy's provider credentials, questions, or thresholds.
 - Cache valid allow and ask judgments for the owning process lifetime. Do not cache unavailable results.
 
 Question wording, thresholds, and model identity are one calibrated policy. A provider-specific model ID may reuse calibration only when its route is verified to serve the same model. Custom questions are supported, but only shipped defaults can carry Jevvy calibration evidence.
@@ -54,6 +56,7 @@ The repository pins the exact Effect version bundled by `@opencode/plugin`. Core
 
 ## Effect conventions
 
+- Prefer Effect filesystem, path, clock, scheduling, and process modules over direct Node APIs. Isolate necessary native interop in host adapters.
 - Name public and domain-significant workflows with stable `Effect.fn("Domain.operation")` identifiers.
 - Model domain failures with `Schema.TaggedError` and yield them directly inside `Effect.gen`. Preserve interruption as control flow rather than converting it to provider unavailability.
 - Decode unknown input once at the boundary that owns it. Prefer Schema codecs for JSON wire formats over manual parsing in implementation code.
@@ -84,6 +87,8 @@ Never gate a commit on grep of test output. Grep also matches failing summaries.
 ## Writing style
 
 No em dashes anywhere: replies, code strings, docs, or commits.
+
+Code comments are an anti-pattern. Express corner cases and exceptions through code structure, names, and tests instead.
 
 ## Test surface
 

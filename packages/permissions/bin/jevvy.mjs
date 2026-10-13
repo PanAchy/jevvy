@@ -5,7 +5,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { NodeRuntime, NodeServices } from "@effect/platform-node"
 import { Effect } from "effect"
-import { Command } from "effect/unstable/cli"
+import { Command } from "effect/cli"
 import { jevvyCommand } from "../dist/init/cli.js"
 import { InitPlatform } from "../dist/init/index.js"
 

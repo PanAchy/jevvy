@@ -6,6 +6,7 @@ import { parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
 import { DEFAULT_LAYA_MODEL, JevProvider } from "./core.ts"
 import { ApprovalQuestions } from "./questions.ts"
+import { HarnessReviewConfig } from "./review-control.ts"
 import { providerApiKeyEnvironment } from "./providers.ts"
 import type { BuiltInProvider, ProviderSelection } from "./providers.ts"
 
@@ -46,6 +47,8 @@ const JevvyConfigSchema = Schema.Struct({
   })),
   permissions: Schema.optionalKey(Schema.Struct({
     questions: Schema.optionalKey(ApprovalQuestions),
+    opencode: Schema.optionalKey(HarnessReviewConfig),
+    claude: Schema.optionalKey(HarnessReviewConfig),
   })),
 })
 
@@ -68,11 +71,11 @@ class ConfigFileError extends Schema.TaggedError<ConfigFileError>()("ConfigFileE
 }) {}
 
 const EnvironmentApiKeys = Config.all({
-  zen: Config.option(Config.redacted(providerApiKeyEnvironment("zen"))),
-  typesafe: Config.option(Config.redacted(providerApiKeyEnvironment("typesafe"))),
-  openrouter: Config.option(Config.redacted(providerApiKeyEnvironment("openrouter"))),
-  vercel: Config.option(Config.redacted(providerApiKeyEnvironment("vercel"))),
-  laya: Config.option(Config.redacted(providerApiKeyEnvironment("laya"))),
+  zen: Config.option(Config.Redacted(providerApiKeyEnvironment("zen"))),
+  typesafe: Config.option(Config.Redacted(providerApiKeyEnvironment("typesafe"))),
+  openrouter: Config.option(Config.Redacted(providerApiKeyEnvironment("openrouter"))),
+  vercel: Config.option(Config.Redacted(providerApiKeyEnvironment("vercel"))),
+  laya: Config.option(Config.Redacted(providerApiKeyEnvironment("laya"))),
 })
 
 type EnvironmentApiKeys = Config.Success<typeof EnvironmentApiKeys>

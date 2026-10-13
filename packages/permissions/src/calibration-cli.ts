@@ -3,7 +3,7 @@ import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { Clock, Effect, Option, Schema } from "effect"
-import { Command, Flag } from "effect/unstable/cli"
+import { Command, Flag } from "effect/cli"
 import {
   calibrationMetaRecord,
   buildCalibrationPlan,
@@ -190,24 +190,24 @@ const NonNegative = Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))
 export const calibrationCommand = Command.make(
   "jevvy-calibrate",
   {
-    corpora: Flag.file("corpus", { mustExist: true }).pipe(
+    corpora: Flag.File("corpus", { mustExist: true }).pipe(
       Flag.atMost(100),
       Flag.withDescription("Add a user corpus to Jevvy's bundled baseline. Repeatable."),
     ),
-    config: Flag.file("config", { mustExist: true }).pipe(
+    config: Flag.File("config", { mustExist: true }).pipe(
       Flag.optional,
       Flag.withDescription("Read an explicit jevvy.jsonc instead of the global file."),
     ),
-    output: Flag.string("output").pipe(
+    output: Flag.String("output").pipe(
       Flag.optional,
       Flag.withDescription("Write the JSONL artifact to this path."),
     ),
-    spacing: Flag.float("spacing").pipe(
+    spacing: Flag.Finite("spacing").pipe(
       Flag.withSchema(NonNegative),
       Flag.withDefault(200),
       Flag.withDescription("Milliseconds to wait between provider calls."),
     ),
-    dryRun: Flag.boolean("dry-run").pipe(
+    dryRun: Flag.Boolean("dry-run").pipe(
       Flag.withDefault(false),
       Flag.withDescription("Validate inputs and print the call plan without provider calls."),
     ),

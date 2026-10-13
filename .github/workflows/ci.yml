@@ -9,7 +9,7 @@ permissions:
 
 env:
   NPM_VERSION: 11.19.1
-  CLAUDE_CODE_VERSION: 2.1.278
+  CLAUDE_CODE_VERSION: 2.1.296
 
 jobs:
   check:
@@ -77,7 +77,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        opencode: ["2.0.18", "2.0.26"]
+        opencode: ["2.0.27"]
     env:
       JEVVY_OPENCODE_VERSION: ${{ matrix.opencode }}
     steps:
