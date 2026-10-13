@@ -52,11 +52,11 @@
 <body>
   <main>
     <h1>The host decides. Jevvy can approve.</h1>
-    <p class="lead">Existing host decisions stay final. Jevvy reviews eligible shell approval requests as complete commands.</p>
+    <p class="lead">Your agent checks permissions first. Jevvy can approve a command, but never overrides your agent's decisions.</p>
     <figure>
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 832 556" role="img" aria-labelledby="jevvy-flow-title jevvy-flow-desc">
         <title id="jevvy-flow-title">Jevvy Permissions approval flow</title>
-        <desc id="jevvy-flow-desc">The coding agent preserves native allow, deny, and configured ask decisions, while Jevvy can approve eligible requests and leaves every other result to the host's remaining permission flow.</desc>
+        <desc id="jevvy-flow-desc">Your agent keeps its allow, deny, and specific ask decisions, while Jevvy checks other commands needing approval and leaves unapproved requests and any further checks to your agent.</desc>
         <defs>
           <marker id="jevvy-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0L8 3L0 6Z" fill="var(--muted)"/></marker>
           <marker id="jevvy-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0L8 3L0 6Z" fill="var(--accent)"/></marker>
@@ -74,52 +74,51 @@
         <g>
           <rect class="mask" x="148" y="24" width="72" height="24"/><text class="label" x="184" y="40">ALLOW</text>
           <rect class="mask" x="584" y="88" width="88" height="24"/><text class="label" x="628" y="104">DENY</text>
-          <rect class="mask" x="616" y="8" width="152" height="24"/><text class="label" x="692" y="24">CONFIGURED ASK</text>
-          <rect class="mask" x="408" y="108" width="144" height="44"/><text class="label focal-text" x="480" y="124">OTHER APPROVAL</text><text class="label focal-text" x="480" y="144">REQUEST</text>
-          <rect class="mask" x="408" y="264" width="112" height="24"/><text class="label focal-text" x="464" y="280">ALL PASS</text>
-          <rect class="mask" x="564" y="276" width="112" height="24"/><text class="label" x="620" y="292">OTHERWISE</text>
-          <rect class="mask" x="220" y="408" width="68" height="44"/><text class="label" x="254" y="424">NO MORE</text><text class="label" x="254" y="444">CHECKS</text>
-          <rect class="mask" x="504" y="476" width="60" height="44"/><text class="label" x="534" y="492">CHECK</text><text class="label" x="534" y="512">NEEDED</text>
+          <rect class="mask" x="616" y="8" width="152" height="24"/><text class="label" x="692" y="24">YOUR ASK RULE</text>
+          <rect class="mask" x="408" y="116" width="144" height="24"/><text class="label focal-text" x="480" y="132">NEEDS APPROVAL</text>
+          <rect class="mask" x="408" y="264" width="112" height="24"/><text class="label focal-text" x="464" y="280">PASS</text>
+          <rect class="mask" x="564" y="276" width="136" height="24"/><text class="label" x="632" y="292">NOT APPROVED</text>
+          <rect class="mask" x="220" y="432" width="68" height="24"/><text class="label" x="254" y="448">NO</text>
+          <rect class="mask" x="504" y="472" width="60" height="24"/><text class="label" x="534" y="488">YES</text>
         </g>
         <g data-node="host-policy">
           <rect class="node" x="232" y="24" width="328" height="72" rx="6"/>
-          <text class="tag" x="396" y="48">HOST POLICY</text>
-          <text class="name" x="396" y="76">Coding agent permission policy</text>
+          <text class="tag" x="396" y="48">START HERE</text>
+          <text class="name" x="396" y="76">Your agent checks permissions</text>
         </g>
         <g data-node="run-command">
           <rect class="terminal" x="40" y="424" width="176" height="80" rx="20"/>
           <text class="name" x="128" y="456">Run the command</text>
-          <text class="detail" x="128" y="480">Host allows</text>
+          <text class="detail" x="128" y="480">Your agent allows it</text>
         </g>
         <g data-node="block-command">
           <rect class="terminal" x="592" y="132" width="200" height="72" rx="20"/>
-          <text class="name" x="692" y="160">Block the command</text>
-          <text class="detail" x="692" y="184">Host denies</text>
+          <text class="name" x="692" y="160">Stop the command</text>
+          <text class="detail" x="692" y="184">Your agent denies it</text>
         </g>
         <g data-node="jevvy-review">
           <rect class="node node-focal" x="256" y="164" width="280" height="80" rx="6"/>
-          <text class="tag focal-text" x="396" y="188">REVIEW THE COMPLETE COMMAND</text>
-          <text class="name" x="396" y="216">Jevvy Permissions reviews</text>
-          <text class="detail" x="396" y="236">Every inquiry must pass</text>
+          <text class="tag focal-text" x="396" y="188">JEVVY PERMISSIONS</text>
+          <text class="name" x="396" y="216">Jevvy checks the command</text>
+          <text class="detail" x="396" y="236">All checks must pass</text>
         </g>
         <g data-node="approve-action">
-          <rect class="node" x="280" y="312" width="232" height="64" rx="6"/>
-          <text class="name" x="396" y="340">Approve this action</text>
-          <text class="detail" x="396" y="360">No durable approval rule</text>
+          <rect class="node" x="268" y="312" width="256" height="64" rx="6"/>
+          <text class="name" x="396" y="340">Approve this command once</text>
+          <text class="detail" x="396" y="360">No saved approval rule</text>
         </g>
         <g data-node="host-continues">
           <path class="node" d="M396 416L500 464L396 512L292 464Z"/>
-          <text class="name" x="396" y="460">Coding agent</text>
-          <text class="name" x="396" y="480">continues</text>
+          <text class="name" x="396" y="468">More checks?</text>
         </g>
         <g data-node="native-flow">
           <rect class="node" x="568" y="420" width="224" height="96" rx="6"/>
-          <text class="name" x="680" y="448">Continue the remaining</text>
-          <text class="name" x="680" y="472">permission flow</text>
-          <text class="detail" x="680" y="496">Native prompts or checks</text>
+          <text class="name" x="680" y="448">Your agent handles</text>
+          <text class="name" x="680" y="472">approval</text>
+          <text class="detail" x="680" y="496">May ask you to approve</text>
         </g>
       </svg>
-      <figcaption>Jevvy approves only the current action; the host retains the rest of its permission flow.</figcaption>
+      <figcaption>Jevvy can approve this command once. Your agent still decides whether it can run or needs your approval.</figcaption>
     </figure>
     <footer>Diagram style based on <a href="https://github.com/cathrynlavery/diagram-design">Diagram Design</a>. The HTML is the editable source for the light and dark README images.</footer>
   </main>
