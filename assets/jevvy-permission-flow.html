@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Jevvy Permissions approval flow</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%236d528f'/%3E%3Ctext x='16' y='24' text-anchor='middle' font-size='25' fill='white'%3Ej%3C/text%3E%3C/svg%3E">
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:wght@400&family=Geist:wght@400;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      color-scheme: light;
+      --paper: #f7f6f3;
+      --surface: #fffefd;
+      --ink: #292833;
+      --muted: #595663;
+      --accent: #6d528f;
+      --accent-tint: #f0ebf6;
+      --sans: "Geist", system-ui, sans-serif;
+      --serif: "Instrument Serif", Georgia, serif;
+      --mono: "Geist Mono", ui-monospace, monospace;
+    }
+    html { font-size: 17px; }
+    body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); padding: 2rem; }
+    main { max-width: 832px; margin: 0 auto; min-width: 0; }
+    h1 { font: 400 2.5rem/1.08 var(--serif); letter-spacing: -.02em; margin: 0 0 .75rem; }
+    .lead { margin: 0 0 1.5rem; font-size: 1rem; color: var(--muted); line-height: 1.5; }
+    figure { margin: 0; }
+    svg { display: block; width: 100%; }
+    .edge { fill: none; stroke: var(--muted); stroke-width: 1.2; marker-end: url(#jevvy-arrow); }
+    .edge-focal { stroke: var(--accent); marker-end: url(#jevvy-arrow-accent); }
+    .node { fill: var(--surface); stroke: var(--ink); stroke-width: 1; }
+    .node-focal { fill: var(--accent-tint); stroke: var(--accent); stroke-width: 1.2; }
+    .terminal { fill: var(--paper); stroke: var(--ink); stroke-width: 1; }
+    .name { font: 600 16px var(--sans); fill: var(--ink); text-anchor: middle; }
+    .detail { font: 400 14px var(--sans); fill: var(--muted); text-anchor: middle; }
+    .tag { font: 500 11px var(--mono); fill: var(--muted); text-anchor: middle; letter-spacing: .06em; }
+    .label { font: 400 14px var(--mono); fill: var(--muted); text-anchor: middle; }
+    .mask { fill: var(--paper); }
+    .focal-text { fill: var(--accent); }
+    figcaption { margin-top: .75rem; font-size: 1rem; color: var(--muted); line-height: 1.5; }
+    footer { margin-top: 1.5rem; font-size: .875rem; color: var(--muted); }
+    a { color: var(--accent); text-underline-offset: .15em; }
+    a:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+    @media (max-width: 600px) { body { padding: 1rem; } h1 { font-size: 2rem; } }
+    @media (prefers-color-scheme: dark) {
+      :root { color-scheme: dark; --paper: #1f1e24; --surface: #27262e; --ink: #f4f1f7; --muted: #b8b1c2; --accent: #c5ace5; --accent-tint: #332b40; }
+    }
+    @media print { body { padding: 0; } footer { display: none; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>The host decides. Jevvy can approve.</h1>
+    <p class="lead">Existing host decisions stay final. Jevvy reviews eligible shell approval requests as complete commands.</p>
+    <figure>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 832 556" role="img" aria-labelledby="jevvy-flow-title jevvy-flow-desc">
+        <title id="jevvy-flow-title">Jevvy Permissions approval flow</title>
+        <desc id="jevvy-flow-desc">The coding agent preserves native allow, deny, and configured ask decisions, while Jevvy can approve eligible requests and leaves every other result to the host's remaining permission flow.</desc>
+        <defs>
+          <marker id="jevvy-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0L8 3L0 6Z" fill="var(--muted)"/></marker>
+          <marker id="jevvy-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0L8 3L0 6Z" fill="var(--accent)"/></marker>
+        </defs>
+        <rect width="832" height="556" fill="var(--paper)"/>
+        <path class="edge" d="M232 56H140Q132 56 132 64V424"/>
+        <path class="edge" d="M560 72H684Q692 72 692 80V132"/>
+        <path class="edge" d="M560 40H800Q808 40 808 48V456Q808 464 800 464H792"/>
+        <path class="edge edge-focal" d="M396 96V164"/>
+        <path class="edge edge-focal" d="M396 244V312"/>
+        <path class="edge" d="M536 204H544Q552 204 552 212V424Q552 432 560 432H568"/>
+        <path class="edge" d="M396 376V416"/>
+        <path class="edge" d="M292 464H216"/>
+        <path class="edge" d="M500 464H568"/>
+        <g>
+          <rect class="mask" x="148" y="24" width="72" height="24"/><text class="label" x="184" y="40">ALLOW</text>
+          <rect class="mask" x="584" y="88" width="88" height="24"/><text class="label" x="628" y="104">DENY</text>
+          <rect class="mask" x="616" y="8" width="152" height="24"/><text class="label" x="692" y="24">CONFIGURED ASK</text>
+          <rect class="mask" x="408" y="108" width="144" height="44"/><text class="label focal-text" x="480" y="124">OTHER APPROVAL</text><text class="label focal-text" x="480" y="144">REQUEST</text>
+          <rect class="mask" x="408" y="264" width="112" height="24"/><text class="label focal-text" x="464" y="280">ALL PASS</text>
+          <rect class="mask" x="564" y="276" width="112" height="24"/><text class="label" x="620" y="292">OTHERWISE</text>
+          <rect class="mask" x="220" y="408" width="68" height="44"/><text class="label" x="254" y="424">NO MORE</text><text class="label" x="254" y="444">CHECKS</text>
+          <rect class="mask" x="504" y="476" width="60" height="44"/><text class="label" x="534" y="492">CHECK</text><text class="label" x="534" y="512">NEEDED</text>
+        </g>
+        <g data-node="host-policy">
+          <rect class="node" x="232" y="24" width="328" height="72" rx="6"/>
+          <text class="tag" x="396" y="48">HOST POLICY</text>
+          <text class="name" x="396" y="76">Coding agent permission policy</text>
+        </g>
+        <g data-node="run-command">
+          <rect class="terminal" x="40" y="424" width="176" height="80" rx="20"/>
+          <text class="name" x="128" y="456">Run the command</text>
+          <text class="detail" x="128" y="480">Host allows</text>
+        </g>
+        <g data-node="block-command">
+          <rect class="terminal" x="592" y="132" width="200" height="72" rx="20"/>
+          <text class="name" x="692" y="160">Block the command</text>
+          <text class="detail" x="692" y="184">Host denies</text>
+        </g>
+        <g data-node="jevvy-review">
+          <rect class="node node-focal" x="256" y="164" width="280" height="80" rx="6"/>
+          <text class="tag focal-text" x="396" y="188">REVIEW THE COMPLETE COMMAND</text>
+          <text class="name" x="396" y="216">Jevvy Permissions reviews</text>
+          <text class="detail" x="396" y="236">Every inquiry must pass</text>
+        </g>
+        <g data-node="approve-action">
+          <rect class="node" x="280" y="312" width="232" height="64" rx="6"/>
+          <text class="name" x="396" y="340">Approve this action</text>
+          <text class="detail" x="396" y="360">No durable approval rule</text>
+        </g>
+        <g data-node="host-continues">
+          <path class="node" d="M396 416L500 464L396 512L292 464Z"/>
+          <text class="name" x="396" y="460">Coding agent</text>
+          <text class="name" x="396" y="480">continues</text>
+        </g>
+        <g data-node="native-flow">
+          <rect class="node" x="568" y="420" width="224" height="96" rx="6"/>
+          <text class="name" x="680" y="448">Continue the remaining</text>
+          <text class="name" x="680" y="472">permission flow</text>
+          <text class="detail" x="680" y="496">Native prompts or checks</text>
+        </g>
+      </svg>
+      <figcaption>Jevvy approves only the current action; the host retains the rest of its permission flow.</figcaption>
+    </figure>
+    <footer>Diagram style based on <a href="https://github.com/cathrynlavery/diagram-design">Diagram Design</a>. The HTML is the editable source for the light and dark README images.</footer>
+  </main>
+</body>
+</html>
