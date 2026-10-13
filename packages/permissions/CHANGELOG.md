@@ -2,33 +2,31 @@
 
 ## 0.6.0
 
-### Minor Changes
+### Configuration
 
-- [#36](https://github.com/PanAchy/jevvy/pull/36) [`99446f5`](https://github.com/PanAchy/jevvy/commit/99446f54723f02dc5315a827be43927b5c823d91) - ### Configuration
-  
-  Add independent persistent review controls for OpenCode and Claude Code through `/jevvy`. Store each harness's enabled setting in the global `jevvy.jsonc`; existing configurations remain enabled by default.
-  
-  ### Permission behavior
-  
-  Turning Jevvy OFF skips new reviews and cached approvals without changing the host's permission handling. Reviews already started finish normally. Turning Jevvy back ON resumes review.
-  
-  ### Reliability
-  
-  Show a text-only green/red Jevvy indicator with a brief blink when the setting changes. Reflect changes from other sessions and configuration edits without restarting. Serialize configuration updates across processes and initialization, keep credential-bearing writes private, and recover expired writer locks.
+- [#36](https://github.com/PanAchy/jevvy/pull/36) [`99446f5`](https://github.com/PanAchy/jevvy/commit/99446f54723f02dc5315a827be43927b5c823d91) - Add independent persistent review controls for OpenCode and Claude Code through `/jevvy`. Each harness's enabled setting is stored in the global `jevvy.jsonc`; existing configurations remain enabled by default.
 
-- [#36](https://github.com/PanAchy/jevvy/pull/36) [`99446f5`](https://github.com/PanAchy/jevvy/commit/99446f54723f02dc5315a827be43927b5c823d91) - Expose `/jevvy` as a server command in OpenCode's web and terminal interfaces. It persists the global OpenCode review toggle and records an enabled/disabled confirmation without starting a model request. The web UI displays the confirmation in its native Updates row; the terminal retains its live green/red indicator.
+- [#36](https://github.com/PanAchy/jevvy/pull/36) [`99446f5`](https://github.com/PanAchy/jevvy/commit/99446f54723f02dc5315a827be43927b5c823d91) - Make `/jevvy` available in OpenCode's web and terminal interfaces. Confirmations do not start a model request. The web UI displays them in its native Updates rows; live indicators and arbitrary plugin notifications are not currently supported there.
 
-### Patch Changes
+### Permission behavior
 
-- [#36](https://github.com/PanAchy/jevvy/pull/36) [`99446f5`](https://github.com/PanAchy/jevvy/commit/99446f54723f02dc5315a827be43927b5c823d91) - ### Permission behavior
-  
-  Treat Claude Code's exact `Bash` and `Bash(*)` catch-all ask rules as invitations to Jevvy review, matching OpenCode's shell catch-all behavior. Preserve other matching configured asks for the host. Jevvy abstention leaves native prompting or automatic acceptance unchanged.
+- Turning Jevvy OFF skips new reviews and cached judgments without changing the host's permission handling. Reviews already started finish normally. Turning Jevvy back ON resumes review.
 
-- [#36](https://github.com/PanAchy/jevvy/pull/36) [`99446f5`](https://github.com/PanAchy/jevvy/commit/99446f54723f02dc5315a827be43927b5c823d91) - Restore compatibility with OpenCode 2.0.27 by aligning the plugin and bundled runtime with Effect 4.0.1.
-  
-  ### Breaking changes
-  
-  Requires OpenCode 2.0.27 or later. Older OpenCode hosts should remain on `@jevvy/permissions@0.5.1`.
+- [#36](https://github.com/PanAchy/jevvy/pull/36) [`99446f5`](https://github.com/PanAchy/jevvy/commit/99446f54723f02dc5315a827be43927b5c823d91) - Treat Claude Code's exact `Bash` and `Bash(*)` catch-all ask rules as invitations to Jevvy review, matching OpenCode's shell catch-all behavior. Other matching configured asks remain with the host. Abstention leaves native prompting or automatic acceptance unchanged.
+
+### Reliability
+
+- Show a text-only green/red Jevvy indicator in both terminals, with a brief blink when the setting changes. Reflect changes from other sessions and configuration edits without restarting.
+
+- Serialize configuration updates across processes and initialization, keep credential-bearing writes private, and recover expired writer locks.
+
+### Fixes
+
+- [#36](https://github.com/PanAchy/jevvy/pull/36) [`99446f5`](https://github.com/PanAchy/jevvy/commit/99446f54723f02dc5315a827be43927b5c823d91) - Fix loading on OpenCode 2.0.27 by aligning the plugin and bundled runtime with Effect 4.0.1.
+
+### Breaking changes
+
+- Requires OpenCode 2.0.27 or later. For earlier OpenCode v2 versions, pin `@jevvy/permissions@0.5.1`.
 
 ## 0.5.1
 
