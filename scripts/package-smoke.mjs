@@ -230,6 +230,7 @@ try {
   })
 
   ensure(setupHelp.includes("init"), "installed setup command is missing its init workflow")
+  ensure(setupHelp.includes("Jevvy Permissions"), "installed setup command does not identify the permissions product")
 
   const calibrationConfig = join(consumer, "jevvy.jsonc")
 

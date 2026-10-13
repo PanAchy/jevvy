@@ -65,10 +65,10 @@ const runInit = Effect.fn("InitCli.run")(function*() {
 })
 
 const initCommand = Command.make("init", {}, runInit).pipe(
-  Command.withDescription("Configure Jevvy and install it in selected agent harnesses"),
+  Command.withDescription("Configure Jevvy Permissions and install it in selected agent harnesses"),
 )
 
 export const jevvyCommand = Command.make("jevvy").pipe(
-  Command.withDescription("Configure Jevvy permission review"),
+  Command.withDescription("Configure Jevvy Permissions"),
   Command.withSubcommands([initCommand]),
 )
