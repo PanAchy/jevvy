@@ -1,6 +1,8 @@
 import { homedir } from "node:os"
 import { join } from "node:path"
 
+export const globalClaudeConfigDirectory = (): string => process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude")
+
 export const globalJevvyConfigPath = (): string => {
   const override = process.env.JEVVY_CONFIG?.trim()
 

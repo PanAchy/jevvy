@@ -8,7 +8,7 @@ import {
   providerDisplayName,
 } from "../providers.ts"
 import type { BuiltInProvider } from "../providers.ts"
-import { hasHostAsk, loadAskRules } from "./ask-rules.ts"
+import { hasHostAsk } from "./ask-rules.ts"
 import { createClaudeEvaluate, decodeClaudeHookEvent, sessionStartOutput } from "./evaluate.ts"
 import type { ClaudeHookOutput } from "./evaluate.ts"
 import { withReviewEnabled } from "../review-control.ts"
@@ -20,7 +20,7 @@ export type ClaudeReviewerSetup =
 
 export type ClaudeSetupLoader<E, R = never> = () => Effect.Effect<ClaudeReviewerSetup, E, R>
 
-export type ClaudeAskLoader = (cwd: string) => Effect.Effect<readonly string[] | undefined>
+export type ClaudeAskLoader<R = never> = (cwd: string) => Effect.Effect<readonly string[] | undefined, never, R>
 
 const setupWarning = (summary: string, actions: readonly string[]): string => [
   "\n⚠ Jevvy setup required!",
@@ -88,11 +88,11 @@ export const loadClaudeSetup = Effect.fn("ClaudeCode.loadSetup")(function*() {
   return { kind: "ready", reviewer } as const
 })
 
-export const createClaudeHookHandler = <E, R>(
+export const createClaudeHookHandler = <E, R, AsksR>(
   loadSetup: ClaudeSetupLoader<E, R>,
-  loadAsks: ClaudeAskLoader = loadAskRules,
+  loadAsks: ClaudeAskLoader<AsksR>,
   control?: Pick<ReviewControl, "read">,
-): ((raw: string) => Effect.Effect<ClaudeHookOutput | undefined, never, R>) =>
+): ((raw: string) => Effect.Effect<ClaudeHookOutput | undefined, never, R | AsksR>) =>
   Effect.fn("ClaudeCode.handleHookEvent")(function*(raw) {
     const event = decodeClaudeHookEvent(raw)
 

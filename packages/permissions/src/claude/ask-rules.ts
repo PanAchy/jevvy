@@ -1,11 +1,12 @@
-import { execFile } from "node:child_process"
-import { readFile, stat } from "node:fs/promises"
-import { homedir } from "node:os"
-import { dirname, isAbsolute, join, resolve } from "node:path"
-import { promisify } from "node:util"
-import { Effect, Option, Schema } from "effect"
-
-const exec = promisify(execFile)
+import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
+import * as Option from "effect/Option"
+import * as Path from "effect/Path"
+import * as Schema from "effect/Schema"
+import * as Stream from "effect/Stream"
+import * as ChildProcess from "effect/process/ChildProcess"
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
+import { globalClaudeConfigDirectory } from "../config-path.ts"
 
 const Settings = Schema.fromJsonString(Schema.Struct({
   permissions: Schema.optionalKey(Schema.Struct({
@@ -16,42 +17,40 @@ const Settings = Schema.fromJsonString(Schema.Struct({
 const decodeSettings = Schema.decodeUnknownOption(Settings)
 
 const readSettings = Effect.fn("ClaudeCode.readAskRules")(function*(path: string) {
-  const raw = yield* Effect.tryPromise({
-    try: () => readFile(path, "utf8"),
-    catch: (cause) => cause,
-  }).pipe(Effect.match({
-    onFailure: (cause) => ({ kind: "error" as const, cause }),
-    onSuccess: (text) => ({ kind: "found" as const, text }),
-  }))
+  const fs = yield* FileSystem.FileSystem
 
-  if (raw.kind === "error") {
-    if (raw.cause instanceof Error && "code" in raw.cause && raw.cause.code === "ENOENT") return []
+  const raw = yield* fs.readFileString(path).pipe(
+    Effect.map(Option.some),
+    Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(Option.none<string>())),
+    Effect.orElseSucceed(() => undefined),
+  )
 
-    return undefined
-  }
+  if (raw === undefined) return undefined
 
-  const decoded = decodeSettings(raw.text)
+  if (Option.isNone(raw)) return []
+
+  const decoded = decodeSettings(raw.value)
 
   return Option.isSome(decoded) ? [...decoded.value.permissions?.ask ?? []] : undefined
 })
 
 const repositoryRoot = Effect.fn("ClaudeCode.repositoryRoot")(function*(cwd: string) {
-  let current = resolve(cwd)
+  const fs = yield* FileSystem.FileSystem
+  const paths = yield* Path.Path
+  let current = paths.resolve(cwd)
 
   while (true) {
-    const marker = yield* Effect.tryPromise({
-      try: () => stat(join(current, ".git")),
-      catch: (cause) => cause,
-    }).pipe(Effect.match({
-      onFailure: (cause) => cause,
-      onSuccess: () => true,
-    }))
+    const marker = yield* fs.stat(paths.join(current, ".git")).pipe(
+      Effect.as(true),
+      Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(false)),
+      Effect.orElseSucceed(() => undefined),
+    )
 
     if (marker === true) return current
 
-    if (!(marker instanceof Error && "code" in marker && marker.code === "ENOENT")) return undefined
+    if (marker === undefined) return undefined
 
-    const parent = dirname(current)
+    const parent = paths.dirname(current)
 
     if (parent === current) return false
 
@@ -66,46 +65,50 @@ const repositoryPaths = Effect.fn("ClaudeCode.repositorySettingsPaths")(function
 
   if (marker === undefined) return undefined
 
-  const output = yield* Effect.tryPromise({
-    try: () => exec("git", ["rev-parse", "--show-toplevel", "--path-format=absolute", "--git-common-dir"], { cwd }),
-    catch: (cause) => cause,
-  }).pipe(Effect.match({
-    onFailure: (cause) => ({ kind: "error" as const, cause }),
-    onSuccess: (value) => ({ kind: "found" as const, value }),
-  }))
+  const paths = yield* Path.Path
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
 
-  if (output.kind === "error") {
-    if (output.cause instanceof Error && "code" in output.cause && output.cause.code === 128 &&
-      "stderr" in output.cause && String(output.cause.stderr).includes("not a git repository")) return []
+  const output = yield* Effect.scoped(Effect.gen(function*() {
+    const handle = yield* spawner.spawn(ChildProcess.make("git", ["rev-parse", "--show-toplevel", "--path-format=absolute", "--git-common-dir"], { cwd }))
 
-    return undefined
+    return yield* Effect.all({ code: handle.exitCode,
+      stdout: Stream.mkString(Stream.decodeText(handle.stdout)),
+      stderr: Stream.mkString(Stream.decodeText(handle.stderr)),
+    }, { concurrency: "unbounded" })
+  })).pipe(Effect.timeout(2000), Effect.orElseSucceed(() => undefined))
+
+  if (output === undefined) return undefined
+
+  if (output.code !== 0) {
+    return output.code === 128 && output.stderr.includes("not a git repository") ? [] : undefined
   }
 
-  const [root, common] = output.value.stdout.trim().split("\n")
+  const [root, common] = output.stdout.trim().split("\n")
 
   if (root === undefined || common === undefined) return undefined
 
-  const commonRoot = dirname(isAbsolute(common) ? common : resolve(cwd, common))
+  const commonRoot = paths.dirname(paths.isAbsolute(common) ? common : paths.resolve(cwd, common))
 
   return [
-    join(root, ".claude", "settings.json"),
-    join(root, ".claude", "settings.local.json"),
-    join(commonRoot, ".claude", "settings.local.json"),
+    paths.join(root, ".claude", "settings.json"),
+    paths.join(root, ".claude", "settings.local.json"),
+    paths.join(commonRoot, ".claude", "settings.local.json"),
   ]
 })
 
 export const loadAskRules = Effect.fn("ClaudeCode.loadAskRules")(function*(
   cwd: string,
-  configDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude"),
+  configDir = globalClaudeConfigDirectory(),
 ) {
+  const path = yield* Path.Path
   const repository = yield* repositoryPaths(cwd)
 
   if (repository === undefined) return undefined
 
   const paths = new Set([
-    join(configDir, "settings.json"),
-    join(cwd, ".claude", "settings.json"),
-    join(cwd, ".claude", "settings.local.json"),
+    path.join(configDir, "settings.json"),
+    path.join(cwd, ".claude", "settings.json"),
+    path.join(cwd, ".claude", "settings.local.json"),
     ...repository,
   ])
 
