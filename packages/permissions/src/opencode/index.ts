@@ -1,5 +1,7 @@
 import { Plugin } from "@opencode/plugin/effect"
-import { Effect, Layer, Schema } from "effect"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Schema from "effect/Schema"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { globalJevvyConfigPath, loadJevvyConfig } from "../config.ts"
@@ -47,7 +49,7 @@ export default Plugin.define({
     })
 
     yield* Effect.gen(function*() {
-    const permissionConfig = yield* loadJevvyConfig(configPath)
+    const permissionConfig = yield* loadJevvyConfig(configPath).pipe(Effect.provide(NodeFileSystem.layer))
 
     if (permissionConfig.kind === "invalid") {
       return yield* new PluginSetupError({ message: invalidConfigurationMessage(configPath, permissionConfig.message) })

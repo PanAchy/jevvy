@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import * as Effect from "effect/Effect"
 import { globalJevvyConfigPath, loadJevvyConfig } from "../config.ts"
 import { createPermissionReviewer } from "../engine.ts"
 import type { PermissionReviewer } from "../engine.ts"
@@ -18,7 +18,7 @@ export type ClaudeReviewerSetup =
   | { readonly kind: "ready"; readonly reviewer: PermissionReviewer }
   | { readonly kind: "unavailable"; readonly message: string }
 
-export type ClaudeSetupLoader<E> = () => Effect.Effect<ClaudeReviewerSetup, E>
+export type ClaudeSetupLoader<E, R = never> = () => Effect.Effect<ClaudeReviewerSetup, E, R>
 
 export type ClaudeAskLoader = (cwd: string) => Effect.Effect<readonly string[] | undefined>
 
@@ -88,11 +88,11 @@ export const loadClaudeSetup = Effect.fn("ClaudeCode.loadSetup")(function*() {
   return { kind: "ready", reviewer } as const
 })
 
-export const createClaudeHookHandler = <E>(
-  loadSetup: ClaudeSetupLoader<E>,
+export const createClaudeHookHandler = <E, R>(
+  loadSetup: ClaudeSetupLoader<E, R>,
   loadAsks: ClaudeAskLoader = loadAskRules,
   control?: Pick<ReviewControl, "read">,
-): ((raw: string) => Effect.Effect<ClaudeHookOutput | undefined>) =>
+): ((raw: string) => Effect.Effect<ClaudeHookOutput | undefined, never, R>) =>
   Effect.fn("ClaudeCode.handleHookEvent")(function*(raw) {
     const event = decodeClaudeHookEvent(raw)
 
