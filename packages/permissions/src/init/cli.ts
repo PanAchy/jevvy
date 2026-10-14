@@ -10,6 +10,7 @@ import {
   showInitError,
   showInitProgress,
   showInitResult,
+  confirmInitWarning,
   showInitCancelled,
 } from "./prompt.ts"
 
@@ -18,6 +19,7 @@ export interface InitFrontend<R = never> {
   readonly showProgress: Effect.Effect<void, never, R>
   readonly showError: (message: string) => Effect.Effect<void, never, R>
   readonly showResult: (result: InitResult) => Effect.Effect<void, never, R>
+  readonly confirmWarning: (message: string) => Effect.Effect<boolean, Terminal.QuitError, R>
   readonly showCancelled: Effect.Effect<void, never, R>
 }
 
@@ -26,6 +28,7 @@ const terminalFrontend: InitFrontend<Prompt.Environment> = {
   showProgress: showInitProgress,
   showError: showInitError,
   showResult: showInitResult,
+  confirmWarning: confirmInitWarning,
   showCancelled: showInitCancelled,
 }
 
@@ -39,6 +42,16 @@ export const executeInit = Effect.fn("InitCli.execute")(function*<R>(
   const plan = yield* frontend.prompt(configPath, existing)
 
   if (plan === undefined) return 0
+
+  for (const harness of plan.harnesses) {
+    const warning = yield* platform.inspectHarness(harness)
+
+    if (warning !== undefined) {
+      const proceed = yield* frontend.confirmWarning(warning)
+
+      if (!proceed) return 0
+    }
+  }
 
   yield* frontend.showProgress
 

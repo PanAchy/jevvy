@@ -259,6 +259,7 @@ describe("Jevvy initializer", () => {
     const events: string[] = []
 
     const layer = Layer.succeed(InitPlatform, InitPlatform.of({
+      inspectHarness: () => Effect.succeed(undefined),
       readConfig: () => Effect.sync(() => {
         events.push("read")
 
@@ -367,6 +368,7 @@ describe("Jevvy initializer", () => {
     const events: string[] = []
 
     const layer = Layer.succeed(InitPlatform, InitPlatform.of({
+      inspectHarness: () => Effect.succeed(undefined),
       readConfig: () => Effect.succeed(undefined),
       updateConfig: (_path, edit) => Effect.gen(function*() {
         const content = yield* edit(undefined)

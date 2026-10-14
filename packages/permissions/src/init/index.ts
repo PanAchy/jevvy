@@ -12,6 +12,7 @@ import type { ParseError } from "jsonc-parser"
 import { DEFAULT_LAYA_ENDPOINT, DEFAULT_LAYA_MODEL } from "../core.ts"
 import { LayaPolicy } from "../config.ts"
 import { createConfigFile } from "../config-file.ts"
+import { inspectHarness } from "./preflight.ts"
 import { harnessCommand } from "./harness-command.ts"
 
 const CONFIG_SCHEMA = "https://raw.githubusercontent.com/PanAchy/jevvy/main/config.schema.json"
@@ -69,6 +70,7 @@ export class InitError extends Schema.TaggedError<InitError>()("InitError", {
     "install-claude-marketplace",
     "install-claude-plugin",
     "validate-plan",
+    "preflight",
   ]),
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
@@ -78,6 +80,7 @@ export class InitPlatform extends Context.Service<InitPlatform, {
   readonly readConfig: (path: string) => Effect.Effect<string | undefined, InitError>
   readonly updateConfig: (path: string, edit: (raw: string | undefined) => Effect.Effect<string, InitError>) => Effect.Effect<void, InitError>
   readonly installHarness: (harness: InitHarness) => Effect.Effect<void, InitError>
+  readonly inspectHarness: (harness: InitHarness) => Effect.Effect<string | undefined, InitError>
 }>()("@jevvy/permissions/InitPlatform") {
   static readonly layer = Layer.effect(
     InitPlatform,
@@ -164,7 +167,12 @@ export class InitPlatform extends Context.Service<InitPlatform, {
         )
       })
 
-      return InitPlatform.of({ readConfig, updateConfig, installHarness })
+      return InitPlatform.of({ readConfig, updateConfig, installHarness,
+        inspectHarness: (harness) => inspectHarness(harness).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.mapError((error) => new InitError({ operation: "preflight", message: error.message })),
+        ),
+      })
     }),
   )
 }

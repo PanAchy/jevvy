@@ -331,6 +331,15 @@ export const promptInitPlan = Effect.fn("Init.promptPlan")(function*(configPath:
 
 export const showInitProgress = showInitSection("Saving config and installing integrations")
 
+export const confirmInitWarning = Effect.fn("Init.confirmWarning")(function*(message: string) {
+  yield* showInitSection("Compatibility warning", message)
+  const answer = yield* Controls.confirm({ message: "Continue with this OpenCode CLI anyway?", initial: false })
+
+  if (!answer) yield* showInitCancelled
+
+  return answer
+})
+
 export const showInitError = (message: string) => showInitSection("Jevvy Permissions setup did not complete", message)
 
 export const showInitResult = Effect.fn("Init.showResult")(function*(result: InitResult) {
