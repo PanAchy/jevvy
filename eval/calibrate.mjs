@@ -1,205 +1,80 @@
 #!/usr/bin/env node
 
-// Explicit maintainer-only live calibration. It is intentionally outside
-// Vitest: ordinary tests stay deterministic, offline, and credential-free.
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as Clock from "effect/Clock"
+import * as Config from "effect/Config"
+import * as ConfigProvider from "effect/ConfigProvider"
+import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
+import * as Path from "effect/Path"
+import * as Redacted from "effect/Redacted"
+import * as Schema from "effect/Schema"
+import * as Command from "effect/cli/Command"
+import * as Flag from "effect/cli/Flag"
+import * as ChildProcess from "effect/process/ChildProcess"
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
+import { createTypeSafeClient, createZenClient, DEFAULT_TYPESAFE_MODEL, DEFAULT_ZEN_MODEL } from "../packages/core/dist/index.js"
+import { calibrationHash, loadCalibrationPlan, runCalibrationPlan } from "../packages/permissions/dist/calibration-runner.js"
+import { defaultApprovalQuestions } from "../packages/permissions/dist/questions.js"
 
-import { createHash } from "node:crypto"
-import { execFileSync } from "node:child_process"
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
-import { basename, dirname, join, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
-import { config as loadEnv } from "dotenv"
+const command = Command.make("calibrate", {
+  provider: Flag.String("provider").pipe(Flag.withSchema(Schema.Literals(["typesafe", "zen"]))),
+  model: Flag.String("model").pipe(Flag.optional),
+  output: Flag.String("output").pipe(Flag.optional),
+  spacing: Flag.Finite("spacing").pipe(Flag.withSchema(Schema.Finite.check(Schema.isGreaterThanOrEqualTo(0))), Flag.withDefault(200)),
+  dryRun: Flag.Boolean("dry-run").pipe(Flag.withDefault(false)),
+}, Effect.fn("MaintainerCalibration.run")(function*(options) {
+  const paths = yield* Path.Path
+  const baseline = yield* paths.fromFileUrl(new URL("./commands.json", import.meta.url))
+  const root = paths.dirname(paths.dirname(baseline))
+  const { corpora, plan } = yield* loadCalibrationPlan([{ path: baseline, name: "eval/commands.json" }])
+  const model = Option.getOrElse(options.model, () => options.provider === "zen" ? DEFAULT_ZEN_MODEL : DEFAULT_TYPESAFE_MODEL)
 
-const here = dirname(fileURLToPath(import.meta.url))
+  if (options.dryRun) {
+    yield* Effect.sync(() => console.log(JSON.stringify({ provider: options.provider, model, calls: plan.length, plan }, null, 2)))
 
-const root = resolve(here, "..")
-
-loadEnv({ path: join(root, ".env"), quiet: true })
-
-const usage = `usage: node eval/calibrate.mjs --provider <typesafe|zen> [--model <id>] [--output <path>] [--spacing <ms>] [--dry-run]
-
-Credentials:
-  typesafe  TYPESAFE_API_KEY
-  zen       OPENCODE_API_KEY`
-
-const args = process.argv.slice(2)
-
-const valueOf = (name) => {
-  const index = args.indexOf(name)
-
-  if (index === -1) return undefined
-
-  return args[index + 1]
-}
-
-const provider = valueOf("--provider")
-
-const modelOverride = valueOf("--model")
-
-const outputOverride = valueOf("--output")
-
-const spacingText = valueOf("--spacing") ?? "200"
-
-const dryRun = args.includes("--dry-run")
-
-if (provider !== "typesafe" && provider !== "zen") {
-  console.error(usage)
-  process.exit(2)
-}
-
-const spacing = Number(spacingText)
-
-if (!Number.isFinite(spacing) || spacing < 0) {
-  console.error("--spacing must be a non-negative number")
-  process.exit(2)
-}
-
-const corpusRaw = readFileSync(join(here, "commands.json"), "utf8")
-
-const corpus = JSON.parse(corpusRaw)
-
-if (!Array.isArray(corpus.commands) || !Array.isArray(corpus.repeats)) {
-  throw new Error("eval/commands.json has an invalid calibration shape")
-}
-
-const byCommand = new Map(corpus.commands.map((entry) => [entry.command, entry]))
-
-const repeatCount = corpus.meta?.repeatCount
-
-if (!Number.isInteger(repeatCount) || repeatCount < 1) throw new Error("calibration repeatCount must be a positive integer")
-
-const corpusName = "eval/commands.json"
-
-const plan = corpus.commands.map((entry) => ({ corpus: corpusName, kind: "base", ...entry }))
-
-for (const command of corpus.repeats) {
-  const entry = byCommand.get(command)
-
-  if (entry === undefined) throw new Error(`repeat command is not in the base corpus: ${command}`)
-
-  for (let probe = 1; probe <= repeatCount; probe++) {
-    plan.push({ corpus: corpusName, kind: "repeat", ...entry, probe })
-  }
-}
-
-if (dryRun) {
-  console.log(JSON.stringify({ provider, model: modelOverride, calls: plan.length, plan }, null, 2))
-  process.exit(0)
-}
-
-const key = provider === "zen"
-  ? process.env.OPENCODE_API_KEY
-  : process.env.TYPESAFE_API_KEY
-
-if (key === undefined || key.trim().length === 0) {
-  console.error(`missing credential for ${provider}\n\n${usage}`)
-  process.exit(2)
-}
-
-const [core, questionsModule, engine, calibration] = await Promise.all([
-  import("../packages/core/dist/index.js"),
-  import("../packages/permissions/dist/questions.js"),
-  import("../packages/permissions/dist/engine.js"),
-  import("../packages/permissions/dist/calibration.js"),
-])
-
-const requestedModel = modelOverride ?? (provider === "zen" ? core.DEFAULT_ZEN_MODEL : core.DEFAULT_TYPESAFE_MODEL)
-
-const client = provider === "zen"
-  ? core.createZenClient(key, requestedModel)
-  : core.createTypeSafeClient(key, requestedModel)
-
-const questions = questionsModule.defaultApprovalQuestions
-
-const noulQuestions = questionsModule.toNoulQuestions(questions)
-
-const timestamp = new Date().toISOString().replaceAll(":", "-").replace(".", "-")
-
-const output = resolve(outputOverride ?? join(root, "docs", "research", `threshold-eval-${provider}-${timestamp}.jsonl`))
-
-const questionHash = createHash("sha256").update(JSON.stringify(questions)).digest("hex")
-
-const commit = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim()
-
-const meta = {
-  provider,
-  requestedModel,
-  questions,
-  questionHash,
-  commit,
-  cwd: basename(root),
-  createdAt: new Date().toISOString(),
-  calls: plan.length,
-  corpora: [{ name: corpusName, hash: createHash("sha256").update(corpusRaw).digest("hex") }],
-}
-
-mkdirSync(dirname(output), { recursive: true })
-
-writeFileSync(output, `${JSON.stringify(calibration.calibrationMetaRecord(meta))}\n`, { mode: 0o600 })
-
-const sleep = (milliseconds) => new Promise((resolveSleep) => setTimeout(resolveSleep, milliseconds))
-
-const describeError = (error) => String(error).replaceAll(key, "[redacted]").slice(0, 300)
-
-let errors = 0
-
-const records = []
-
-for (let index = 0; index < plan.length; index++) {
-  const entry = plan[index]
-
-  const started = performance.now()
-
-  try {
-    const judged = await client.evaluate({
-      state: { action: "shell", resource: entry.command },
-      questions: noulQuestions,
-    }, AbortSignal.timeout(30_000))
-
-    const effect = engine.permissionEffectOf(judged.answers, questions)
-
-    const record = {
-      ...entry,
-      status: "result",
-      effect,
-      answers: calibration.numericAnswers(judged.answers),
-      model: judged.model,
-      ms: Math.round(performance.now() - started),
-      timestamp: new Date().toISOString(),
-    }
-
-    records.push(record)
-    writeFileSync(output, `${JSON.stringify(record)}\n`, { flag: "a" })
-    console.log(`${index + 1}/${plan.length} ${entry.kind.padEnd(7)} ${entry.command.slice(0, 48).padEnd(48)} ${record.ms}ms`)
-  } catch (error) {
-    errors++
-
-    const record = {
-      ...entry,
-      status: "error",
-      error: describeError(error),
-      ms: Math.round(performance.now() - started),
-      timestamp: new Date().toISOString(),
-    }
-
-    records.push(record)
-    writeFileSync(output, `${JSON.stringify(record)}\n`, { flag: "a" })
-    console.error(`${index + 1}/${plan.length} ERROR ${entry.command}: ${record.error}`)
+    return
   }
 
-  if (index + 1 < plan.length && spacing > 0) await sleep(spacing)
-}
+  const credential = yield* Config.schema(Schema.Redacted(Schema.NonEmptyString), options.provider === "zen" ? "OPENCODE_API_KEY" : "TYPESAFE_API_KEY")
+  const key = Redacted.value(credential)
+  const client = options.provider === "zen" ? createZenClient(key, model) : createTypeSafeClient(key, model)
+  const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+  const commit = (yield* spawner.string(ChildProcess.make("git", ["rev-parse", "HEAD"], { cwd: root }))).trim()
+  const now = yield* Clock.currentTimeMillis
+  const createdAt = new Date(now).toISOString()
 
-await client.dispose?.()
+  const meta = {
+    provider: options.provider, requestedModel: model, questions: defaultApprovalQuestions,
+    questionHash: calibrationHash(JSON.stringify(defaultApprovalQuestions)), commit, createdAt, calls: plan.length,
+    corpora: corpora.map(({ name, hash }) => ({ name, hash })),
+  }
 
-const summary = calibration.summarizeCalibration(meta, records)
+  const output = Option.getOrElse(options.output, () => paths.join(root, "docs", "research",
+    `threshold-eval-${options.provider}-${createdAt.replaceAll(":", "-").replace(".", "-")}.jsonl`))
 
-writeFileSync(output, `${JSON.stringify(summary)}\n`, { flag: "a" })
+  const result = yield* runCalibrationPlan({
+    plan, meta, provider: { client, redact: (text) => text.replaceAll(key, "[redacted]") }, output, spacing: options.spacing,
+    progress: (completed, record) => console.log(`${completed}/${plan.length} ${record.status} ${record.command.slice(0, 64)}`),
+  })
 
-console.log(`\n${plan.length} calls, ${errors} errors, ${summary.mustAskLeaks.length} must-ask false approvals`)
+  yield* Effect.sync(() => {
+    console.log(JSON.stringify({ output: result.output, result: result.summary.result, counts: result.summary.counts }, null, 2))
 
-console.log(`result: ${summary.result}`)
+    if (result.summary.failed) process.exitCode = 1
+  })
+})).pipe(Command.withDescription("Maintainer-only live calibration of Jevvy's shipped policy"))
 
-console.log(`output: ${output}`)
+Effect.gen(function*() {
+  const paths = yield* Path.Path
+  const path = yield* paths.fromFileUrl(new URL("../.env", import.meta.url))
 
-if (summary.failed) process.exitCode = 1
+  const dotenv = yield* ConfigProvider.fromDotEnv({ path, preserveEmptyStrings: true }).pipe(
+    Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(ConfigProvider.fromDotEnvContents(""))),
+  )
+
+  const environment = ConfigProvider.orElse(ConfigProvider.fromEnv({ preserveEmptyStrings: true }), dotenv)
+
+  yield* command.pipe(Command.run({ version: "0.0.0" }), Effect.provideService(ConfigProvider.ConfigProvider, environment))
+}).pipe(Effect.provide(NodeServices.layer), NodeRuntime.runMain)

@@ -1,29 +1,20 @@
-import { createHash } from "node:crypto"
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises"
-import { dirname, resolve } from "node:path"
-import { fileURLToPath } from "node:url"
-import { Clock, Effect, Option, Schema } from "effect"
-import { Command, Flag } from "effect/cli"
-import {
-  calibrationMetaRecord,
-  buildCalibrationPlan,
-  numericAnswers,
-  parseCalibrationCorpus,
-  summarizeCalibration,
-} from "./calibration.ts"
-import type {
-  CalibrationMeta,
-  CalibrationRecord,
-} from "./calibration.ts"
+import * as Clock from "effect/Clock"
+import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
+import * as Path from "effect/Path"
+import * as Schema from "effect/Schema"
+import * as Command from "effect/cli/Command"
+import * as Flag from "effect/cli/Flag"
+import { calibrationMetaRecord } from "./calibration.ts"
+import type { CalibrationMeta } from "./calibration.ts"
 import { loadJevvyConfig } from "./config.ts"
 import type { JevProvider } from "./core.ts"
-import { permissionEffectOf } from "./engine.ts"
+import { CalibrationError, calibrationHash, loadCalibrationPlan, runCalibrationPlan } from "./calibration-runner.ts"
 import {
   createConfiguredProvider,
   providerApiKeyEnvironment,
   providerDisplayName,
 } from "./providers.ts"
-import { toNoulQuestions } from "./questions.ts"
 
 export interface CalibrationCliOptions {
   readonly corpora: readonly string[]
@@ -32,18 +23,6 @@ export interface CalibrationCliOptions {
   readonly spacing: number
   readonly dryRun: boolean
 }
-
-const hash = (text: string): string => createHash("sha256").update(text).digest("hex")
-
-const loadCorpus = Effect.fn("JevvyCalibration.loadCorpus")(function*(path: string, name = path) {
-  const raw = yield* Effect.tryPromise(() => readFile(path, "utf8"))
-
-  return yield* Effect.try(() => ({
-    name,
-    corpus: parseCalibrationCorpus(JSON.parse(raw), name),
-    hash: hash(raw),
-  }))
-})
 
 const timestamp = (milliseconds: number): string =>
   new Date(milliseconds).toISOString().replaceAll(":", "-").replace(".", "-")
@@ -60,117 +39,63 @@ const run = Effect.fn("JevvyCalibration.runPlan")(function*(
   options: CalibrationCliOptions,
   writeStdout: (text: string) => void,
 ) {
-    const baselinePath = fileURLToPath(new URL("./calibration/commands.json", import.meta.url))
+  const paths = yield* Path.Path
+  const baselinePath = yield* paths.fromFileUrl(new URL("./calibration/commands.json", import.meta.url))
 
-    const corpora = [
-      yield* loadCorpus(baselinePath, "jevvy:eval/commands.json"),
-      ...yield* Effect.forEach(options.corpora, (path) => loadCorpus(resolve(path)), { concurrency: "unbounded" }),
-    ]
+  const { corpora, plan } = yield* loadCalibrationPlan([
+    { path: baselinePath, name: "jevvy:eval/commands.json" },
+    ...options.corpora.map((path) => ({ path: paths.resolve(path), name: paths.resolve(path) })),
+  ])
 
-    const plan = buildCalibrationPlan(corpora)
-    const config = yield* loadJevvyConfig(options.config === undefined ? undefined : resolve(options.config))
+  const config = yield* loadJevvyConfig(options.config === undefined ? undefined : paths.resolve(options.config))
 
-    if (config.kind === "invalid") return yield* Effect.fail(new Error(config.message))
+  if (config.kind === "invalid") return yield* new CalibrationError({ operation: "setup", message: config.message })
 
-    if (config.kind === "unconfigured") {
-      return yield* Effect.fail(new Error("calibration requires provider in jevvy.jsonc"))
-    }
+  if (config.kind === "unconfigured") {
+    return yield* new CalibrationError({ operation: "setup", message: "calibration requires provider in jevvy.jsonc" })
+  }
 
-    if (config.kind !== "custom-policy") {
-      return yield* Effect.fail(new Error("calibration requires permissions.questions or providers.laya.policy in jevvy.jsonc"))
-    }
+  if (config.kind !== "custom-policy") {
+    return yield* new CalibrationError({ operation: "setup", message: "calibration requires permissions.questions or providers.laya.policy in jevvy.jsonc" })
+  }
 
-    const selected = createConfiguredProvider(config.selection)
+  const selected = createConfiguredProvider(config.selection)
 
-    if (selected === undefined) {
-      return yield* Effect.fail(new Error(missingProviderMessage(config.selection.provider)))
-    }
+  if (selected === undefined) {
+    return yield* new CalibrationError({ operation: "setup", message: missingProviderMessage(config.selection.provider) })
+  }
 
-    const questionHash = hash(JSON.stringify(config.questions))
-    const createdAt = yield* Clock.currentTimeMillis
+  const questionHash = calibrationHash(JSON.stringify(config.questions))
+  const createdAt = yield* Clock.currentTimeMillis
 
-    const meta: CalibrationMeta = {
-      provider: selected.provider,
-      requestedModel: selected.model,
-      questions: config.questions,
-      questionHash,
-      createdAt: new Date(createdAt).toISOString(),
-      calls: plan.length,
-      corpora: corpora.map((corpus) => ({ name: corpus.name, hash: corpus.hash })),
-    }
+  const meta: CalibrationMeta = {
+    provider: selected.provider,
+    requestedModel: selected.model,
+    questions: config.questions,
+    questionHash,
+    createdAt: new Date(createdAt).toISOString(),
+    calls: plan.length,
+    corpora: corpora.map((corpus) => ({ name: corpus.name, hash: corpus.hash })),
+  }
 
-    if (options.dryRun) {
-      yield* Effect.sync(() => writeStdout(JSON.stringify({ ...calibrationMetaRecord(meta), plan }, null, 2)))
+  if (options.dryRun) {
+    yield* Effect.sync(() => writeStdout(JSON.stringify({ ...calibrationMetaRecord(meta), plan }, null, 2)))
 
-      return 0
-    }
+    return 0
+  }
 
-    const output = resolve(options.output ?? `jevvy-calibration-${selected.provider}-${timestamp(createdAt)}.jsonl`)
+  const { output, summary } = yield* runCalibrationPlan({
+    plan, meta, provider: selected,
+    output: options.output ?? `jevvy-calibration-${selected.provider}-${timestamp(createdAt)}.jsonl`,
+    spacing: options.spacing,
+    progress: (completed, record) => writeStdout(`${completed}/${plan.length} ${record.status.padEnd(6)} ${record.command.slice(0, 64)}`),
+  })
 
-    yield* Effect.tryPromise(() => mkdir(dirname(output), { recursive: true }))
-    yield* Effect.tryPromise(() => writeFile(
-      output,
-      `${JSON.stringify(calibrationMetaRecord(meta))}\n`,
-      { mode: 0o600, flag: "wx" },
-    ))
+  yield* Effect.sync(() => {
+    writeStdout(JSON.stringify({ output, result: summary.result, counts: summary.counts }, null, 2))
+  })
 
-    const records: CalibrationRecord[] = []
-
-    for (let index = 0; index < plan.length; index++) {
-        const entry = plan[index]
-
-        if (entry === undefined) continue
-
-        const started = yield* Clock.currentTimeMillis
-
-        const outcome = yield* selected.client.evaluate({
-            state: { action: "shell", resource: entry.command },
-            questions: toNoulQuestions(config.questions),
-          }).pipe(
-            Effect.timeout(30_000),
-            Effect.match({
-              onFailure: (error) => ({ kind: "failure" as const, error }),
-              onSuccess: (judged) => ({ kind: "success" as const, judged }),
-            }),
-          )
-
-        const finished = yield* Clock.currentTimeMillis
-        const timing = { ms: finished - started, timestamp: new Date(finished).toISOString() }
-
-        const record: CalibrationRecord = outcome.kind === "success"
-          ? {
-              ...entry,
-              status: "result",
-              effect: permissionEffectOf(outcome.judged.answers, config.questions),
-              answers: numericAnswers(outcome.judged.answers),
-              model: outcome.judged.model,
-              reportedModel: outcome.judged.reportedModel,
-              ...timing,
-            }
-          : {
-              ...entry,
-              status: "error",
-              error: selected.redact(String(outcome.error)).slice(0, 500),
-              ...timing,
-            }
-
-        records.push(record)
-        yield* Effect.tryPromise(() => appendFile(output, `${JSON.stringify(record)}\n`))
-        yield* Effect.sync(() => {
-          writeStdout(`${index + 1}/${plan.length} ${record.status.padEnd(6)} ${entry.command.slice(0, 64)}`)
-        })
-
-        if (index + 1 < plan.length && options.spacing > 0) yield* Effect.sleep(options.spacing)
-    }
-
-    const summary = summarizeCalibration(meta, records)
-
-    yield* Effect.tryPromise(() => appendFile(output, `${JSON.stringify(summary)}\n`))
-    yield* Effect.sync(() => {
-      writeStdout(JSON.stringify({ output, result: summary.result, counts: summary.counts }, null, 2))
-    })
-
-    return summary.failed ? 1 : 0
+  return summary.failed ? 1 : 0
 })
 
 export const runCalibration = (
