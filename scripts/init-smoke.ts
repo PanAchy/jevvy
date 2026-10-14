@@ -18,6 +18,7 @@ import * as HttpServer from "effect/http/HttpServer"
 import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
+import { windowsHostFixture } from "./init-smoke-fixture.ts"
 
 export class SetupSmokeError extends Schema.TaggedError<SetupSmokeError>()("SetupSmokeError", { message: Schema.String }) {}
 
@@ -200,15 +201,19 @@ const runScenario = Effect.fn("SetupSmoke.scenario")(function*(permissionsRoot: 
   const fixture = paths.join(executables, "fake-host.mjs")
   yield* fs.writeFileString(fixture, fakeHostSource)
 
+  const windowsFixture = windowsHostFixture(process.execPath)
+
   for (const host of ["opencode", "claude"] as const) {
     const windows = process.platform === "win32"
     const file = paths.join(executables, windows ? `${host}.cmd` : host)
     yield* fs.writeFileString(file, windows
-      ? `@echo off\r\n"${process.execPath}" "${fixture}" ${host} %*\r\n`
+      ? windowsFixture.source(host)
       : `#!/bin/sh\nexec ${shellQuote(process.execPath)} ${shellQuote(fixture)} ${host} "$@"\n`, { mode: 0o755 })
   }
 
   const env = Object.fromEntries(Object.entries(process.env).filter(([name, value]) => name.toLowerCase() !== "path" && value !== undefined))
+
+  if (process.platform === "win32") Object.assign(env, windowsFixture.environment)
 
   const environment = yield* Schema.decodeUnknownEffect(Schema.Record(Schema.String, Schema.String))({
     ...env, [process.platform === "win32" ? "Path" : "PATH"]: executables,
