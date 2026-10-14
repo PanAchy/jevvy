@@ -16,15 +16,19 @@
     "changeset:status": "changeset status",
     "changeset:version": "changeset version",
     "check": "npm run typecheck && npm run lint && npm test && npm run build",
-    "lint": "oxlint --fix",
+    "lint": "oxlint",
+    "lint:fix": "oxlint --fix",
     "prepare": "effect-tsgo patch --no-typescript --oxlint",
     "pretest": "npm run build:core",
     "pretypecheck": "npm run build:core",
     "smoke:package": "node scripts/package-smoke.mjs",
     "smoke:claude": "node scripts/claude-smoke.mjs",
     "smoke:opencode": "node scripts/opencode-smoke.mjs",
+    "smoke": "npm run smoke:package && npm run smoke:opencode && npm run smoke:claude",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/permissions/tsconfig.json"
+    "test:watch": "npm run build:core && vitest",
+    "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json",
+    "typecheck": "tsc --noEmit -p packages/core/tsconfig.json && tsc --noEmit -p packages/permissions/tsconfig.json && npm run typecheck:scripts"
   },
   "devDependencies": {
     "@changesets/changelog-github": "1.0.1",

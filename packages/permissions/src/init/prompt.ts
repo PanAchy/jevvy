@@ -1,22 +1,16 @@
-import {
-  cancel,
-  confirm,
-  intro,
-  isCancel,
-  log,
-  multiselect,
-  outro,
-  password,
-  select,
-  text,
-} from "@clack/prompts"
-import { Option, Redacted, Schema } from "effect"
+import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
+import * as Redacted from "effect/Redacted"
+import * as Schema from "effect/Schema"
+import * as Terminal from "effect/Terminal"
+import type * as Prompt from "effect/cli/Prompt"
+import * as Controls from "./controls.ts"
 import { parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
 import { DEFAULT_LAYA_ENDPOINT, DEFAULT_LAYA_MODEL } from "../core.ts"
 import { providerDisplayName } from "../providers.ts"
 import type { InitHarness, InitPlan, InitProvider, InitResult } from "./index.ts"
-import { accent } from "./theme.ts"
+import { showInitSection } from "./theme.ts"
 
 type ProviderName = InitProvider["provider"]
 
@@ -35,11 +29,13 @@ const LayaPromptConfig = Schema.Struct({
 })
 
 type LayaPrompts = {
-  readonly text: typeof text
-  readonly select: typeof select<LayaCheckpoint>
-  readonly confirm: typeof confirm
-  readonly password: typeof password
+  readonly text: (options: Controls.TextOptions) => Effect.Effect<string, Terminal.QuitError, Prompt.Environment>
+  readonly select: (options: Controls.SelectOptions<LayaCheckpoint>) => Effect.Effect<LayaCheckpoint, Terminal.QuitError, Prompt.Environment>
+  readonly confirm: (options: Controls.ConfirmOptions) => Effect.Effect<boolean, Terminal.QuitError, Prompt.Environment>
+  readonly password: (options: Controls.TextOptions) => Effect.Effect<Redacted.Redacted<string>, Terminal.QuitError, Prompt.Environment>
 }
+
+const layaPrompts: LayaPrompts = Controls
 
 interface LayaPromptDefaults {
   readonly endpoint?: string
@@ -62,12 +58,11 @@ const harnessLabels = {
 
 export const harnessPrompt = {
   message: "Which harnesses should use Jevvy Permissions?",
-  options: [
-    { value: "opencode" as const, label: harnessLabels.opencode, hint: "permission plugin" },
-    { value: "claude" as const, label: harnessLabels.claude, hint: "PermissionRequest hook" },
+  choices: [
+    { value: "opencode" as const, title: harnessLabels.opencode, description: "permission plugin", selected: true },
+    { value: "claude" as const, title: harnessLabels.claude, description: "PermissionRequest hook", selected: true },
   ],
-  initialValues: ["opencode", "claude"] satisfies readonly InitHarness[],
-  required: true,
+  min: 1,
 }
 
 const required = (value: string | undefined): string | undefined =>
@@ -132,59 +127,52 @@ export const layaPromptDefaults = (existing: string | undefined): LayaPromptDefa
   return urlNeedsReentry ? { ...defaults, urlNeedsReentry: true } : defaults
 }
 
-const stop = (): undefined => {
-  cancel("Jevvy Permissions setup cancelled")
+export const showInitCancelled = showInitSection("Jevvy Permissions setup cancelled")
 
-  return undefined
+const validate = (check: (value: string) => string | undefined) => (value: string): Effect.Effect<string, string> => {
+  const error = check(value)
+
+  return error === undefined ? Effect.succeed(value) : Effect.fail(error)
 }
 
-const promptApiKey = async (
+const promptApiKey = (
   message: string,
-  askPassword = password,
-): Promise<Redacted.Redacted<string> | undefined> => {
-  const answer = await askPassword({ message: accent(message), validate: required })
+  askPassword: LayaPrompts["password"] = Controls.password,
+) => askPassword({ message, validate: validate(required) })
 
-  return isCancel(answer) ? undefined : Redacted.make(answer)
-}
-
-export const promptLayaProvider = async (
-  prompts: LayaPrompts = { text, select, confirm, password },
+export const promptLayaProvider = Effect.fn("Init.promptLayaProvider")(function*(
+  prompts: LayaPrompts = layaPrompts,
   defaults: LayaPromptDefaults = {},
-): Promise<Extract<InitProvider, { provider: "laya" }> | undefined> => {
-  const endpoint = await prompts.text({
-    message: accent(defaults.urlNeedsReentry
+): Effect.fn.Return<Extract<InitProvider, { provider: "laya" }>, Terminal.QuitError, Prompt.Environment> {
+  const endpoint = yield* prompts.text({
+    message: defaults.urlNeedsReentry
       ? "Laya System One URL (re-enter URL with private parameters)"
-      : "Laya System One URL"),
-    initialValue: defaults.endpoint ?? DEFAULT_LAYA_ENDPOINT,
-    validate: layaEndpointError,
+      : "Laya System One URL",
+    default: defaults.endpoint ?? DEFAULT_LAYA_ENDPOINT,
+    validate: validate(layaEndpointError),
   })
 
-  if (isCancel(endpoint)) return undefined
+  const checkpoints: readonly Controls.Choice<LayaCheckpoint>[] = [
+    { value: "english", title: "English" },
+    { value: "multilingual", title: "Multilingual" },
+    { value: "typed-decisions", title: "Typed decisions" },
+  ]
 
-  const model = await prompts.select({
-    message: accent("Laya checkpoint"),
-    options: [
-      { value: "english", label: "English" },
-      { value: "multilingual", label: "Multilingual" },
-      { value: "typed-decisions", label: "Typed decisions" },
-    ],
-    initialValue: defaults.model ?? DEFAULT_LAYA_MODEL,
+  const initial = defaults.model ?? DEFAULT_LAYA_MODEL
+
+  const model = yield* prompts.select({
+    message: "Laya checkpoint",
+    choices: [...checkpoints.filter(({ value }) => value === initial), ...checkpoints.filter(({ value }) => value !== initial)],
   })
 
-  if (isCancel(model)) return undefined
-
-  const hasApiKey = await prompts.confirm({
-    message: accent("Does your Laya server require a Bearer API key?"),
-    initialValue: defaults.hasApiKey ?? false,
+  const hasApiKey = yield* prompts.confirm({
+    message: "Does your Laya server require a Bearer API key?",
+    initial: defaults.hasApiKey ?? false,
   })
-
-  if (isCancel(hasApiKey)) return undefined
 
   const apiKey = hasApiKey
-    ? await promptApiKey(defaults.hasApiKey ? "Re-enter the Laya API key" : "Enter the Laya API key", prompts.password)
+    ? yield* promptApiKey(defaults.hasApiKey ? "Re-enter the Laya API key" : "Enter the Laya API key", prompts.password)
     : undefined
-
-  if (hasApiKey && apiKey === undefined) return undefined
 
   const selectedEndpoint = endpoint.trim()
 
@@ -197,47 +185,37 @@ export const promptLayaProvider = async (
   if (apiKey !== undefined) selection.apiKey = apiKey
 
   return selection
-}
+})
 
-const promptProvider = async (
+const promptProvider = Effect.fn("Init.promptProvider")(function*(
   provider: ProviderName,
   layaDefaults: LayaPromptDefaults,
-): Promise<InitProvider | undefined> => {
-  if (provider === "laya") return promptLayaProvider(undefined, layaDefaults)
+): Effect.fn.Return<InitProvider, Terminal.QuitError, Prompt.Environment> {
+  if (provider === "laya") return yield* promptLayaProvider(undefined, layaDefaults)
 
   if (provider === "custom") {
-    const endpoint = await text({
-      message: accent("System One endpoint"),
-      placeholder: "http://127.0.0.1:8080/v1/decisions",
-      validate: endpointError,
+    const endpoint = yield* Controls.text({
+      message: "System One endpoint (http://127.0.0.1:8080/v1/decisions)",
+      validate: validate(endpointError),
     })
 
-    if (isCancel(endpoint)) return undefined
-
-    const model = await text({
-      message: accent("Model identifier"),
-      placeholder: "typesafe/jev",
-      validate: required,
+    const model = yield* Controls.text({
+      message: "Model identifier (for example, typesafe/jev)",
+      validate: validate(required),
     })
 
-    if (isCancel(model)) return undefined
-
-    const hasApiKey = await confirm({
-      message: accent("Does this endpoint require a Bearer API key?"),
-      initialValue: true,
+    const hasApiKey = yield* Controls.confirm({
+      message: "Does this endpoint require a Bearer API key?",
+      initial: true,
     })
-
-    if (isCancel(hasApiKey)) return undefined
 
     if (!hasApiKey) {
       return { provider: "custom", endpoint: endpoint.trim(), model: model.trim() }
     }
 
-    const apiKey = await promptApiKey("Enter the endpoint API key")
+    const apiKey = yield* promptApiKey("Enter the endpoint API key")
 
-    return apiKey === undefined
-      ? undefined
-      : { provider: "custom", endpoint: endpoint.trim(), model: model.trim(), apiKey }
+    return { provider: "custom", endpoint: endpoint.trim(), model: model.trim(), apiKey }
   }
 
   const labels = {
@@ -247,10 +225,10 @@ const promptProvider = async (
     vercel: "Vercel AI Gateway key",
   } as const
 
-  const apiKey = await promptApiKey(`Enter your ${labels[provider]}`)
+  const apiKey = yield* promptApiKey(`Enter your ${labels[provider]}`)
 
-  return apiKey === undefined ? undefined : { provider, apiKey }
-}
+  return { provider, apiKey }
+})
 
 const displayEndpoint = (value: string): string => {
   const endpoint = new URL(value)
@@ -286,14 +264,6 @@ export const initPlanSummary = (plan: InitPlan, configPath: string): string => [
   ...(plan.provider.apiKey !== undefined ? ["Bearer key: saved in private config"] : []),
 ].join("\n")
 
-export const initConfirmationMessage = (plan: InitPlan, configPath: string): string => [
-  accent("Save config and install integrations?"),
-  initPlanSummary(plan, configPath),
-  ...(plan.provider.provider === "laya"
-    ? ["", "Laya needs a checkpoint-specific policy; without one, auto-approval stays off."]
-    : []),
-].join("\n")
-
 export const layaNextSteps = (result: InitResult): string => {
   const steps = [
     "If this checkpoint has no calibrated policy, start Laya and calibrate a candidate.",
@@ -320,62 +290,60 @@ export const opencodeNextSteps = (): string => [
   "Reload OpenCode after updating permissions.",
 ].join("\n")
 
-export const promptInitPlan = async (configPath: string, existing?: string): Promise<InitPlan | undefined> => {
-  intro(accent("Set up Jevvy Permissions"))
+export const promptInitPlan = Effect.fn("Init.promptPlan")(function*(configPath: string, existing?: string) {
+  yield* showInitSection("Set up Jevvy Permissions", "Choose your coding agents and provider.\nCtrl+C cancels a prompt.")
 
-  const harnesses = await multiselect<InitHarness>({
-    ...harnessPrompt,
-    message: accent(harnessPrompt.message),
-  })
+  const harnesses = yield* Controls.multiSelect<InitHarness>(harnessPrompt)
 
-  if (isCancel(harnesses)) return stop()
-
-  const providerName = await select<ProviderName>({
-    message: accent("Which System One provider should Jevvy use?"),
-    options: [
-      { value: "zen", label: providerDisplayName("zen") },
-      { value: "typesafe", label: providerDisplayName("typesafe") },
-      { value: "openrouter", label: providerDisplayName("openrouter") },
-      { value: "vercel", label: providerDisplayName("vercel") },
-      { value: "laya", label: providerDisplayName("laya"), hint: "your endpoint, own calibrated policy" },
-      { value: "custom", label: providerDisplayName("custom"), hint: "any System One-compatible server" },
+  const providerName = yield* Controls.select<ProviderName>({
+    message: "Which System One provider should Jevvy use?",
+    choices: [
+      { value: "zen", title: providerDisplayName("zen") },
+      { value: "typesafe", title: providerDisplayName("typesafe") },
+      { value: "openrouter", title: providerDisplayName("openrouter") },
+      { value: "vercel", title: providerDisplayName("vercel") },
+      { value: "laya", title: providerDisplayName("laya"), description: "your endpoint, own calibrated policy" },
+      { value: "custom", title: providerDisplayName("custom"), description: "any System One-compatible server" },
     ],
   })
 
-  if (isCancel(providerName)) return stop()
+  const provider = yield* promptProvider(providerName, layaPromptDefaults(existing))
+  const plan = { harnesses, provider }
+  yield* showInitSection("Review setup", initPlanSummary(plan, configPath))
 
-  const provider = await promptProvider(providerName, layaPromptDefaults(existing))
+  if (provider.provider === "laya") {
+    yield* showInitSection("Laya policy", "Laya needs a checkpoint-specific policy; without one, auto-approval stays off.")
+  }
 
-  if (provider === undefined) return stop()
-
-  const accepted = await confirm({
-    message: initConfirmationMessage({ harnesses, provider }, configPath),
-    initialValue: true,
+  const accepted = yield* Controls.confirm({
+    message: "Save config and install integrations?",
+    initial: true,
   })
 
-  if (isCancel(accepted) || !accepted) return stop()
+  if (!accepted) {
+    yield* showInitCancelled
 
-  return { harnesses, provider }
-}
+    return undefined
+  }
 
-export const showInitProgress = (): void => log.step("Saving config and installing integrations")
+  return plan
+})
 
-export const showInitError = (message: string): void => {
-  log.error(message)
-  outro("Jevvy Permissions setup did not complete")
-}
+export const showInitProgress = showInitSection("Saving config and installing integrations")
 
-export const showInitResult = (result: InitResult): void => {
-  log.success(`Installed Jevvy Permissions in ${result.harnesses.map((harness) => harnessLabels[harness]).join(" + ")}`)
+export const showInitError = (message: string) => showInitSection("Jevvy Permissions setup did not complete", message)
 
-  if (result.harnesses.includes("opencode")) log.message(opencodeNextSteps())
+export const showInitResult = Effect.fn("Init.showResult")(function*(result: InitResult) {
+  yield* showInitSection(`Installed Jevvy Permissions in ${result.harnesses.map((harness) => harnessLabels[harness]).join(" + ")}`)
+
+  if (result.harnesses.includes("opencode")) yield* showInitSection("OpenCode permission review", opencodeNextSteps())
 
   if (result.provider === "laya") {
-    log.message(layaNextSteps(result))
-    outro("Without a valid calibrated policy, auto-approval stays off; host prompts remain in control")
+    yield* showInitSection("Next steps for Laya", layaNextSteps(result))
+    yield* showInitSection("Host prompts remain in control", "Without a valid calibrated policy, auto-approval stays off")
 
     return
   }
 
-  outro(`Jevvy Permissions is ready for ${result.harnesses.map((harness) => harnessLabels[harness]).join(", ")}`)
-}
+  yield* showInitSection(`Jevvy Permissions is ready for ${result.harnesses.map((harness) => harnessLabels[harness]).join(", ")}`)
+})

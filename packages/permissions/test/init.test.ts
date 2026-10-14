@@ -2,10 +2,14 @@ import { mkdtemp, rm, stat } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { stripVTControlCharacters } from "node:util"
-import { NodeServices } from "@effect/platform-node"
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Redacted, Sink, Stream } from "effect"
-import { ChildProcessSpawner } from "effect/process"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Redacted from "effect/Redacted"
+import * as Sink from "effect/Sink"
+import * as Stream from "effect/Stream"
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
 import { parse } from "jsonc-parser"
 import {
   initializeJevvy,
@@ -14,7 +18,6 @@ import {
 } from "../src/init/index.ts"
 import {
   harnessPrompt,
-  initConfirmationMessage,
   initPlanSummary,
   layaNextSteps,
   opencodeNextSteps,
@@ -39,30 +42,26 @@ describe("Jevvy initializer", () => {
     ].join("\n"))
   })
 
-  it("puts the Laya plan and approval warning inside the confirmation question", () => {
-    const message = stripVTControlCharacters(initConfirmationMessage({
+  it("summarizes the selected Laya checkpoint and server", () => {
+    const message = stripVTControlCharacters(initPlanSummary({
       harnesses: ["opencode", "claude"],
       provider: { provider: "laya", model: "typed-decisions" },
     }, "/tmp/jevvy.jsonc"))
 
     expect(message).toBe([
-      "Save config and install integrations?",
       "Laya (typed-decisions) for OpenCode + Claude Code",
       "Config: /tmp/jevvy.jsonc",
       "Server: http://127.0.0.1:8000/v1/systemone",
-      "",
-      "Laya needs a checkpoint-specific policy; without one, auto-approval stays off.",
     ].join("\n"))
   })
 
   it("keeps ordinary provider confirmation compact", () => {
-    const message = stripVTControlCharacters(initConfirmationMessage({
+    const message = stripVTControlCharacters(initPlanSummary({
       harnesses: ["opencode"],
       provider: { provider: "typesafe", apiKey: Redacted.make("secret") },
     }, "/tmp/jevvy.jsonc"))
 
     expect(message).toBe([
-      "Save config and install integrations?",
       "TypeSafe AI for OpenCode",
       "Config: /tmp/jevvy.jsonc",
       "Bearer key: saved in private config",
@@ -71,7 +70,7 @@ describe("Jevvy initializer", () => {
   })
 
   it("does not print credentials or URL parameters in custom provider confirmation", () => {
-    const message = stripVTControlCharacters(initConfirmationMessage({
+    const message = stripVTControlCharacters(initPlanSummary({
       harnesses: ["claude"],
       provider: {
         provider: "custom",
@@ -115,12 +114,11 @@ describe("Jevvy initializer", () => {
   it("offers OpenCode and Claude Code as selected harness checkboxes", () => {
     expect(harnessPrompt).toEqual({
       message: "Which harnesses should use Jevvy Permissions?",
-      options: [
-        { value: "opencode", label: "OpenCode", hint: "permission plugin" },
-        { value: "claude", label: "Claude Code", hint: "PermissionRequest hook" },
+      choices: [
+        { value: "opencode", title: "OpenCode", description: "permission plugin", selected: true },
+        { value: "claude", title: "Claude Code", description: "PermissionRequest hook", selected: true },
       ],
-      initialValues: ["opencode", "claude"],
-      required: true,
+      min: 1,
     })
   })
 

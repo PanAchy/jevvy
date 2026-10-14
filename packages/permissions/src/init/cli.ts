@@ -1,5 +1,7 @@
-import { Effect, Schema } from "effect"
-import { Command } from "effect/cli"
+import * as Effect from "effect/Effect"
+import * as Terminal from "effect/Terminal"
+import * as Command from "effect/cli/Command"
+import type * as Prompt from "effect/cli/Prompt"
 import { globalJevvyConfigPath } from "../config.ts"
 import { initializeJevvy, InitPlatform } from "./index.ts"
 import type { InitPlan, InitResult } from "./index.ts"
@@ -8,58 +10,50 @@ import {
   showInitError,
   showInitProgress,
   showInitResult,
+  showInitCancelled,
 } from "./prompt.ts"
 
-class InitPromptError extends Schema.TaggedError<InitPromptError>()("InitPromptError", {
-  message: Schema.String,
-  cause: Schema.Defect(),
-}) {}
-
-export interface InitFrontend {
-  readonly prompt: (configPath: string, existing: string | undefined) => Promise<InitPlan | undefined>
-  readonly showProgress: () => void
-  readonly showError: (message: string) => void
-  readonly showResult: (result: InitResult) => void
+export interface InitFrontend<R = never> {
+  readonly prompt: (configPath: string, existing: string | undefined) => Effect.Effect<InitPlan | undefined, Terminal.QuitError, R>
+  readonly showProgress: Effect.Effect<void, never, R>
+  readonly showError: (message: string) => Effect.Effect<void, never, R>
+  readonly showResult: (result: InitResult) => Effect.Effect<void, never, R>
+  readonly showCancelled: Effect.Effect<void, never, R>
 }
 
-const clackFrontend: InitFrontend = {
+const terminalFrontend: InitFrontend<Prompt.Environment> = {
   prompt: promptInitPlan,
   showProgress: showInitProgress,
   showError: showInitError,
   showResult: showInitResult,
+  showCancelled: showInitCancelled,
 }
 
-export const executeInit = Effect.fn("InitCli.execute")(function*(
-  frontend: InitFrontend,
+export const executeInit = Effect.fn("InitCli.execute")(function*<R>(
+  frontend: InitFrontend<R>,
   configPath: string,
 ) {
   const platform = yield* InitPlatform
   const existing = yield* platform.readConfig(configPath)
 
-  const plan = yield* Effect.tryPromise({
-    try: () => frontend.prompt(configPath, existing),
-    catch: (cause) => new InitPromptError({ message: "Interactive setup failed", cause }),
-  })
+  const plan = yield* frontend.prompt(configPath, existing)
 
   if (plan === undefined) return 0
 
-  yield* Effect.sync(frontend.showProgress)
+  yield* frontend.showProgress
 
   const result = yield* initializeJevvy(plan, configPath)
 
-  yield* Effect.sync(() => frontend.showResult(result))
+  yield* frontend.showResult(result)
 
   return 0
 }, (effect, frontend) => effect.pipe(
-  Effect.catch((error) => Effect.sync(() => {
-    frontend.showError(error.message)
-
-    return 1
-  })),
+  Effect.catchTag("QuitError", () => frontend.showCancelled.pipe(Effect.as(0))),
+  Effect.catch((error) => frontend.showError(error.message).pipe(Effect.as(1))),
 ))
 
 const runInit = Effect.fn("InitCli.run")(function*() {
-  const code = yield* executeInit(clackFrontend, globalJevvyConfigPath())
+  const code = yield* executeInit(terminalFrontend, globalJevvyConfigPath())
 
   if (code !== 0) process.exitCode = code
 })

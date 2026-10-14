@@ -1,10 +1,18 @@
-import { Context, Effect, FileSystem, Layer, Path, Redacted, Schema } from "effect"
-import { ChildProcess, ChildProcessSpawner } from "effect/process"
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
+import * as Layer from "effect/Layer"
+import * as Path from "effect/Path"
+import * as Redacted from "effect/Redacted"
+import * as Schema from "effect/Schema"
+import type * as ChildProcess from "effect/process/ChildProcess"
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
 import { applyEdits, modify, parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
 import { DEFAULT_LAYA_ENDPOINT, DEFAULT_LAYA_MODEL } from "../core.ts"
 import { LayaPolicy } from "../config.ts"
 import { createConfigFile } from "../config-file.ts"
+import { harnessCommand } from "./harness-command.ts"
 
 const CONFIG_SCHEMA = "https://raw.githubusercontent.com/PanAchy/jevvy/main/config.schema.json"
 
@@ -127,10 +135,10 @@ export class InitPlatform extends Context.Service<InitPlatform, {
           return yield* runInstaller(
             "install-opencode",
             "OpenCode could not install the Jevvy plugin",
-            ChildProcess.make(
+            harnessCommand(
               "opencode",
               ["plugin", "add", OPENCODE_PLUGIN],
-              { stdin: "inherit", stdout: "inherit", stderr: "inherit" },
+              { inherit: true },
             ),
           )
         }
@@ -138,20 +146,20 @@ export class InitPlatform extends Context.Service<InitPlatform, {
         yield* runInstaller(
           "install-claude-marketplace",
           "Claude Code could not add the Jevvy marketplace",
-          ChildProcess.make(
+          harnessCommand(
             "claude",
             ["plugin", "marketplace", "add", "--scope", "user", CLAUDE_MARKETPLACE],
-            { stdin: "inherit", stdout: "inherit", stderr: "inherit" },
+            { inherit: true },
           ),
         )
 
         yield* runInstaller(
           "install-claude-plugin",
           "Claude Code could not install the Jevvy plugin",
-          ChildProcess.make(
+          harnessCommand(
             "claude",
             ["plugin", "install", "--scope", "user", CLAUDE_PLUGIN],
-            { stdin: "inherit", stdout: "inherit", stderr: "inherit" },
+            { inherit: true },
           ),
         )
       })
