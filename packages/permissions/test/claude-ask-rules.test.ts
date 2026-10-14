@@ -4,8 +4,18 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect } from "effect"
-import { hasHostAsk, loadAskRules } from "../src/claude/ask-rules.ts"
+import * as Deferred from "effect/Deferred"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
+import * as Sink from "effect/Sink"
+import * as Stream from "effect/Stream"
+import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
+import * as TestClock from "effect/testing/TestClock"
+import { NodeServices } from "@effect/platform-node"
+import { hasHostAsk, loadAskRules as inspectAskRules } from "../src/claude/ask-rules.ts"
+
+const loadAskRules = (cwd: string, configDir: string) => inspectAskRules(cwd, configDir).pipe(Effect.provide(NodeServices.layer))
 
 const exec = promisify(execFile)
 
@@ -130,4 +140,63 @@ describe("Claude Code configured asks", () => {
       yield* Effect.promise(() => rm(root, { recursive: true, force: true }))
     }
   }))
+
+  it.effect("reads both worktree settings and primary-repository local settings", () => Effect.gen(function*() {
+    const parent = yield* makeScratch("claude-worktree-")
+    const repo = join(parent, "repo")
+    const worktree = join(parent, "worktree")
+
+    try {
+      yield* Effect.promise(() => exec("git", ["init", "-q", repo]))
+      yield* Effect.promise(() => exec("git", ["-c", "user.name=Smoke", "-c", "user.email=smoke@example.invalid", "commit", "--allow-empty", "-qm", "fixture"], { cwd: repo }))
+      yield* Effect.promise(() => exec("git", ["worktree", "add", "--detach", worktree], { cwd: repo }))
+      yield* Effect.promise(() => mkdir(join(repo, ".claude")))
+      yield* Effect.promise(() => mkdir(join(worktree, ".claude")))
+      yield* Effect.promise(() => writeFile(join(repo, ".claude", "settings.local.json"), '{"permissions":{"ask":["Bash(git push *)"]}}'))
+      yield* Effect.promise(() => writeFile(join(worktree, ".claude", "settings.json"), '{"permissions":{"ask":["Bash(pnpm build)"]}}'))
+      expect(yield* loadAskRules(worktree, join(parent, "user"))).toEqual(["Bash(pnpm build)", "Bash(git push *)"])
+    } finally {
+      yield* Effect.promise(() => rm(parent, { recursive: true, force: true }))
+    }
+  }))
+
+  for (const mode of ["timeout", "interrupt"] as const) {
+    it.effect(`releases Git inspection on ${mode} without granting approval`, () => Effect.gen(function*() {
+      const root = yield* makeScratch("claude-git-scope-")
+      const entered = yield* Deferred.make<void>()
+      let released = false
+
+      const spawner = ChildProcessSpawner.make(() => Effect.acquireRelease(
+        Deferred.succeed(entered, undefined).pipe(Effect.as(ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(1), stdin: Sink.drain, stdout: Stream.never, stderr: Stream.empty, all: Stream.never,
+          exitCode: Effect.never, isRunning: Effect.succeed(true), kill: () => Effect.void,
+          getInputFd: () => Sink.drain, getOutputFd: () => Stream.empty, unref: Effect.succeed(Effect.void),
+        }))),
+        () => Effect.sync(() => { released = true }),
+      ))
+
+      try {
+        yield* Effect.promise(() => mkdir(join(root, ".git")))
+
+        const fiber = yield* inspectAskRules(root, join(root, "user")).pipe(
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner), Effect.provide(NodeServices.layer), Effect.forkChild,
+        )
+
+        yield* Deferred.await(entered)
+
+        if (mode === "timeout") {
+          yield* TestClock.adjust("2 seconds")
+          expect(yield* Fiber.join(fiber)).toBeUndefined()
+        } else {
+          yield* Fiber.interrupt(fiber)
+          const exit = yield* Fiber.await(fiber)
+          expect(Exit.isFailure(exit)).toBe(true)
+        }
+
+        expect(released).toBe(true)
+      } finally {
+        yield* Effect.promise(() => rm(root, { recursive: true, force: true }))
+      }
+    }))
+  }
 })
