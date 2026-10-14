@@ -56,7 +56,7 @@
     <figure>
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 832 556" role="img" aria-labelledby="jevvy-flow-title jevvy-flow-desc">
         <title id="jevvy-flow-title">Jevvy Permissions approval flow</title>
-        <desc id="jevvy-flow-desc">Your agent keeps its allow, deny, and specific ask decisions, while Jevvy checks other commands needing approval and leaves unapproved requests and any further checks to your agent.</desc>
+        <desc id="jevvy-flow-desc">In Ask mode, your agent keeps its allow, deny, and specific ask decisions. Jevvy checks other commands needing approval and approves each command once only when every check passes. Otherwise your agent asks you to approve. Automatic approval settings still apply.</desc>
         <defs>
           <marker id="jevvy-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0L8 3L0 6Z" fill="var(--muted)"/></marker>
           <marker id="jevvy-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0L8 3L0 6Z" fill="var(--accent)"/></marker>
@@ -113,12 +113,11 @@
         </g>
         <g data-node="native-flow">
           <rect class="node" x="568" y="420" width="224" height="96" rx="6"/>
-          <text class="name" x="680" y="448">Your agent handles</text>
-          <text class="name" x="680" y="472">approval</text>
-          <text class="detail" x="680" y="496">May ask you to approve</text>
+          <text class="name" x="680" y="472">Ask you to approve</text>
         </g>
+        <text class="detail" x="416" y="546">Shown for Ask mode. Automatic approval settings still apply.</text>
       </svg>
-      <figcaption>Jevvy can approve this command once. Your agent still decides whether it can run or needs your approval.</figcaption>
+      <figcaption>This shows Ask mode: Jevvy can approve this command once; otherwise your agent asks you to approve. Automatic approval settings still apply.</figcaption>
     </figure>
     <footer>Diagram style based on <a href="https://github.com/cathrynlavery/diagram-design">Diagram Design</a>. The HTML is the editable source for the light and dark README images.</footer>
   </main>
