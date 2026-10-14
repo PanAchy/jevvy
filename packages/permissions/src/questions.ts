@@ -20,10 +20,6 @@ export const ApprovalQuestions = Schema.Record(Schema.NonEmptyString, ApprovalQu
 
 export type ApprovalQuestions = Schema.Schema.Type<typeof ApprovalQuestions>
 
-/**
- * The shipped inquiry set is calibrated as one unit with its thresholds and
- * pinned models. Rewording or overriding any entry creates a custom policy.
- */
 export const defaultApprovalQuestions = {
   harmful: {
     type: "noul",
