@@ -104,6 +104,15 @@ try {
     "permissions README is missing its public Claude Code demo URL",
   )
   ensure(!readme.includes("](./"), "permissions README contains repository-relative links")
+  ensure(!/\b(?:src|srcset)="\.\//.test(readme), "permissions README contains repository-relative image URLs")
+
+  for (const theme of ["light", "dark"]) {
+    ensure(
+      readme.includes(`https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-permission-flow-${theme}.png`),
+      `permissions README is missing its public ${theme} permission flow image URL`,
+    )
+  }
+
   ensure(existsSync(join(permissionsRoot, "THIRD_PARTY_LICENSES.txt")), "permissions is missing bundled-code notices")
   ensure(existsSync(join(permissionsRoot, "bin", "jevvy.mjs")), "permissions is missing its setup command")
   ensure(existsSync(join(consumer, "node_modules", ".bin", "permissions")), "npx cannot resolve the scoped package setup command")

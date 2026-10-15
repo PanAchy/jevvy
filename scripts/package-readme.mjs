@@ -33,8 +33,20 @@ const createReadme = () => {
     "https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-claude-demo.gif",
   )
 
-  const withCalibrationCorpus = replaceOne(
+  const withDarkPermissionFlow = replaceOne(
     withClaudeDemo,
+    "./assets/jevvy-permission-flow-dark.png",
+    "https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-permission-flow-dark.png",
+  )
+
+  const withLightPermissionFlow = replaceOne(
+    withDarkPermissionFlow,
+    "./assets/jevvy-permission-flow-light.png",
+    "https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-permission-flow-light.png",
+  )
+
+  const withCalibrationCorpus = replaceOne(
+    withLightPermissionFlow,
     "./eval/commands.json",
     "https://github.com/PanAchy/jevvy/blob/main/eval/commands.json",
   )

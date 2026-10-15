@@ -62,21 +62,12 @@ opencode plugin add @jevvy/permissions@0.5.1
 
 ## How it works
 
-Each coding agent evaluates its own permission policy first. Existing allow and deny decisions stay final. Visible configured `ask` rules remain human prompts. Jevvy Permissions reviews other unresolved shell approval requests as complete commands. It approves only the current action when every inquiry passes. Otherwise it abstains, leaving the agent's remaining permission flow unchanged.
+Your agent checks permissions first. Its allow and deny decisions stay final. Specific `ask` rules stay with your agent. For other requests that need approval, Jevvy Permissions checks the full shell command. It approves only the current command when all checks pass, without saving an approval rule. In Ask mode, your agent asks you to approve anything Jevvy does not approve. Automatic approval settings still apply.
 
-```mermaid
-flowchart TD
-    rules[Coding agent permission policy]
-    rules -->|Allow| run[Run the command]
-    rules -->|Deny| block[Block the command]
-    rules -->|Configured ask| remaining[Continue the remaining permission flow]
-    rules -->|Other approval request| review[Jevvy Permissions reviews]
-    review -->|Every inquiry passes| approve[Approve this action]
-    review -->|Anything else| remaining
-    approve --> proceed[Coding agent continues]
-    proceed -->|No further check| run
-    proceed -->|Prompt or check required| remaining
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./assets/jevvy-permission-flow-dark.png" />
+  <img src="./assets/jevvy-permission-flow-light.png" width="832" alt="Ask-mode permission flow. Your agent keeps its allow, deny, and specific ask decisions. Jevvy checks other commands needing approval and approves each command once only when every check passes. Otherwise your agent asks you to approve. Automatic approval settings still apply." />
+</picture>
 
 ## Configuration
 
