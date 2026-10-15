@@ -160,7 +160,7 @@ const state = JSON.parse(readFileSync(process.env.JEVVY_SMOKE_STATE, "utf8"))
 const [host, ...args] = process.argv.slice(2)
 appendFileSync(state.calls, JSON.stringify({ host, args }) + "\\n")
 if (args[0] === "--version") {
-  console.log(host === "opencode" ? state.version : "2.1.296")
+  console.log(host === "opencode" ? "opencode v" + state.version : "2.1.296")
   process.exit(0)
 }
 console.log("Fixture installer: " + host)

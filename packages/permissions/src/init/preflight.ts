@@ -17,7 +17,7 @@ const VersionNumber = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: N
 const decodeVersionParts = Schema.decodeUnknownOption(Schema.Tuple([VersionNumber, VersionNumber, VersionNumber]))
 
 export const opencodeCompatibilityWarning = (output: string): string | undefined => {
-  const decoded = decodeVersion(output.trim())
+  const decoded = decodeVersion(output.trim().replace(/^opencode v/, ""))
 
   if (Option.isNone(decoded)) {
     return [

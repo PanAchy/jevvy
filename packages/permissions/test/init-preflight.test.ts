@@ -20,7 +20,7 @@ const handle = (version: string, code = 0) => ChildProcessSpawner.makeHandle({
 })
 
 describe("installer preflight", () => {
-  it.each(["2.0.27", "2.0.28", "2.1.0", "3.0.0", " 2.0.27\n"])("accepts supported stable version %s", (version) => {
+  it.each(["2.0.27", "2.0.28", "2.1.0", "3.0.0", " 2.0.27\n", "opencode v2.0.27\n", "opencode v2.0.29\n"])("accepts supported stable version %s", (version) => {
     expect(opencodeCompatibilityWarning(version)).toBeUndefined()
   })
 
@@ -35,7 +35,14 @@ describe("installer preflight", () => {
     else expect(warning).not.toContain("@0.5.1")
   })
 
-  it.each(["", "2.0", "nightly", "2.0.27-beta.1", "2.0.27\nother output", "9999999999999999999999999.0.27"])("requires an explicit choice for unknown version %s", (version) => {
+  it("reports the actual version and upgrade guidance for a prefixed old CLI", () => {
+    const warning = opencodeCompatibilityWarning("opencode v2.0.26\n")
+    expect(warning).toContain("Detected OpenCode 2.0.26.")
+    expect(warning).toContain("Upgrade OpenCode")
+    expect(warning).toContain("opencode plugin add @jevvy/permissions@0.5.1")
+  })
+
+  it.each(["", "2.0", "nightly", "2.0.27-beta.1", "2.0.27\nother output", "opencode v2.0.27-beta.1", "opencode v2.0.27\nother output", "other v2.0.27", "9999999999999999999999999.0.27"])("requires an explicit choice for unknown version %s", (version) => {
     expect(opencodeCompatibilityWarning(version)).toContain("Could not verify the OpenCode CLI version")
   })
 
@@ -57,7 +64,7 @@ describe("installer preflight", () => {
     expect(harnessCommand("opencode", ["--version"], { platform: "linux" }).options.shell).toBe(false)
   })
 
-  for (const [harness, version] of [["claude", "2.1.296"], ["opencode", "2.0.27"]] as const) {
+  for (const [harness, version] of [["claude", "2.1.296"], ["opencode", "opencode v2.0.27\n"]] as const) {
     it.effect(`checks only the selected ${harness} CLI and collects its version`, () => Effect.gen(function*() {
       const commands: string[] = []
 
