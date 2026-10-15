@@ -92,14 +92,16 @@ Presets handle API and authentication differences. Other System One-compatible s
 | | TypeSafe AI | `typesafe` | `providers.typesafe.apiKey` or `TYPESAFE_API_KEY` |
 | | OpenRouter | `openrouter` | `providers.openrouter.apiKey` or `OPENROUTER_API_KEY` |
 | | Vercel AI Gateway | `vercel` | `providers.vercel.apiKey` or `AI_GATEWAY_API_KEY` |
-| | Microsoft Decision ([experimental][decisions-guide]) | `microsoft` | `providers.microsoft.apiKey` or `AZURE_AI_API_KEY` |
+| | Microsoft Decision ([experimental][microsoft-guide]) | `microsoft` | `providers.microsoft.apiKey` or `AZURE_AI_API_KEY` |
 | | Laya ([setup guide][laya-guide]) | `laya` | Optional `providers.laya.apiKey` or `LAYA_API_KEY` |
 | | Custom endpoint | `custom` | Optional `providers.custom.apiKey` |
-| OpenAI Decisions | OpenAI ([setup guide][decisions-guide]) | `openai` | `providers.openai.apiKey` or `OPENAI_API_KEY` |
+| OpenAI Decisions | OpenAI ([setup guide][openai-guide]) | `openai` | `providers.openai.apiKey` or `OPENAI_API_KEY` |
 
 [laya-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/laya.md
 
-[decisions-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/decision-apis.md
+[openai-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/openai.md
+
+[microsoft-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/microsoft.md
 
 The plugin uses only the selected provider and never falls back to another one.
 
