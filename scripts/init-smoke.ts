@@ -118,6 +118,9 @@ interface Scenario {
   readonly cancelFirst?: boolean
   readonly cancelPlan?: boolean
   readonly existing?: string
+  readonly version?: string
+  readonly override?: boolean
+  readonly missing?: boolean
   readonly installExit?: number
   readonly expectedCode?: number
   readonly key?: string
@@ -126,9 +129,13 @@ interface Scenario {
 
 const cases: readonly Scenario[] = [
   { name: "both agents", agents: "both" },
-  { name: "Claude only", agents: "claude" },
+  { name: "Claude only without OpenCode", agents: "claude", missing: true },
   { name: "cancel first prompt", agents: "opencode", cancelFirst: true },
   { name: "cancel confirmation", agents: "opencode", cancelPlan: true, existing: '{ "provider": "typesafe" }\n' },
+  { name: "old version decline", agents: "opencode", version: "2.0.26", override: false },
+  { name: "old version override", agents: "opencode", version: "2.0.26", override: true },
+  { name: "unknown version decline", agents: "opencode", version: "nightly-custom", override: false },
+  { name: "missing CLI", agents: "opencode", missing: true, expectedCode: 1 },
   { name: "failed installer", agents: "opencode", installExit: 3, expectedCode: 1 },
   { name: "masked credential", agents: "opencode", key: "fixture-private-key" },
   { name: "EOF during credential entry", agents: "opencode", eof: true },
@@ -152,6 +159,10 @@ import { appendFileSync, readFileSync } from "node:fs"
 const state = JSON.parse(readFileSync(process.env.JEVVY_SMOKE_STATE, "utf8"))
 const [host, ...args] = process.argv.slice(2)
 appendFileSync(state.calls, JSON.stringify({ host, args }) + "\\n")
+if (args[0] === "--version") {
+  console.log(host === "opencode" ? "opencode v" + state.version : "2.1.296")
+  process.exit(0)
+}
 console.log("Fixture installer: " + host)
 process.exit(state.installExit)
 `
@@ -180,6 +191,8 @@ const planSteps = (scenario: Scenario, endpoint: string): readonly Step[] => {
   if (scenario.key !== undefined) steps.push({ prompt: "Enter the endpoint API key", input: `${scenario.key}\r` })
   steps.push({ prompt: "Save config and install integrations?", input: scenario.cancelPlan ? "n\r" : "y\r" })
 
+  if (scenario.override !== undefined) steps.push({ prompt: "Continue with this OpenCode CLI anyway?", input: scenario.override ? "y\r" : "n\r" })
+
   return steps
 }
 
@@ -195,7 +208,7 @@ const runScenario = Effect.fn("SetupSmoke.scenario")(function*(permissionsRoot: 
   yield* fs.makeDirectory(executables, { recursive: true })
   yield* fs.makeDirectory(paths.dirname(config), { recursive: true })
   yield* fs.writeFileString(calls, "")
-  yield* fs.writeFileString(state, JSON.stringify({ calls, installExit: scenario.installExit ?? 0 }))
+  yield* fs.writeFileString(state, JSON.stringify({ calls, version: scenario.version ?? "2.0.27", installExit: scenario.installExit ?? 0 }))
 
   if (scenario.existing !== undefined) yield* fs.writeFileString(config, scenario.existing)
   const fixture = paths.join(executables, "fake-host.mjs")
@@ -204,6 +217,7 @@ const runScenario = Effect.fn("SetupSmoke.scenario")(function*(permissionsRoot: 
   const windowsFixture = windowsHostFixture(process.execPath)
 
   for (const host of ["opencode", "claude"] as const) {
+    if (host === "opencode" && scenario.missing) continue
     const windows = process.platform === "win32"
     const file = paths.join(executables, windows ? `${host}.cmd` : host)
     yield* fs.writeFileString(file, windows
@@ -221,7 +235,7 @@ const runScenario = Effect.fn("SetupSmoke.scenario")(function*(permissionsRoot: 
     CLAUDE_CONFIG_DIR: paths.join(home, ".claude"), JEVVY_CONFIG: config, JEVVY_SMOKE_STATE: state, NO_COLOR: "1",
   })
 
-  const cancelled = !!(scenario.cancelFirst || scenario.cancelPlan || scenario.eof)
+  const cancelled = !!(scenario.cancelFirst || scenario.cancelPlan || scenario.eof || scenario.override === false)
   const failed = scenario.expectedCode === 1
 
   const ending = Match.value({ cancelled, failed }).pipe(
@@ -233,12 +247,13 @@ const runScenario = Effect.fn("SetupSmoke.scenario")(function*(permissionsRoot: 
   yield* ensure(result.stderr === "", `${scenario.name}: unexpected stderr ${result.stderr}`)
   const rawCalls = yield* fs.readFileString(calls)
   const recorded = yield* Effect.forEach(rawCalls.trim().split("\n").filter(Boolean), (line) => decodeCall(line))
+  const installs = recorded.filter(({ args }) => args[0] !== "--version")
   const written = yield* fs.exists(config)
 
-  if (cancelled) {
+  if (cancelled || scenario.missing && scenario.agents !== "claude") {
     const unchanged = scenario.existing === undefined ? !written : (yield* fs.readFileString(config)) === scenario.existing
-    yield* ensure(unchanged, `${scenario.name}: changed config before approval`)
-    yield* ensure(recorded.length === 0, `${scenario.name}: installed after cancellation`)
+    yield* ensure(unchanged, `${scenario.name}: changed config before approval/preflight`)
+    yield* ensure(installs.length === 0, `${scenario.name}: installed after cancellation or failed preflight`)
   } else {
     yield* ensure(written, `${scenario.name}: did not save config`)
     const document = yield* decodeConfig(yield* fs.readFileString(config))
@@ -248,10 +263,12 @@ const runScenario = Effect.fn("SetupSmoke.scenario")(function*(permissionsRoot: 
     if (scenario.key !== undefined) yield* ensure(!result.output.includes(scenario.key), "setup displayed a credential")
 
     if (process.platform !== "win32") yield* ensure(((yield* fs.stat(config)).mode & 0o777) === 0o600, "setup config is not private")
-    yield* ensure(JSON.stringify(recorded) === JSON.stringify(expectedCommands[scenario.agents]), `${scenario.name}: incorrect installation commands`)
+    yield* ensure(JSON.stringify(installs) === JSON.stringify(expectedCommands[scenario.agents]), `${scenario.name}: incorrect installation commands`)
   }
 
-  if (scenario.agents === "claude") yield* ensure(!recorded.some(({ host }) => host === "opencode"), "Claude-only setup invoked OpenCode")
+  if (scenario.agents === "claude") yield* ensure(!recorded.some(({ host }) => host === "opencode"), "Claude-only setup inspected OpenCode")
+
+  if (scenario.version === "2.0.26") yield* ensure(result.output.includes("opencode plugin add @jevvy/permissions@0.5.1"), "old CLI warning omitted the manual fallback")
 
   if (scenario.installExit) yield* ensure(!result.output.includes("Jevvy Permissions is ready"), "failed installation reported success")
   yield* ensure(result.raw.includes("\u001b[?25h"), `${scenario.name}: did not restore the cursor`)
