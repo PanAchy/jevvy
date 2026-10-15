@@ -39,7 +39,7 @@ describe("Effect-native setup terminal", () => {
     const output = ui.output()
     expect(output).toMatch(/Which harnesses should use Jevvy Permissions\?\n│  OpenCode, Claude Code/)
     expect(output).toMatch(/◼ Claude Code[^\n]*\n│  ↑\/↓ to navigate • Space: select • Enter: confirm/)
-    expect(output).toMatch(/Which System One provider should Jevvy use\?\n│  OpenCode Zen/)
+    expect(output).toMatch(/Which decision provider should Jevvy use\?\n│  OpenCode Zen/)
     expect(output).not.toContain("Inverse Selection")
   }))
 
@@ -67,5 +67,45 @@ describe("Effect-native setup terminal", () => {
     expect(error._tag).toBe("QuitError")
     expect(ui.completed()).toBe(1)
     expect(ui.output()).not.toContain("Review setup")
+  }))
+
+  it.effect("selects OpenAI by typing its name and shows calibration guidance before saving", () => Effect.gen(function*() {
+    const ui = scriptedTerminal([[enter], [...text("OPENAI"), enter], [...text("openai-secret"), enter], [enter]])
+
+    const plan = yield* promptInitPlan("/isolated/jevvy.jsonc").pipe(
+      Effect.provideService(Terminal.Terminal, ui.terminal), Effect.provide(NodeServices.layer),
+    )
+
+    expect(plan?.provider.provider).toBe("openai")
+
+    if (plan?.provider.apiKey === undefined) throw new Error("Expected an OpenAI key")
+
+    expect(Redacted.value(plan.provider.apiKey)).toBe("openai-secret")
+
+    const output = ui.output()
+
+    expect(output).toContain("Type to filter")
+    expect(output).toContain("calibrated for Jev, not this model")
+    expect(output.indexOf("calibrated for Jev")).toBeLessThan(output.indexOf("Save config and install integrations?"))
+    expect(output).not.toContain("openai-secret")
+  }))
+
+  it.effect("selects Microsoft by model name and collects the full endpoint, deployment, and masked Azure key", () => Effect.gen(function*() {
+    const ui = scriptedTerminal([
+      [enter], [...text("decision-1"), enter],
+      [...text("https://foundry.example.com/providers/microsoft/v1/systemone"), enter],
+      [...text("my-deployment"), enter], [...text("azure-secret"), enter], [enter],
+    ])
+
+    const plan = yield* promptInitPlan("/isolated/jevvy.jsonc").pipe(
+      Effect.provideService(Terminal.Terminal, ui.terminal), Effect.provide(NodeServices.layer),
+    )
+
+    expect(plan?.provider).toMatchObject({
+      provider: "microsoft", endpoint: "https://foundry.example.com/providers/microsoft/v1/systemone", model: "my-deployment",
+    })
+    expect(ui.output()).toContain("Azure API key: saved in private config")
+    expect(ui.output()).toContain("calibrated for Jev, not this model")
+    expect(ui.output()).not.toContain("azure-secret")
   }))
 })

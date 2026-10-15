@@ -8,7 +8,7 @@ import * as Controls from "./controls.ts"
 import { parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
 import { DEFAULT_LAYA_ENDPOINT, DEFAULT_LAYA_MODEL } from "../core.ts"
-import { providerDisplayName } from "../providers.ts"
+import { providerDisplayName, providerSetupChoices } from "../providers.ts"
 import type { InitHarness, InitPlan, InitProvider, InitResult } from "./index.ts"
 import { showInitSection } from "./theme.ts"
 
@@ -28,11 +28,14 @@ const LayaPromptConfig = Schema.Struct({
   })),
 })
 
-type LayaPrompts = {
+type ProviderPrompts = {
   readonly text: (options: Controls.TextOptions) => Effect.Effect<string, Terminal.QuitError, Prompt.Environment>
-  readonly select: (options: Controls.SelectOptions<LayaCheckpoint>) => Effect.Effect<LayaCheckpoint, Terminal.QuitError, Prompt.Environment>
   readonly confirm: (options: Controls.ConfirmOptions) => Effect.Effect<boolean, Terminal.QuitError, Prompt.Environment>
   readonly password: (options: Controls.TextOptions) => Effect.Effect<Redacted.Redacted<string>, Terminal.QuitError, Prompt.Environment>
+}
+
+type LayaPrompts = ProviderPrompts & {
+  readonly select: (options: Controls.SelectOptions<LayaCheckpoint>) => Effect.Effect<LayaCheckpoint, Terminal.QuitError, Prompt.Environment>
 }
 
 const layaPrompts: LayaPrompts = Controls
@@ -98,6 +101,20 @@ export const layaEndpointError = (value: string | undefined): string | undefined
     : undefined
 }
 
+export const microsoftEndpointError = (value: string | undefined): string | undefined => {
+  const error = endpointError(value)
+
+  if (error !== undefined) return error
+
+  const endpoint = new URL(value ?? "")
+
+  if (endpoint.protocol !== "https:") return "Use an https:// Foundry endpoint to protect your Azure API key"
+
+  return endpoint.username !== "" || endpoint.password !== ""
+    ? "Use the API key field instead of URL credentials"
+    : undefined
+}
+
 export const layaPromptDefaults = (existing: string | undefined): LayaPromptDefaults => {
   if (existing === undefined) return {}
 
@@ -139,6 +156,24 @@ const promptApiKey = (
   message: string,
   askPassword: LayaPrompts["password"] = Controls.password,
 ) => askPassword({ message, validate: validate(required) })
+
+export const promptMicrosoftProvider = Effect.fn("Init.promptMicrosoftProvider")(function*(
+  prompts: Pick<ProviderPrompts, "text" | "password"> = Controls,
+): Effect.fn.Return<Extract<InitProvider, { provider: "microsoft" }>, Terminal.QuitError, Prompt.Environment> {
+  const endpoint = yield* prompts.text({
+    message: "Foundry inference URL (https://RESOURCE.services.ai.azure.com/providers/microsoft/v1/systemone)",
+    validate: validate(microsoftEndpointError),
+  })
+
+  const model = yield* prompts.text({
+    message: "Microsoft-Decision-1 deployment name",
+    validate: validate(required),
+  })
+
+  const apiKey = yield* promptApiKey("Enter your Azure AI API key", prompts.password)
+
+  return { provider: "microsoft", endpoint: endpoint.trim(), model: model.trim(), apiKey }
+})
 
 export const promptLayaProvider = Effect.fn("Init.promptLayaProvider")(function*(
   prompts: LayaPrompts = layaPrompts,
@@ -193,9 +228,11 @@ const promptProvider = Effect.fn("Init.promptProvider")(function*(
 ): Effect.fn.Return<InitProvider, Terminal.QuitError, Prompt.Environment> {
   if (provider === "laya") return yield* promptLayaProvider(undefined, layaDefaults)
 
+  if (provider === "microsoft") return yield* promptMicrosoftProvider()
+
   if (provider === "custom") {
     const endpoint = yield* Controls.text({
-      message: "System One endpoint (http://127.0.0.1:8080/v1/decisions)",
+      message: "System One endpoint (http://127.0.0.1:8080/v1/systemone)",
       validate: validate(endpointError),
     })
 
@@ -223,6 +260,7 @@ const promptProvider = Effect.fn("Init.promptProvider")(function*(
     typesafe: "TypeSafe API key",
     openrouter: "OpenRouter API key",
     vercel: "Vercel AI Gateway key",
+    openai: "OpenAI API key",
   } as const
 
   const apiKey = yield* promptApiKey(`Enter your ${labels[provider]}`)
@@ -245,7 +283,7 @@ const providerDetails = (provider: InitProvider): string[] => {
     return [`Server: ${displayEndpoint(provider.endpoint ?? DEFAULT_LAYA_ENDPOINT)}`]
   }
 
-  if (provider.provider === "custom") {
+  if (provider.provider === "custom" || provider.provider === "microsoft") {
     return [`Server: ${displayEndpoint(provider.endpoint)}`, `Model: ${provider.model}`]
   }
 
@@ -261,7 +299,9 @@ export const initPlanSummary = (plan: InitPlan, configPath: string): string => [
   `${planProviderLabel(plan.provider)} for ${plan.harnesses.map((harness) => harnessLabels[harness]).join(" + ")}`,
   `Config: ${configPath}`,
   ...providerDetails(plan.provider),
-  ...(plan.provider.apiKey !== undefined ? ["Bearer key: saved in private config"] : []),
+  ...(plan.provider.apiKey !== undefined
+    ? [plan.provider.provider === "microsoft" ? "Azure API key: saved in private config" : "Bearer key: saved in private config"]
+    : []),
 ].join("\n")
 
 export const layaNextSteps = (result: InitResult): string => {
@@ -295,16 +335,9 @@ export const promptInitPlan = Effect.fn("Init.promptPlan")(function*(configPath:
 
   const harnesses = yield* Controls.multiSelect<InitHarness>(harnessPrompt)
 
-  const providerName = yield* Controls.select<ProviderName>({
-    message: "Which System One provider should Jevvy use?",
-    choices: [
-      { value: "zen", title: providerDisplayName("zen") },
-      { value: "typesafe", title: providerDisplayName("typesafe") },
-      { value: "openrouter", title: providerDisplayName("openrouter") },
-      { value: "vercel", title: providerDisplayName("vercel") },
-      { value: "laya", title: providerDisplayName("laya"), description: "your endpoint, own calibrated policy" },
-      { value: "custom", title: providerDisplayName("custom"), description: "any System One-compatible server" },
-    ],
+  const providerName = yield* Controls.searchableSelect<ProviderName>({
+    message: "Which decision provider should Jevvy use?",
+    choices: providerSetupChoices,
   })
 
   const provider = yield* promptProvider(providerName, layaPromptDefaults(existing))
@@ -313,6 +346,10 @@ export const promptInitPlan = Effect.fn("Init.promptPlan")(function*(configPath:
 
   if (provider.provider === "laya") {
     yield* showInitSection("Laya policy", "Laya needs a checkpoint-specific policy; without one, auto-approval stays off.")
+  }
+
+  if (provider.provider === "openai" || provider.provider === "microsoft") {
+    yield* showInitSection("Model calibration", decisionModelCalibrationWarning)
   }
 
   const accepted = yield* Controls.confirm({
@@ -341,6 +378,8 @@ export const confirmInitWarning = Effect.fn("Init.confirmWarning")(function*(mes
 })
 
 export const showInitError = (message: string) => showInitSection("Jevvy Permissions setup did not complete", message)
+
+export const decisionModelCalibrationWarning = "Jevvy's default questions and thresholds are calibrated for Jev, not this model. Calibrate your policy for this model before relying on auto-approval. Set permissions.questions in your global config; the optional calibrate-permissions skill can help."
 
 export const showInitResult = Effect.fn("Init.showResult")(function*(result: InitResult) {
   yield* showInitSection(`Installed Jevvy Permissions in ${result.harnesses.map((harness) => harnessLabels[harness]).join(" + ")}`)

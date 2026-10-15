@@ -34,7 +34,7 @@ export type InitHarness = typeof InitHarness.Type
 
 export type InitProvider =
   | {
-      readonly provider: "zen" | "typesafe" | "openrouter" | "vercel"
+      readonly provider: "zen" | "typesafe" | "openrouter" | "vercel" | "openai"
       readonly apiKey: Redacted.Redacted<string>
     }
   | {
@@ -42,6 +42,12 @@ export type InitProvider =
       readonly endpoint?: string
       readonly model?: string
       readonly apiKey?: Redacted.Redacted<string>
+    }
+  | {
+      readonly provider: "microsoft"
+      readonly endpoint: string
+      readonly model: string
+      readonly apiKey: Redacted.Redacted<string>
     }
   | {
       readonly provider: "custom"
@@ -180,7 +186,7 @@ export class InitPlatform extends Context.Service<InitPlatform, {
 const providerSettings = (provider: InitProvider): Readonly<Record<string, string>> | undefined => {
   const apiKey = provider.apiKey === undefined ? undefined : Redacted.value(provider.apiKey)
 
-  if (provider.provider === "custom") {
+  if (provider.provider === "custom" || provider.provider === "microsoft") {
     return apiKey === undefined
       ? { endpoint: provider.endpoint, model: provider.model }
       : { endpoint: provider.endpoint, model: provider.model, apiKey }

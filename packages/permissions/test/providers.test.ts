@@ -2,20 +2,44 @@ import { Redacted } from "effect"
 import { describe, expect, it } from "vitest"
 import {
   DEFAULT_OPENROUTER_MODEL,
+  DEFAULT_OPENAI_MODEL,
   DEFAULT_LAYA_ENDPOINT,
   DEFAULT_LAYA_MODEL,
   DEFAULT_TYPESAFE_MODEL,
   DEFAULT_VERCEL_MODEL,
   DEFAULT_ZEN_MODEL,
 } from "../src/core.ts"
-import { createConfiguredProvider, providerDisplayName } from "../src/providers.ts"
+import { createConfiguredProvider, providerDisplayName, providerSetupChoices, shippedPolicyProvenance } from "../src/providers.ts"
+import { JevProvider } from "../src/core.ts"
+import * as Schema from "effect/Schema"
+import { readFileSync } from "node:fs"
 
 describe("configured provider creation", () => {
+  it("keeps runtime providers, public schema, and searchable setup choices in sync", () => {
+    const document = JSON.parse(readFileSync(new URL("../../../config.schema.json", import.meta.url), "utf8"))
+    const names = providerSetupChoices.map(({ value }) => value).sort()
+
+    expect(names).toEqual(document.properties.provider.enum.toSorted())
+
+    for (const name of names) {
+      expect(Schema.is(JevProvider)(name)).toBe(true)
+      expect(document.properties.providers.properties[name]).toBeDefined()
+    }
+  })
+
+  it.each(["openai", "microsoft", "custom", "laya"] as const)("does not attribute Jev's shipped calibration to %s", (provider) => {
+    expect(shippedPolicyProvenance(provider)).toBe("shipped-defaults-unverified")
+  })
+
+  it.each(["typesafe", "zen", "openrouter", "vercel"] as const)("preserves Jev calibration labels for %s", (provider) => {
+    expect(shippedPolicyProvenance(provider)).toBe("calibrated-defaults")
+  })
   it.each([
     ["zen", DEFAULT_ZEN_MODEL],
     ["typesafe", DEFAULT_TYPESAFE_MODEL],
     ["openrouter", DEFAULT_OPENROUTER_MODEL],
     ["vercel", DEFAULT_VERCEL_MODEL],
+    ["openai", DEFAULT_OPENAI_MODEL],
   ] as const)("constructs the explicitly selected %s provider", (provider, model) => {
     const selected = createConfiguredProvider({
       provider,
@@ -27,6 +51,20 @@ describe("configured provider creation", () => {
 
   it("does not fall back when the selected provider has no credential", () => {
     expect(createConfiguredProvider({ provider: "typesafe" })).toBeUndefined()
+    expect(createConfiguredProvider({ provider: "openai" })).toBeUndefined()
+    expect(createConfiguredProvider({ provider: "microsoft", endpoint: "https://foundry.example.com/providers/microsoft/v1/systemone", model: "deployment" })).toBeUndefined()
+  })
+
+  it("constructs Microsoft with the configured deployment, not a catalog model ID", () => {
+    const selected = createConfiguredProvider({
+      provider: "microsoft", endpoint: "https://foundry.example.com/providers/microsoft/v1/systemone", model: "deployment",
+      apiKey: Redacted.make("azure-secret"),
+    })
+
+    expect(selected).toMatchObject({ provider: "microsoft", model: "deployment" })
+    expect(selected?.redact("Invalid azure-secret")).toBe("Invalid [redacted]")
+    expect(providerDisplayName("microsoft")).toBe("Microsoft Decision")
+    expect(providerDisplayName("openai")).toBe("OpenAI Decisions")
   })
 
   it("constructs a custom provider without a credential", () => {

@@ -125,10 +125,12 @@ interface Scenario {
   readonly expectedCode?: number
   readonly key?: string
   readonly eof?: boolean
+  readonly searchProvider?: boolean
 }
 
 const cases: readonly Scenario[] = [
   { name: "both agents", agents: "both" },
+  { name: "typed provider search", agents: "claude", searchProvider: true },
   { name: "Claude only without OpenCode", agents: "claude", missing: true },
   { name: "cancel first prompt", agents: "opencode", cancelFirst: true },
   { name: "cancel confirmation", agents: "opencode", cancelPlan: true, existing: '{ "provider": "typesafe" }\n' },
@@ -179,7 +181,9 @@ const planSteps = (scenario: Scenario, endpoint: string): readonly Step[] => {
   const steps: Step[] = [{ prompt: "Which harnesses should use Jevvy Permissions?", input: scenario.cancelFirst ? "\u0003" : agents }]
 
   if (scenario.cancelFirst) return steps
-  steps.push({ prompt: "Which System One provider should Jevvy use?", input: scenario.eof ? "\r" : `${down.repeat(5)}\r` })
+  const providerInput = scenario.eof ? "\r" : scenario.searchProvider ? "custom\r" : `${down.repeat(5)}\r`
+
+  steps.push({ prompt: "Which decision provider should Jevvy use?", input: providerInput })
 
   if (scenario.eof) return [...steps, { prompt: "Enter your OpenCode Zen API key", input: null }]
   steps.push(
