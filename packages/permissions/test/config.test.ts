@@ -2,8 +2,11 @@ import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Redacted } from "effect"
+import * as ConfigProvider from "effect/ConfigProvider"
+import * as Effect from "effect/Effect"
+import * as Redacted from "effect/Redacted"
 import { loadJevvyConfig } from "../src/config.ts"
+import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 
 const customQuestions = {
   harmful: {
@@ -22,7 +25,7 @@ const customPolicyConfig = {
 
 const noEnvironment = ConfigProvider.fromUnknown({})
 
-const load = (path: string, environment = noEnvironment) => loadJevvyConfig(path, environment)
+const load = (path: string, environment = noEnvironment) => loadJevvyConfig(path, environment).pipe(Effect.provide(NodeFileSystem.layer))
 
 const withConfigFile = <A, E, R>(
   raw: string,
