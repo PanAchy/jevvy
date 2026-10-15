@@ -49,6 +49,11 @@
     "vite": "7.3.7",
     "vitest": "5.0.4"
   },
+  "overrides": {
+    "solid-js@1.9.12": {
+      "seroval": "1.6.9"
+    }
+  },
   "engines": {
     "node": ">=22.19.0"
   }
