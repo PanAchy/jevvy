@@ -37,6 +37,8 @@ Node.js 22.19 or newer is required.
 npx @jevvy/permissions init
 ```
 
+Type a provider name to filter the setup choices.
+
 ## Manual setup
 
 ### OpenCode
@@ -80,24 +82,32 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 }
 ```
 
-### Providers
+### API formats and presets
 
-| Provider                          | `provider`   | Credential sources                                            |
-| --------------------------------- | ------------ | ------------------------------------------------------------- |
-| OpenCode Zen                      | `zen`        | `providers.zen.apiKey` or `OPENCODE_API_KEY`                  |
-| TypeSafe AI                       | `typesafe`   | `providers.typesafe.apiKey` or `TYPESAFE_API_KEY`             |
-| OpenRouter                        | `openrouter` | `providers.openrouter.apiKey` or `OPENROUTER_API_KEY`         |
-| Vercel AI Gateway                 | `vercel`     | `providers.vercel.apiKey` or `AI_GATEWAY_API_KEY`             |
-| Laya ([setup guide][laya-guide])  | `laya`       | Optional `providers.laya.apiKey` or `LAYA_API_KEY`            |
-| Custom endpoint                   | `custom`     | Optional `providers.custom.apiKey`                            |
+Presets handle API and authentication differences. Other System One-compatible services can use `custom`.
+
+| API format | Preset | `provider` | Credential sources |
+| ---------- | ------ | ---------- | ------------------ |
+| System One | OpenCode Zen | `zen` | `providers.zen.apiKey` or `OPENCODE_API_KEY` |
+| | TypeSafe AI | `typesafe` | `providers.typesafe.apiKey` or `TYPESAFE_API_KEY` |
+| | OpenRouter | `openrouter` | `providers.openrouter.apiKey` or `OPENROUTER_API_KEY` |
+| | Vercel AI Gateway | `vercel` | `providers.vercel.apiKey` or `AI_GATEWAY_API_KEY` |
+| | Microsoft Decision ([experimental][microsoft-guide]) | `microsoft` | `providers.microsoft.apiKey` or `AZURE_AI_API_KEY` |
+| | Laya ([setup guide][laya-guide]) | `laya` | Optional `providers.laya.apiKey` or `LAYA_API_KEY` |
+| | Custom endpoint | `custom` | Optional `providers.custom.apiKey` |
+| OpenAI Decisions | OpenAI ([setup guide][openai-guide]) | `openai` | `providers.openai.apiKey` or `OPENAI_API_KEY` |
 
 [laya-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/laya.md
+
+[openai-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/openai.md
+
+[microsoft-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/microsoft.md
 
 The plugin uses only the selected provider and never falls back to another one.
 
 ### Custom System One endpoint
 
-Select `custom` to use any HTTP endpoint that accepts the System One request shape and returns typed System One answers:
+Select `custom` to use an HTTP endpoint that accepts the System One request shape and returns typed System One answers, with optional Bearer auth:
 
 ```jsonc
 {
@@ -126,7 +136,7 @@ Jevvy's default approval policy requires all four questions to pass:
 | Untrusted | Does the command execute newly obtained, installed, generated, or concealed code?         | Noul ≤ `0.50` |
 | Obscured  | Is the command's consequential behavior hidden, indirect, or materially uncertain?        | Noul ≤ `0.50` |
 
-The default questions, thresholds, and model identities were calibrated together against [`eval/commands.json`](./eval/commands.json). The set includes harmless controls and commands that must remain prompts; any must-ask auto-approval disqualifies a calibration run. Custom policies are not covered by this evidence.
+The default questions, thresholds, and Jev model identities were calibrated together against [`eval/commands.json`](./eval/commands.json). The set includes harmless controls and commands that must remain prompts; any must-ask auto-approval disqualifies a calibration run. Other models and custom policies are not covered by this evidence; calibrate them before relying on auto-approval.
 
 For providers other than Laya, `permissions.questions` replaces Jevvy's default questions. Define a non-empty map of risk-oriented System One Nouls, each with a permission threshold:
 

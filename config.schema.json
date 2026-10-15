@@ -11,7 +11,7 @@
     },
     "provider": {
       "type": "string",
-      "enum": ["zen", "typesafe", "openrouter", "vercel", "laya", "custom"]
+      "enum": ["zen", "typesafe", "openrouter", "vercel", "openai", "microsoft", "laya", "custom"]
     },
     "providers": {
       "type": "object",
@@ -28,6 +28,12 @@
         },
         "vercel": {
           "$ref": "#/$defs/providerCredential"
+        },
+        "openai": {
+          "$ref": "#/$defs/providerCredential"
+        },
+        "microsoft": {
+          "$ref": "#/$defs/microsoftProvider"
         },
         "laya": {
           "$ref": "#/$defs/layaProvider"
@@ -109,6 +115,16 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": { "provider": { "const": "microsoft" } },
+        "required": ["provider"]
+      },
+      "then": {
+        "required": ["providers"],
+        "properties": { "providers": { "required": ["microsoft"] } }
+      }
     }
   ],
   "$defs": {
@@ -161,6 +177,29 @@
         "apiKey": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "microsoftProvider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "model"],
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://[^/@?#]+(?:/|$)",
+          "description": "Full Foundry inference URL ending in /providers/microsoft/v1/systemone."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Your Microsoft-Decision-1 deployment name, not the catalog model ID."
+        },
+        "apiKey": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Azure AI API key sent in the api-key header. Alternatively set AZURE_AI_API_KEY."
         }
       }
     },
