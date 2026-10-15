@@ -114,7 +114,7 @@ describe("Jevvy initializer", () => {
 
   it("offers OpenCode and Claude Code as selected harness checkboxes", () => {
     expect(harnessPrompt).toEqual({
-      message: "Which harnesses should use Jevvy?",
+      message: "Which harnesses should use Jevvy Permissions?",
       options: [
         { value: "opencode", label: "OpenCode", hint: "permission plugin" },
         { value: "claude", label: "Claude Code", hint: "PermissionRequest hook" },

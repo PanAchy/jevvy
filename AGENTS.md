@@ -2,6 +2,12 @@
 
 Jevvy is a home for Jev-powered coding-agent plugins. `@jevvy/permissions` is currently the only public package. It is an allow-only reviewer for host-provided shell approval requests. It never blocks. The user and host remain the only sources of denial.
 
+## Product language
+
+- Use **Jevvy** for the project or brand, **Jevvy Permissions** for the product, and `@jevvy/permissions` for npm package references and commands.
+- Introduce the product by its full name in consumer docs, setup/help text, and compatibility warnings. Use Jevvy as shorthand after that and in compact indicators. Preserve existing command names, config paths, and internal identifiers.
+- Scope host-version requirements to the affected integration. Claude-only use does not require OpenCode. State the release where a compatibility requirement starts; keep current versions and pinning instructions in consumer docs rather than duplicating them here.
+
 ## Architecture
 
 ```text
@@ -64,7 +70,7 @@ The repository pins the exact Effect version bundled by `@opencode/plugin`. Core
 
 ## Branches and PRs
 
-Nothing is released yet, so work lands as direct local commits until v0. From the first release onward, `main` gets changes only through PRs with green CI. Use `feat/x`, `fix/x`, and `chore/x` branches. Squash-merge one clean commit per PR. Every user-visible change gets a changeset. Release tags are package-qualified, such as `@jevvy/permissions@0.1.0`. Never force-push `main`.
+`main` gets changes only through PRs with green CI. Use `feat/x`, `fix/x`, and `chore/x` branches. Squash-merge one clean commit per PR. Every user-visible change gets a changeset. Release tags are package-qualified, such as `@jevvy/permissions@0.1.0`. Never force-push `main`.
 
 ## Release notes
 

@@ -61,7 +61,7 @@ const harnessLabels = {
 } satisfies Readonly<Record<InitHarness, string>>
 
 export const harnessPrompt = {
-  message: "Which harnesses should use Jevvy?",
+  message: "Which harnesses should use Jevvy Permissions?",
   options: [
     { value: "opencode" as const, label: harnessLabels.opencode, hint: "permission plugin" },
     { value: "claude" as const, label: harnessLabels.claude, hint: "PermissionRequest hook" },
@@ -133,7 +133,7 @@ export const layaPromptDefaults = (existing: string | undefined): LayaPromptDefa
 }
 
 const stop = (): undefined => {
-  cancel("Jevvy setup cancelled")
+  cancel("Jevvy Permissions setup cancelled")
 
   return undefined
 }
@@ -321,7 +321,7 @@ export const opencodeNextSteps = (): string => [
 ].join("\n")
 
 export const promptInitPlan = async (configPath: string, existing?: string): Promise<InitPlan | undefined> => {
-  intro(accent("Set up Jevvy"))
+  intro(accent("Set up Jevvy Permissions"))
 
   const harnesses = await multiselect<InitHarness>({
     ...harnessPrompt,
@@ -362,11 +362,11 @@ export const showInitProgress = (): void => log.step("Saving config and installi
 
 export const showInitError = (message: string): void => {
   log.error(message)
-  outro("Jevvy setup did not complete")
+  outro("Jevvy Permissions setup did not complete")
 }
 
 export const showInitResult = (result: InitResult): void => {
-  log.success(`Installed Jevvy in ${result.harnesses.map((harness) => harnessLabels[harness]).join(" + ")}`)
+  log.success(`Installed Jevvy Permissions in ${result.harnesses.map((harness) => harnessLabels[harness]).join(" + ")}`)
 
   if (result.harnesses.includes("opencode")) log.message(opencodeNextSteps())
 
@@ -377,5 +377,5 @@ export const showInitResult = (result: InitResult): void => {
     return
   }
 
-  outro(`Jevvy is ready for ${result.harnesses.map((harness) => harnessLabels[harness]).join(", ")}`)
+  outro(`Jevvy Permissions is ready for ${result.harnesses.map((harness) => harnessLabels[harness]).join(", ")}`)
 }
