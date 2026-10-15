@@ -8,6 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
+import { runInitSmoke } from "./init-smoke.mjs"
 
 const repo = dirname(dirname(fileURLToPath(import.meta.url)))
 
@@ -231,6 +232,8 @@ try {
 
   ensure(setupHelp.includes("init"), "installed setup command is missing its init workflow")
   ensure(setupHelp.includes("Jevvy Permissions"), "installed setup command does not identify the permissions product")
+
+  await runInitSmoke(permissionsRoot, temporary)
 
   const calibrationConfig = join(consumer, "jevvy.jsonc")
 

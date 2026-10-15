@@ -1,149 +1,129 @@
-import { CANCEL_SYMBOL } from "@clack/prompts"
-import { describe, expect, it, vi } from "vitest"
-import { Redacted } from "effect"
+import { describe, expect, it, vi } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as Effect from "effect/Effect"
+import * as Redacted from "effect/Redacted"
+import * as Terminal from "effect/Terminal"
+import type * as Prompt from "effect/cli/Prompt"
 import { endpointError, layaEndpointError, layaPromptDefaults, promptLayaProvider } from "../src/init/prompt.ts"
 
 describe("Laya init prompts", () => {
-  it("offers local defaults without asking for an API key", async () => {
+  it.effect("offers local defaults without asking for an API key", () => Effect.gen(function*() {
     const prompts = {
-      text: vi.fn(async () => "http://127.0.0.1:8000/v1/systemone"),
-      select: vi.fn(async () => "english" as const),
-      confirm: vi.fn(async () => false),
-      password: vi.fn(async () => "unused"),
+      text: vi.fn(() => Effect.succeed("http://127.0.0.1:8000/v1/systemone")),
+      select: vi.fn(() => Effect.succeed("english" as const)),
+      confirm: vi.fn(() => Effect.succeed(false)),
+      password: vi.fn(() => Effect.succeed(Redacted.make("unused"))),
     }
 
-    const provider = await promptLayaProvider(prompts)
+    const provider = yield* promptLayaProvider(prompts).pipe(Effect.provide(NodeServices.layer))
 
     expect(prompts.text).toHaveBeenCalledWith(expect.objectContaining({
-      message: expect.stringContaining("Laya System One URL"),
-      initialValue: "http://127.0.0.1:8000/v1/systemone",
+      message: expect.stringContaining("Laya System One URL"), default: "http://127.0.0.1:8000/v1/systemone",
     }))
     expect(prompts.select).toHaveBeenCalledWith(expect.objectContaining({
-      message: expect.stringContaining("Laya checkpoint"),
-      initialValue: "english",
+      message: "Laya checkpoint", choices: expect.arrayContaining([{ value: "english", title: "English" }]),
     }))
-    expect(prompts.confirm).toHaveBeenCalledWith(expect.objectContaining({
-      message: expect.stringContaining("Does your Laya server require a Bearer API key?"),
-      initialValue: false,
-    }))
+    expect(prompts.confirm).toHaveBeenCalledWith(expect.objectContaining({ initial: false }))
     expect(prompts.password).not.toHaveBeenCalled()
     expect(provider).toEqual({ provider: "laya" })
-  })
+  }))
 
-  it("keeps server, checkpoint, and optional Bearer key overrides", async () => {
+  it.effect("keeps server, checkpoint, and optional Bearer key overrides", () => Effect.gen(function*() {
     const prompts = {
-      text: vi.fn(async () => "http://127.0.0.1:18871/v1/systemone"),
-      select: vi.fn(async () => "multilingual" as const),
-      confirm: vi.fn(async () => true),
-      password: vi.fn(async () => "local-secret"),
+      text: vi.fn(() => Effect.succeed("http://127.0.0.1:18871/v1/systemone")),
+      select: vi.fn(() => Effect.succeed("multilingual" as const)),
+      confirm: vi.fn(() => Effect.succeed(true)),
+      password: vi.fn(() => Effect.succeed(Redacted.make("local-secret"))),
     }
 
-    const provider = await promptLayaProvider(prompts)
+    const provider = yield* promptLayaProvider(prompts).pipe(Effect.provide(NodeServices.layer))
 
-    expect(provider).toMatchObject({
-      provider: "laya",
-      endpoint: "http://127.0.0.1:18871/v1/systemone",
-      model: "multilingual",
-    })
+    expect(provider).toMatchObject({ provider: "laya", endpoint: "http://127.0.0.1:18871/v1/systemone", model: "multilingual" })
 
-    if (provider?.apiKey === undefined) throw new Error("Expected a Laya key")
-
+    if (provider.apiKey === undefined) throw new Error("Expected a Laya key")
     expect(Redacted.value(provider.apiKey)).toBe("local-secret")
-    expect(prompts.password).toHaveBeenCalledWith(expect.objectContaining({
-      message: expect.stringContaining("Enter the Laya API key"),
-    }))
-  })
+    expect(JSON.stringify(provider)).not.toContain("local-secret")
+    expect(prompts.password).toHaveBeenCalledWith(expect.objectContaining({ message: "Enter the Laya API key" }))
+  }))
 
-  it("prefills saved non-default Laya settings without exposing the old key", async () => {
+  it.effect("prefills saved settings without exposing the old key and puts the saved checkpoint first", () => Effect.gen(function*() {
     const defaults = layaPromptDefaults(`{
       "provider": "openrouter",
-      "providers": {
-        "laya": {
-          "endpoint": "https://laya.example.com/v1/systemone",
-          "model": "typed-decisions",
-          "apiKey": "old-secret",
-        },
-      },
+      "providers": { "laya": {
+        "endpoint": "https://laya.example.com/v1/systemone",
+        "model": "typed-decisions", "apiKey": "old-secret",
+      } },
     }`)
 
     const prompts = {
-      text: vi.fn(async () => "https://laya.example.com/v1/systemone"),
-      select: vi.fn(async () => "typed-decisions" as const),
-      confirm: vi.fn(async () => true),
-      password: vi.fn(async () => "new-secret"),
+      text: vi.fn(() => Effect.succeed("https://laya.example.com/v1/systemone")),
+      select: vi.fn((_options: Prompt.SelectOptions<"english" | "multilingual" | "typed-decisions">) => Effect.succeed("typed-decisions" as const)),
+      confirm: vi.fn(() => Effect.succeed(true)),
+      password: vi.fn(() => Effect.succeed(Redacted.make("new-secret"))),
     }
 
-    expect(defaults).toEqual({
-      endpoint: "https://laya.example.com/v1/systemone",
-      model: "typed-decisions",
-      hasApiKey: true,
-    })
+    expect(defaults).toEqual({ endpoint: "https://laya.example.com/v1/systemone", model: "typed-decisions", hasApiKey: true })
     expect(JSON.stringify(defaults)).not.toContain("old-secret")
-    expect(await promptLayaProvider(prompts, defaults)).toMatchObject({
-      provider: "laya",
-      endpoint: "https://laya.example.com/v1/systemone",
-      model: "typed-decisions",
+    expect(yield* promptLayaProvider(prompts, defaults).pipe(Effect.provide(NodeServices.layer))).toMatchObject({
+      provider: "laya", endpoint: "https://laya.example.com/v1/systemone", model: "typed-decisions",
     })
-    expect(prompts.text).toHaveBeenCalledWith(expect.objectContaining({
-      initialValue: "https://laya.example.com/v1/systemone",
-    }))
-    expect(prompts.select).toHaveBeenCalledWith(expect.objectContaining({ initialValue: "typed-decisions" }))
-    expect(prompts.confirm).toHaveBeenCalledWith(expect.objectContaining({ initialValue: true }))
+    expect(prompts.text).toHaveBeenCalledWith(expect.objectContaining({ default: "https://laya.example.com/v1/systemone" }))
+    const choices = prompts.select.mock.calls[0]?.[0].choices
+    expect(choices?.[0]?.value).toBe("typed-decisions")
+    expect(choices).toHaveLength(3)
+    expect(prompts.confirm).toHaveBeenCalledWith(expect.objectContaining({ initial: true }))
     expect(prompts.password).toHaveBeenCalledOnce()
-  })
+  }))
 
   it.each([
     ["not JSONC", {}],
     ['{ "provider": "laya" }', {}],
     [JSON.stringify({ providers: { laya: { endpoint: "file:///tmp/laya", apiKey: "" } } }), {
-      endpoint: undefined,
-      model: undefined,
-      hasApiKey: false,
+      endpoint: undefined, model: undefined, hasApiKey: false,
     }],
     [JSON.stringify({ providers: { laya: { model: "unknown" } } }), {}],
   ])("does not prefill invalid or absent Laya settings", (raw, expected) => {
     expect(layaPromptDefaults(raw)).toEqual(expected)
   })
 
-  it("does not display private URL parameters when prefilling an existing Laya server", async () => {
+  it.effect("does not display private URL parameters when prefilling an existing server", () => Effect.gen(function*() {
     const defaults = layaPromptDefaults(JSON.stringify({
       providers: { laya: { endpoint: "https://laya.example.com/v1/systemone?token=private-key" } },
     }))
 
     const prompts = {
-      text: vi.fn(async () => "http://127.0.0.1:8000/v1/systemone"),
-      select: vi.fn(async () => "english" as const),
-      confirm: vi.fn(async () => false),
-      password: vi.fn(async () => "unused"),
+      text: vi.fn(() => Effect.succeed("http://127.0.0.1:8000/v1/systemone")),
+      select: vi.fn(() => Effect.succeed("english" as const)),
+      confirm: vi.fn(() => Effect.succeed(false)),
+      password: vi.fn(() => Effect.succeed(Redacted.make("unused"))),
     }
 
     expect(defaults).toMatchObject({ urlNeedsReentry: true, endpoint: undefined })
     expect(JSON.stringify(defaults)).not.toContain("private-key")
-    await promptLayaProvider(prompts, defaults)
+    yield* promptLayaProvider(prompts, defaults).pipe(Effect.provide(NodeServices.layer))
     expect(prompts.text).toHaveBeenCalledWith(expect.objectContaining({
-      message: expect.stringContaining("re-enter URL with private parameters"),
-      initialValue: "http://127.0.0.1:8000/v1/systemone",
+      message: expect.stringContaining("re-enter URL with private parameters"), default: "http://127.0.0.1:8000/v1/systemone",
     }))
-  })
+  }))
 
-  it.each(["text", "select", "confirm", "password"] as const)("stops after cancelling the %s prompt", async (stage) => {
-    const prompts = {
-      text: vi.fn(async (): Promise<string | typeof CANCEL_SYMBOL> => "http://127.0.0.1:8000/v1/systemone"),
-      select: vi.fn(async (): Promise<"english" | typeof CANCEL_SYMBOL> => "english"),
-      confirm: vi.fn(async (): Promise<boolean | typeof CANCEL_SYMBOL> => true),
-      password: vi.fn(async (): Promise<string | typeof CANCEL_SYMBOL> => "local-secret"),
-    }
+  for (const stage of ["text", "select", "confirm", "password"] as const) {
+    it.effect(`stops after cancelling the ${stage} prompt`, () => Effect.gen(function*() {
+      const prompts = {
+        text: vi.fn((): Effect.Effect<string, Terminal.QuitError> => Effect.succeed("http://127.0.0.1:8000/v1/systemone")),
+        select: vi.fn((): Effect.Effect<"english", Terminal.QuitError> => Effect.succeed("english")),
+        confirm: vi.fn((): Effect.Effect<boolean, Terminal.QuitError> => Effect.succeed(true)),
+        password: vi.fn((): Effect.Effect<Redacted.Redacted<string>, Terminal.QuitError> => Effect.succeed(Redacted.make("local-secret"))),
+      }
 
-    const stages = ["text", "select", "confirm", "password"] as const
+      const stages = ["text", "select", "confirm", "password"] as const
+      prompts[stage].mockReturnValueOnce(Effect.fail(new Terminal.QuitError()))
+      const error = yield* promptLayaProvider(prompts).pipe(Effect.provide(NodeServices.layer), Effect.flip)
 
-    prompts[stage].mockResolvedValueOnce(CANCEL_SYMBOL)
+      expect(error._tag).toBe("QuitError")
 
-    expect(await promptLayaProvider(prompts)).toBeUndefined()
-
-    for (const later of stages.slice(stages.indexOf(stage) + 1)) {
-      expect(prompts[later]).not.toHaveBeenCalled()
-    }
-  })
+      for (const later of stages.slice(stages.indexOf(stage) + 1)) expect(prompts[later]).not.toHaveBeenCalled()
+    }))
+  }
 
   it.each([
     ["", "This value is required"],
@@ -156,15 +136,11 @@ describe("Laya init prompts", () => {
 
   it("keeps custom URL validation compatible while rejecting URL credentials for Laya", () => {
     const endpoint = "https://name:secret@example.com/v1/systemone"
-
     expect(endpointError(endpoint)).toBeUndefined()
     expect(layaEndpointError(endpoint)).toBe("Use a Bearer API key instead of URL credentials")
   })
 
-  it.each(["http://127.0.0.1:8000/v1/systemone", "https://example.com/v1/systemone"])(
-    "accepts HTTP endpoint %s",
-    (endpoint) => {
-      expect(endpointError(endpoint)).toBeUndefined()
-    },
-  )
+  it.each(["http://127.0.0.1:8000/v1/systemone", "https://example.com/v1/systemone"])("accepts HTTP endpoint %s", (endpoint) => {
+    expect(endpointError(endpoint)).toBeUndefined()
+  })
 })
