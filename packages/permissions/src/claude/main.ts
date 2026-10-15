@@ -1,12 +1,11 @@
 #!/usr/bin/env node
 
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
-import * as NodePath from "@effect/platform-node/NodePath"
+import { NodeServices } from "@effect/platform-node"
 import { createClaudeHookHandler, loadClaudeSetup } from "./hook.ts"
 import { globalJevvyConfigPath } from "../config.ts"
 import { createReviewControl } from "../review-control.ts"
+import { loadAskRules } from "./ask-rules.ts"
 
 const readStdin = async (): Promise<string> => {
   process.stdin.setEncoding("utf8")
@@ -20,9 +19,14 @@ const readStdin = async (): Promise<string> => {
 
 const run = async (): Promise<void> => {
   try {
-    const control = await Effect.runPromise(createReviewControl(globalJevvyConfigPath()).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodePath.layer))))
-    const handle = createClaudeHookHandler(() => loadClaudeSetup(), undefined, control)
-    const output = await Effect.runPromise(handle(await readStdin()).pipe(Effect.provide(NodeFileSystem.layer)))
+    const raw = await readStdin()
+
+    const output = await Effect.runPromise(Effect.gen(function*() {
+      const control = yield* createReviewControl(globalJevvyConfigPath())
+      const handle = createClaudeHookHandler(() => loadClaudeSetup(), loadAskRules, control)
+
+      return yield* handle(raw)
+    }).pipe(Effect.provide(NodeServices.layer)))
 
     if (output !== undefined) process.stdout.write(JSON.stringify(output))
   } catch {
