@@ -83,7 +83,7 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 | Setting | Default | Description |
 | ------- | ------- | ----------- |
 | `provider` | Required | Provider to use; see the table below. |
-| `permissions.timeoutMs` | `5000` | Positive, finite milliseconds for both harnesses. Host deadlines may end reviews sooner. Timeout leaves host permission handling unchanged. |
+| `permissions.timeoutMs` | `5000` | Timeout for model provider in ms. |
 
 ### Providers
 
