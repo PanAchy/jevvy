@@ -14,7 +14,8 @@ import {
   JevProvider,
 } from "./core.ts"
 import type { JevClient, JevProvider as JevProviderType } from "./core.ts"
-import { Redacted, Schema } from "effect"
+import * as Redacted from "effect/Redacted"
+import * as Schema from "effect/Schema"
 
 export const BuiltInProvider = Schema.Literals(["zen", "typesafe", "openrouter", "vercel", "laya"])
 
@@ -23,6 +24,7 @@ export type BuiltInProvider = Schema.Schema.Type<typeof BuiltInProvider>
 export type ProviderSelection =
   | {
       readonly provider: Exclude<BuiltInProvider, "laya">
+      readonly model?: string
       readonly apiKey?: Redacted.Redacted<string>
     }
   | {
@@ -42,6 +44,7 @@ interface ProviderDefinition {
   readonly displayName: string
   readonly apiKeyEnvironment: string
   readonly model: string
+  readonly calibratedModel?: string
   readonly createClient: (apiKey: string) => JevClient
 }
 
@@ -50,24 +53,28 @@ const providerDefinitions = {
     displayName: "OpenCode Zen",
     apiKeyEnvironment: "OPENCODE_API_KEY",
     model: DEFAULT_ZEN_MODEL,
+    calibratedModel: "jev-1.13-free",
     createClient: createZenClient,
   },
   typesafe: {
     displayName: "TypeSafe AI",
     apiKeyEnvironment: "TYPESAFE_API_KEY",
     model: DEFAULT_TYPESAFE_MODEL,
+    calibratedModel: DEFAULT_TYPESAFE_MODEL,
     createClient: createTypeSafeClient,
   },
   openrouter: {
     displayName: "OpenRouter",
     apiKeyEnvironment: "OPENROUTER_API_KEY",
     model: DEFAULT_OPENROUTER_MODEL,
+    calibratedModel: DEFAULT_OPENROUTER_MODEL,
     createClient: createOpenRouterClient,
   },
   vercel: {
     displayName: "Vercel AI Gateway",
     apiKeyEnvironment: "AI_GATEWAY_API_KEY",
     model: DEFAULT_VERCEL_MODEL,
+    calibratedModel: DEFAULT_VERCEL_MODEL,
     createClient: createVercelClient,
   },
   laya: {
@@ -91,19 +98,25 @@ export interface SelectedProvider {
   readonly redact: (text: string) => string
 }
 
+export const shippedPolicyProvenance = ({ provider, model }: Pick<SelectedProvider, "provider" | "model">): "calibrated-defaults" | "shipped-defaults-unverified" => {
+  if (provider === "custom" || provider === "laya") return "shipped-defaults-unverified"
+
+  return model === providerDefinitions[provider].calibratedModel ? "calibrated-defaults" : "shipped-defaults-unverified"
+}
+
 const redactWith = (apiKey: string | undefined) =>
   (text: string): string => apiKey === undefined || apiKey.length === 0
     ? text
     : text.replaceAll(apiKey, "[redacted]")
 
 export const createBuiltInProvider = (
-  provider: BuiltInProvider,
+  provider: Exclude<BuiltInProvider, "laya">,
   apiKey: string,
-  client: JevClient = providerDefinitions[provider].createClient(apiKey),
+  model: string = providerDefinitions[provider].model,
 ): SelectedProvider => ({
   provider,
-  model: providerDefinitions[provider].model,
-  client,
+  model,
+  client: providerDefinitions[provider].createClient(apiKey, model),
   redact: redactWith(apiKey),
 })
 
@@ -144,7 +157,7 @@ export const createConfiguredProvider = (
 
   return apiKey === undefined
     ? undefined
-    : createBuiltInProvider(selection.provider, apiKey)
+    : createBuiltInProvider(selection.provider, apiKey, selection.model)
 }
 
 export { JevProvider }

@@ -24,6 +24,17 @@ import {
 } from "../src/init/prompt.ts"
 
 describe("Jevvy initializer", () => {
+  it.effect.each(["zen", "typesafe", "openrouter", "vercel"] as const)("preserves %s model when rotating keys and switching away and back", (provider) => Effect.gen(function*() {
+    for (const apiKey of [undefined, "old-key"]) {
+      const original = JSON.stringify({ provider, providers: { [provider]: { model: "jev-1.13", apiKey } } })
+      const rotated = yield* renderJevvyConfig(original, { provider, apiKey: Redacted.make("new-key") })
+      expect(parse(rotated).providers[provider]).toEqual({ model: "jev-1.13", apiKey: "new-key" })
+      const away = yield* renderJevvyConfig(rotated, { provider: "custom", endpoint: "http://localhost:8080", model: "other" })
+      const back = yield* renderJevvyConfig(away, { provider, apiKey: Redacted.make("next-key") })
+      expect(parse(back).providers).toEqual({ [provider]: { model: "jev-1.13", apiKey: "next-key" }, custom: { endpoint: "http://localhost:8080", model: "other" } })
+    }
+  }))
+
   it("tells OpenCode users how to opt shell requests into review without changing their policy", () => {
     expect(opencodeNextSteps()).toContain('{ "action": "shell", "resource": "*", "effect": "ask" }')
     expect(opencodeNextSteps()).toContain("before specific shell rules")

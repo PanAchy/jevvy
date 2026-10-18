@@ -47,7 +47,7 @@ describe("Zen client", () => {
 
   it.effect("preserves the default model and complete shell command with bearer authentication", () => Effect.gen(function*() {
     const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
-      model: "jev-1.13-free",
+      model: "jev-1.13",
       answers: { routine: { type: "noul", noul: 0.9 } },
     }))
 
@@ -72,7 +72,7 @@ describe("Zen client", () => {
     if (!(init?.body instanceof Uint8Array)) return
 
     expect(JSON.parse(new TextDecoder().decode(init.body))).toEqual({
-      model: "jev-1.13-free",
+      model: "jev-1.13",
       state: { action: "shell", resource: command },
       questions: { routine: { type: "noul", instructions: "Is this routine?" } },
     })

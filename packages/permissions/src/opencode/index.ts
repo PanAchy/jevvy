@@ -6,7 +6,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { globalJevvyConfigPath, loadJevvyConfig } from "../config.ts"
 import { createPermissionReviewer } from "../engine.ts"
-import { createConfiguredProvider } from "../providers.ts"
+import { createConfiguredProvider, shippedPolicyProvenance } from "../providers.ts"
 import { createEvaluate } from "./evaluate.ts"
 import { createCommandCapture } from "./command-capture.ts"
 import { hasExplicitAsk } from "./ask-rule.ts"
@@ -101,7 +101,7 @@ export default Plugin.define({
             ...session.permissions ?? [],
           ]),
         }
-      }).pipe(Effect.catch(() => Effect.succeed(undefined))),
+      }).pipe(Effect.orElseSucceed(() => undefined)),
       report: (entry) => {
         if (entry.failure !== undefined) {
           console.warn("[jevvy] provider failure, OpenCode's remaining permission flow is unchanged", entry)
@@ -121,9 +121,7 @@ export default Plugin.define({
         model: selected.model,
         questions: permissionConfig.kind === "custom-policy"
           ? "custom"
-          : selected.provider === "custom"
-          ? "shipped-defaults-unverified"
-          : "calibrated-defaults",
+          : shippedPolicyProvenance(selected),
         autoApproval: "enabled",
       })
     })

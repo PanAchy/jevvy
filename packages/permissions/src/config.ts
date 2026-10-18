@@ -16,8 +16,9 @@ import { globalJevvyConfigPath } from "./config-path.ts"
 
 export { globalJevvyConfigPath } from "./config-path.ts"
 
-const ProviderCredentialSchema = Schema.Struct({
-  apiKey: Schema.NonEmptyString,
+const SystemOnePresetSettings = Schema.Struct({
+  apiKey: Schema.optionalKey(Schema.NonEmptyString),
+  model: Schema.optionalKey(Schema.NonEmptyString),
 })
 
 const CustomProviderSchema = Schema.Struct({
@@ -44,10 +45,10 @@ const JevvyConfigSchema = Schema.Struct({
   $schema: Schema.optionalKey(Schema.String),
   provider: JevProvider,
   providers: Schema.optionalKey(Schema.Struct({
-    zen: Schema.optionalKey(ProviderCredentialSchema),
-    typesafe: Schema.optionalKey(ProviderCredentialSchema),
-    openrouter: Schema.optionalKey(ProviderCredentialSchema),
-    vercel: Schema.optionalKey(ProviderCredentialSchema),
+    zen: Schema.optionalKey(SystemOnePresetSettings),
+    typesafe: Schema.optionalKey(SystemOnePresetSettings),
+    openrouter: Schema.optionalKey(SystemOnePresetSettings),
+    vercel: Schema.optionalKey(SystemOnePresetSettings),
     laya: Schema.optionalKey(LayaProviderSchema),
     custom: Schema.optionalKey(CustomProviderSchema),
   })),
@@ -87,10 +88,10 @@ const EnvironmentApiKeys = Config.all({
 type EnvironmentApiKeys = Config.Success<typeof EnvironmentApiKeys>
 
 const hasCredentials = (document: ConfigDocument): boolean =>
-  document.providers?.zen !== undefined ||
-  document.providers?.typesafe !== undefined ||
-  document.providers?.openrouter !== undefined ||
-  document.providers?.vercel !== undefined ||
+  document.providers?.zen?.apiKey !== undefined ||
+  document.providers?.typesafe?.apiKey !== undefined ||
+  document.providers?.openrouter?.apiKey !== undefined ||
+  document.providers?.vercel?.apiKey !== undefined ||
   document.providers?.laya?.apiKey !== undefined ||
   document.providers?.custom?.apiKey !== undefined
 
@@ -186,12 +187,12 @@ const providerSelection = (
     ? environmentApiKey(document.provider, environment)
     : Redacted.make(fileApiKey)
 
-  return Effect.succeed({ provider: document.provider, apiKey })
+  return Effect.succeed({ provider: document.provider, apiKey, model: document.providers?.[document.provider]?.model })
 }
 
 const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: ConfigProvider.ConfigProvider) {
   const document = yield* readDocument(path).pipe(
-    Effect.map(Option.some),
+    Effect.asSome,
     Effect.catchTag("ConfigMissing", () => Effect.succeed(Option.none<ConfigDocument>())),
   )
 

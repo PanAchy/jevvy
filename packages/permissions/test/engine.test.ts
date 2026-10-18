@@ -54,7 +54,7 @@ describe("permission reviewer", () => {
       if (!(init?.body instanceof Uint8Array)) continue
 
       expect(JSON.parse(new TextDecoder().decode(init.body))).toMatchObject({
-        model: "jev-1.13-free",
+        model: "jev-1.13",
         state: { action: "shell", resource: command },
       })
     }

@@ -7,7 +7,7 @@ import type * as Prompt from "effect/cli/Prompt"
 import * as Controls from "./controls.ts"
 import { parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
-import { DEFAULT_LAYA_ENDPOINT, DEFAULT_LAYA_MODEL } from "../core.ts"
+import { DEFAULT_LAYA_ENDPOINT, DEFAULT_LAYA_MODEL, DEFAULT_ZEN_MODEL } from "../core.ts"
 import { providerDisplayName } from "../providers.ts"
 import type { InitHarness, InitPlan, InitProvider, InitResult } from "./index.ts"
 import { showInitSection } from "./theme.ts"
@@ -298,7 +298,7 @@ export const promptInitPlan = Effect.fn("Init.promptPlan")(function*(configPath:
   const providerName = yield* Controls.select<ProviderName>({
     message: "Which System One provider should Jevvy use?",
     choices: [
-      { value: "zen", title: providerDisplayName("zen") },
+      { value: "zen", title: providerDisplayName("zen"), description: `paid ${DEFAULT_ZEN_MODEL} default; model override in jevvy.jsonc` },
       { value: "typesafe", title: providerDisplayName("typesafe") },
       { value: "openrouter", title: providerDisplayName("openrouter") },
       { value: "vercel", title: providerDisplayName("vercel") },

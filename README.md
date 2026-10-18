@@ -95,6 +95,15 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 
 The plugin uses only the selected provider and never falls back to another one.
 
+| Model configuration | Behavior |
+| ------------------- | -------- |
+| `providers.<provider>.model` | Optional nonempty string for `zen`, `typesafe`, `openrouter`, and `vercel`, sent exactly as configured. Omit to use the default. |
+| Zen default | **Paid** `jev-1.13`. Set `providers.zen.model` to `"jev-1.13-free"` for the limited-time free route. |
+| Credentials | Model-only settings use the environment key above. A file key takes precedence. |
+| Calibration attribution | Zen's exact legacy free route and other providers' exact existing defaults retain prior attribution. Paid Zen and other overrides are `shipped-defaults-unverified`; approval behavior stays unchanged. |
+| Unsupported model or provider failure | Abstains without fallback, leaving host permission handling unchanged. |
+| Setup | Preserves configured models when updating credentials or switching providers. |
+
 ### Custom System One endpoint
 
 Select `custom` to use any HTTP endpoint that accepts the System One request shape and returns typed System One answers:
@@ -126,7 +135,7 @@ Jevvy's default approval policy requires all four questions to pass:
 | Untrusted | Does the command execute newly obtained, installed, generated, or concealed code?         | Noul ≤ `0.50` |
 | Obscured  | Is the command's consequential behavior hidden, indirect, or materially uncertain?        | Noul ≤ `0.50` |
 
-The default questions, thresholds, and model identities were calibrated together against [`eval/commands.json`](./eval/commands.json). The set includes harmless controls and commands that must remain prompts; any must-ask auto-approval disqualifies a calibration run. Custom policies are not covered by this evidence.
+The shipped questions, thresholds, and previously calibrated model routes were tested together against [`eval/commands.json`](./eval/commands.json). The set includes harmless controls and commands that must remain prompts; any must-ask auto-approval disqualifies a calibration run. Paid Zen, other model overrides, and custom policies are not covered by this evidence.
 
 For providers other than Laya, `permissions.questions` replaces Jevvy's default questions. Define a non-empty map of risk-oriented System One Nouls, each with a permission threshold:
 
