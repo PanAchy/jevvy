@@ -28,5 +28,5 @@ export const createZenClient = (
   provider: "zen",
   url: ZEN_SYSTEMONE_URL,
   model,
-  headers: { "x-api-key": apiKey },
+  headers: { Authorization: `Bearer ${apiKey}` },
 })
