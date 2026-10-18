@@ -41,6 +41,12 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "timeoutMs": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 5000,
+          "description": "Jevvy review timeout in milliseconds. Host deadlines may end the request sooner."
+        },
         "opencode": {
           "$ref": "#/$defs/harnessReview"
         },

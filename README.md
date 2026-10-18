@@ -117,6 +117,8 @@ Custom endpoints use Jevvy's default approval policy unless you replace it. Its 
 
 ### Approval policy
 
+Set `permissions.timeoutMs` in your global `jevvy.jsonc` to change Jevvy Permissions' review budget for both OpenCode and Claude Code, for example `"permissions": { "timeoutMs": 15000 }`. It accepts positive, finite milliseconds and defaults to `5000`. Host deadlines may still end the request sooner. A timeout leaves the host's remaining permission flow unchanged.
+
 Jevvy's default approval policy requires all four questions to pass:
 
 | Question  | What it checks                                                                            | Pass condition |
