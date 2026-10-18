@@ -66,7 +66,10 @@ const claudeReview = Effect.fn("Test.claudeReview")(function*() {
   return output !== undefined
 })
 
-describe.each(["opencode", "claude"])("%s configured timeout", (harness) => {
+describe.each([
+  { harness: "opencode", provider: "custom" }, { harness: "claude", provider: "custom" },
+  { harness: "opencode", provider: "zen" }, { harness: "claude", provider: "zen" },
+])("$harness configured timeout with $provider", ({ harness, provider }) => {
   it.effect.each([
     { kind: "shipped-policy", timeoutMs: undefined }, { kind: "shipped-policy", timeoutMs: 12_000 },
     { kind: "custom-policy", timeoutMs: undefined }, { kind: "custom-policy", timeoutMs: 12_000 },
@@ -82,7 +85,9 @@ describe.each(["opencode", "claude"])("%s configured timeout", (harness) => {
       if (kind === "custom-policy") permissions.questions = questions
 
       yield* Effect.promise(() => writeFile(path, JSON.stringify({
-        provider: "custom", providers: { custom: { endpoint: "http://unused.invalid/v1/decisions", model: "fake" } }, permissions,
+        provider, providers: provider === "custom"
+          ? { custom: { endpoint: "http://unused.invalid/v1/decisions", model: "fake" } }
+          : { zen: { model: "jev-1.13-free", apiKey: "test-key" } }, permissions,
       })))
       vi.stubEnv("JEVVY_CONFIG", path)
 
@@ -111,6 +116,7 @@ describe.each(["opencode", "claude"])("%s configured timeout", (harness) => {
       )
 
       const request = yield* Deferred.await(entered)
+      expect(request.model).toBe(provider === "custom" ? "fake" : "jev-1.13-free")
 
       yield* TestClock.adjust(timeoutMs === undefined ? "5 seconds" : "6 seconds")
       finish()

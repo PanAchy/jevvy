@@ -300,6 +300,8 @@ export const renderJevvyConfig = Effect.fn("Init.renderJevvyConfig")(function*(
     for (const field of ["endpoint", "model", "apiKey"] as const) {
       updated = updateJsonc(updated, ["providers", "laya", field], settings?.[field])
     }
+  } else if (provider.provider === "zen" || provider.provider === "typesafe" || provider.provider === "openrouter" || provider.provider === "vercel") {
+    updated = updateJsonc(updated, ["providers", provider.provider, "apiKey"], settings?.apiKey)
   } else {
     updated = updateJsonc(updated, ["providers", provider.provider], provider.provider === "laya" ? settings ?? {} : settings)
   }

@@ -18,16 +18,16 @@
       "additionalProperties": false,
       "properties": {
         "zen": {
-          "$ref": "#/$defs/providerCredential"
+          "$ref": "#/$defs/systemOnePresetSettings"
         },
         "typesafe": {
-          "$ref": "#/$defs/providerCredential"
+          "$ref": "#/$defs/systemOnePresetSettings"
         },
         "openrouter": {
-          "$ref": "#/$defs/providerCredential"
+          "$ref": "#/$defs/systemOnePresetSettings"
         },
         "vercel": {
-          "$ref": "#/$defs/providerCredential"
+          "$ref": "#/$defs/systemOnePresetSettings"
         },
         "laya": {
           "$ref": "#/$defs/layaProvider"
@@ -129,12 +129,15 @@
         }
       }
     },
-    "providerCredential": {
+    "systemOnePresetSettings": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["apiKey"],
       "properties": {
         "apiKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
           "type": "string",
           "minLength": 1
         }

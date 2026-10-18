@@ -7,6 +7,22 @@ import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import { loadJevvyConfig } from "../src/config.ts"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import { vi } from "vitest"
+import { createConfiguredProvider, shippedPolicyProvenance } from "../src/providers.ts"
+import { DEFAULT_ZEN_MODEL, DEFAULT_TYPESAFE_MODEL, DEFAULT_OPENROUTER_MODEL, DEFAULT_VERCEL_MODEL } from "../src/core.ts"
+import { createPermissionReviewer } from "../src/engine.ts"
+import { createEvaluate } from "../src/opencode/evaluate.ts"
+import type { EvaluationEvent } from "../src/opencode/evaluate.ts"
+import { Session } from "@opencode/schema/session"
+import { defaultApprovalQuestions } from "../src/questions.ts"
+
+const presets = [
+  ["zen", "OPENCODE_API_KEY", DEFAULT_ZEN_MODEL, "https://opencode.ai/zen/v1/systemone"],
+  ["typesafe", "TYPESAFE_API_KEY", DEFAULT_TYPESAFE_MODEL, "https://api.typesafe.ai/v1/systemone"],
+  ["openrouter", "OPENROUTER_API_KEY", DEFAULT_OPENROUTER_MODEL, "https://openrouter.ai/api/v1/systemone"],
+  ["vercel", "AI_GATEWAY_API_KEY", DEFAULT_VERCEL_MODEL, "https://ai-gateway.vercel.sh/typesafe/v1/systemone"],
+] as const
 
 const customQuestions = {
   harmful: {
@@ -47,13 +63,135 @@ const withConfigFile = <A, E, R>(
 )
 
 describe("Jevvy configuration", () => {
+  it.effect.each(presets)("sends the exact configured %s model through the real client", ([provider, variable, defaultModel, endpoint]) => Effect.gen(function*() {
+    for (const model of [undefined, defaultModel, "jev-1.13", "jev-1.13-free", "typesafe/jev-test-arbitrary", " unmodified "]) {
+      const config = yield* withConfigFile(JSON.stringify({ provider, providers: { [provider]: { model } } }),
+        (path) => load(path, ConfigProvider.fromUnknown({ [variable]: "environment-key" })))
+
+      expect(config.kind).toBe("shipped-policy")
+
+      if (config.kind !== "shipped-policy") throw new Error("Expected shipped policy")
+      expect(config.timeoutMs).toBe(5_000)
+      const selected = createConfiguredProvider(config.selection)
+
+      if (selected === undefined) throw new Error("Expected selected provider")
+
+      const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+        model: "reported-model", answers: { routine: { type: "noul", noul: 0.1 } },
+      }))
+
+      const input = { state: { command: "pwd && ls > listing" }, questions: { routine: { type: "noul" as const, instructions: "Is this routine?" } } }
+      const result = yield* selected.client.evaluate(input).pipe(Effect.provideService(FetchHttpClient.Fetch, transport))
+      expect(result.model).toBe("reported-model")
+      expect(selected.model).toBe(model ?? defaultModel)
+      const calibratedModel = provider === "zen" ? "jev-1.13-free" : defaultModel
+      expect(shippedPolicyProvenance(selected)).toBe((model ?? defaultModel) === calibratedModel ? "calibrated-defaults" : "shipped-defaults-unverified")
+      expect(transport).toHaveBeenCalledOnce()
+      const [url, init] = transport.mock.calls[0] ?? []
+
+      if (!(url instanceof URL)) throw new Error("Expected request URL")
+      expect(url.href).toBe(endpoint)
+      const headers = new Headers(init?.headers)
+      expect(headers.get("authorization")).toBe("Bearer environment-key")
+      expect(headers.has("x-api-key")).toBe(false)
+      expect(init?.body).toBeInstanceOf(Uint8Array)
+
+      if (!(init?.body instanceof Uint8Array)) throw new Error("Expected request bytes")
+      expect(JSON.parse(new TextDecoder().decode(init.body))).toEqual({ ...input, model: model ?? defaultModel })
+    }
+  }))
+
+  it.effect.each(presets)("validates %s scoped settings and credential precedence", ([provider, variable]) => Effect.gen(function*() {
+    for (const model of ["", null, 3, [], {}]) {
+      expect(yield* withConfigFile(JSON.stringify({ provider, providers: { [provider]: { model } } }), load)).toMatchObject({ kind: "invalid" })
+    }
+
+    const raw = JSON.stringify({ provider, providers: { [provider]: { model: "jev-1.13", apiKey: "file-key" } } })
+    const config = yield* withConfigFile(raw, (path) => load(path, ConfigProvider.fromUnknown({ [variable]: "env-key" })))
+
+    if (config.kind !== "shipped-policy" || config.selection.apiKey === undefined) throw new Error("Expected file key")
+    expect(Redacted.value(config.selection.apiKey)).toBe("file-key")
+    const selected = createConfiguredProvider(config.selection)
+
+    if (selected === undefined) throw new Error("Expected selected provider")
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ model: "reported", answers: { routine: { type: "noul", noul: 0 } } }))
+    yield* selected.client.evaluate({ state: {}, questions: { routine: { type: "noul", instructions: "Routine?" } } }).pipe(Effect.provideService(FetchHttpClient.Fetch, transport))
+    const [, init] = transport.mock.calls[0] ?? []
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer file-key")
+    const missing = yield* withConfigFile(JSON.stringify({ provider, providers: { [provider]: { model: "override" } } }), load)
+
+    if (missing.kind !== "shipped-policy") throw new Error("Expected shipped policy")
+    expect(createConfiguredProvider(missing.selection)).toBeUndefined()
+  }))
+
+  it.effect("does not secure a model-only file as credential-bearing", () => withConfigFile(
+    JSON.stringify({ provider: "zen", providers: { zen: { model: "jev-1.13" } } }),
+    (path) => Effect.gen(function*() {
+      expect((yield* load(path)).kind).toBe("shipped-policy")
+
+      if (process.platform !== "win32") expect((yield* Effect.promise(() => stat(path))).mode & 0o777).toBe(0o644)
+    }), 0o644,
+  ))
+
+  it.effect.each(presets)("abstains without fallback on %s override failures", ([provider, variable]) => Effect.gen(function*() {
+    const config = yield* withConfigFile(JSON.stringify({ provider, providers: { [provider]: { model: "unsupported-route" } } }),
+      (path) => load(path, ConfigProvider.fromUnknown({ [variable]: "test-key" })))
+
+    if (config.kind !== "shipped-policy") throw new Error("Expected shipped policy")
+    const selected = createConfiguredProvider(config.selection)
+
+    if (selected === undefined) throw new Error("Expected selected provider")
+
+    const success = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ model: "distinct-reported-model", answers: Object.fromEntries(
+      Object.keys(defaultApprovalQuestions).map((key) => [key, { type: "noul", noul: 0 }]),
+    ) }))
+
+    const successfulReviewer = yield* createPermissionReviewer(selected.client)
+    const review = yield* successfulReviewer.review({ action: "shell", resources: ["pwd"] }).pipe(Effect.provideService(FetchHttpClient.Fetch, success))
+    expect(review).toMatchObject({ effect: "allow", judgments: [{ model: "distinct-reported-model" }] })
+    expect(success).toHaveBeenCalledOnce()
+
+    for (const failure of ["unsupported", "malformed", "transport"] as const) {
+      const transport = vi.fn<typeof fetch>()
+
+      if (failure === "transport") transport.mockRejectedValue(new Error("offline"))
+      else transport.mockResolvedValue(failure === "unsupported" ? Response.json({ error: "unsupported model" }, { status: 404 }) : Response.json({ model: "reported-model", answers: {} }))
+      const reviewer = yield* createPermissionReviewer(selected.client)
+      const report = vi.fn()
+      const evaluate = createEvaluate(reviewer, { inspect: () => Effect.succeed({ command: "pwd", explicitAsk: false }), report })
+      const event: EvaluationEvent = { sessionID: Session.ID.make("ses_test"), action: "shell", resources: ["pwd"], effect: "ask", message: "Host approval" }
+      yield* evaluate(event).pipe(Effect.provideService(FetchHttpClient.Fetch, transport))
+      expect(event).toMatchObject({ effect: "ask", message: "Host approval" })
+      expect(report).toHaveBeenCalledWith(expect.objectContaining({ effect: "ask", reason: "unavailable" }))
+      expect(transport).toHaveBeenCalledOnce()
+      const [, init] = transport.mock.calls[0] ?? []
+
+      if (!(init?.body instanceof Uint8Array)) throw new Error("Expected request bytes")
+      expect(JSON.parse(new TextDecoder().decode(init.body)).model).toBe("unsupported-route")
+    }
+  }))
+
+  it.effect("keeps custom questions custom with a model override", () => Effect.gen(function*() {
+    const raw = JSON.stringify({ provider: "zen", providers: { zen: { model: "jev-1.13" } }, permissions: { questions: customQuestions } })
+    expect(yield* withConfigFile(raw, load)).toMatchObject({ kind: "custom-policy", questions: customQuestions, selection: { model: "jev-1.13" } })
+  }))
+
+  it.effect.each([
+    { provider: "laya", providers: { laya: { model: "arbitrary" } } },
+    { provider: "custom", providers: { custom: { model: "arbitrary" } } },
+    { provider: "zen", providers: { zen: { model: "arbitrary", endpoint: "https://example.com" } } },
+  ])("keeps endpoint and other provider boundaries intact: %j", (document) => Effect.gen(function*() {
+    expect(yield* withConfigFile(JSON.stringify(document), load)).toMatchObject({ kind: "invalid" })
+  }))
+
   it.effect.each([undefined, 12_000, 0.5])("loads timeoutMs %s for shipped and custom policies", (timeoutMs) => Effect.gen(function*() {
     for (const questions of [undefined, customQuestions]) {
-      const raw = JSON.stringify({ provider: "typesafe", permissions: { timeoutMs, questions } })
+      const raw = JSON.stringify({ provider: "typesafe", providers: { typesafe: { model: "configured-route" } }, permissions: { timeoutMs, questions } })
 
       expect(yield* withConfigFile(raw, load)).toMatchObject({
         kind: questions === undefined ? "shipped-policy" : "custom-policy",
         timeoutMs: timeoutMs ?? 5_000,
+        selection: { provider: "typesafe", model: "configured-route" },
       })
     }
   }))
