@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "@effect/vitest"
-import { Cause, Effect, Exit, Fiber } from "effect"
-import { TestClock } from "effect/testing"
+import * as Cause from "effect/Cause"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as TestClock from "effect/testing/TestClock"
 import { createZenClient, JevProviderError } from "@jevvy/core"
 import type { JevClient, JevProviderError as JevProviderErrorType, JevRequest, JevResult } from "@jevvy/core"
 import { createPermissionReviewer } from "../src/engine.ts"
@@ -57,6 +60,28 @@ describe("permission reviewer", () => {
         model: "jev-1.13",
         state: { action: "shell", resource: command },
       })
+    }
+  }))
+
+  it.effect.each([undefined, 12_000])("applies timeoutMs %s to a six-second provider and does not cache timeouts", (timeoutMs) => Effect.gen(function*() {
+    const evaluate = vi.fn(() => Effect.sleep("6 seconds").pipe(Effect.as(answer(0.01))))
+    const reviewer = yield* createPermissionReviewer(fakeClient(evaluate), { timeoutMs })
+    const request = { action: "shell", resources: ["pwd"] }
+    const running = yield* reviewer.review(request).pipe(Effect.forkChild)
+
+    yield* TestClock.adjust("5 seconds")
+
+    if (timeoutMs === undefined) {
+      expect(yield* Fiber.join(running)).toMatchObject({ effect: "ask", reason: "unavailable" })
+      const retry = yield* reviewer.review(request).pipe(Effect.forkChild)
+      yield* TestClock.adjust("5 seconds")
+      expect(yield* Fiber.join(retry)).toMatchObject({ effect: "ask", reason: "unavailable" })
+      expect(evaluate).toHaveBeenCalledTimes(2)
+    } else {
+      yield* TestClock.adjust("1 second")
+      expect(yield* Fiber.join(running)).toMatchObject({ effect: "allow" })
+      expect(yield* reviewer.review(request)).toMatchObject({ effect: "allow" })
+      expect(evaluate).toHaveBeenCalledOnce()
     }
   }))
 

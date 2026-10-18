@@ -73,7 +73,11 @@ export default Plugin.define({
 
     const questions = permissionConfig.kind === "custom-policy" ? permissionConfig.questions : undefined
 
-    const reviewer = yield* createPermissionReviewer(selected.client, { questions }).pipe(Effect.orDie)
+    const reviewer = yield* createPermissionReviewer(selected.client, {
+      questions,
+      timeoutMs: permissionConfig.timeoutMs,
+    }).pipe(Effect.orDie)
+
     const capture = createCommandCapture()
 
     yield* ctx.tool.hook("execute.before", capture.before)

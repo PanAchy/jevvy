@@ -71,6 +71,7 @@ describe("Jevvy configuration", () => {
       expect(config.kind).toBe("shipped-policy")
 
       if (config.kind !== "shipped-policy") throw new Error("Expected shipped policy")
+      expect(config.timeoutMs).toBe(5_000)
       const selected = createConfiguredProvider(config.selection)
 
       if (selected === undefined) throw new Error("Expected selected provider")
@@ -183,11 +184,33 @@ describe("Jevvy configuration", () => {
     expect(yield* withConfigFile(JSON.stringify(document), load)).toMatchObject({ kind: "invalid" })
   }))
 
+  it.effect.each([undefined, 12_000, 0.5])("loads timeoutMs %s for shipped and custom policies", (timeoutMs) => Effect.gen(function*() {
+    for (const questions of [undefined, customQuestions]) {
+      const raw = JSON.stringify({ provider: "typesafe", providers: { typesafe: { model: "configured-route" } }, permissions: { timeoutMs, questions } })
+
+      expect(yield* withConfigFile(raw, load)).toMatchObject({
+        kind: questions === undefined ? "shipped-policy" : "custom-policy",
+        timeoutMs: timeoutMs ?? 5_000,
+        selection: { provider: "typesafe", model: "configured-route" },
+      })
+    }
+  }))
+
+  it.effect.each(["0", "-1", "null", '"12000"', "true", "1e999"])(
+    "rejects invalid timeoutMs %s",
+    (timeoutMs) => Effect.gen(function*() {
+      const raw = `{"provider":"typesafe","permissions":{"timeoutMs":${timeoutMs}}}`
+
+      expect(yield* withConfigFile(raw, load)).toMatchObject({ kind: "invalid" })
+    }),
+  )
+
   it.effect("loads a complete custom question set", () => Effect.gen(function*() {
     const config = yield* withConfigFile(JSON.stringify(customPolicyConfig), load)
 
     expect(config).toEqual({
       kind: "custom-policy",
+      timeoutMs: 5_000,
       selection: { provider: "typesafe", apiKey: undefined },
       questions: customQuestions,
     })
@@ -297,6 +320,7 @@ describe("Jevvy configuration", () => {
 
       expect(yield* withConfigFile(raw, load)).toEqual({
         kind: "custom-policy",
+        timeoutMs: 5_000,
         selection: {
           provider: "custom",
           endpoint: "http://127.0.0.1:8080/v1/decisions",
@@ -320,10 +344,12 @@ describe("Jevvy configuration", () => {
     const raw = JSON.stringify({
       provider: "laya",
       providers: { laya: { policy: { checkpoint: "english", questions: customQuestions } } },
+      permissions: { timeoutMs: 12_000 },
     })
 
     expect(yield* withConfigFile(raw, load)).toEqual({
       kind: "custom-policy",
+      timeoutMs: 12_000,
       selection: { provider: "laya", endpoint: undefined, model: undefined, apiKey: undefined },
       questions: customQuestions,
     })
@@ -418,6 +444,7 @@ describe("Jevvy configuration", () => {
 
       expect(yield* withConfigFile(raw, load)).toEqual({
         kind: "shipped-policy",
+        timeoutMs: 5_000,
         selection: {
           provider: "custom",
           endpoint: "https://api.aimlapi.com/v1/decisions",
@@ -435,6 +462,7 @@ describe("Jevvy configuration", () => {
 
     expect(yield* withConfigFile(raw, load)).toEqual({
       kind: "shipped-policy",
+      timeoutMs: 5_000,
       selection: { provider: "typesafe", apiKey: undefined },
     })
   }))
