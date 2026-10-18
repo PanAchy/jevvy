@@ -80,6 +80,11 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 }
 ```
 
+| Setting | Default | Description |
+| ------- | ------- | ----------- |
+| `provider` | Required | Provider to use; see the table below. |
+| `permissions.timeoutMs` | `5000` | Positive, finite milliseconds for both harnesses. Host deadlines may end reviews sooner. Timeout leaves host permission handling unchanged. |
+
 ### Providers
 
 | Provider                          | `provider`   | Credential sources                                            |
@@ -116,8 +121,6 @@ Select `custom` to use any HTTP endpoint that accepts the System One request sha
 Custom endpoints use Jevvy's default approval policy unless you replace it. Its calibration evidence applies only when the route is verified to serve the calibrated Jev model.
 
 ### Approval policy
-
-Set `permissions.timeoutMs` in your global `jevvy.jsonc` to change Jevvy Permissions' review budget for both OpenCode and Claude Code, for example `"permissions": { "timeoutMs": 15000 }`. It accepts positive, finite milliseconds and defaults to `5000`. Host deadlines may still end the request sooner. A timeout leaves the host's remaining permission flow unchanged.
 
 Jevvy's default approval policy requires all four questions to pass:
 
