@@ -1,5 +1,45 @@
 # @jevvy/permissions
 
+## 0.7.0
+
+### Minor Changes
+
+- [#61](https://github.com/PanAchy/jevvy/pull/61) [`cf41ba2`](https://github.com/PanAchy/jevvy/commit/cf41ba26bbcc2aeb165b31055878be0136a68196) - ### Configuration
+  
+  Choose a model for OpenCode Zen, TypeSafe AI, OpenRouter, or Vercel AI Gateway with `providers.<provider>.model`. Jevvy Permissions sends the exact identifier without fallback and preserves it during setup.
+  
+  Zen now defaults to the paid, billable `jev-1.13` route. Set `providers.zen.model` to `"jev-1.13-free"` to retain the limited-time free route. Paid Zen and other unverified overrides retain shipped questions without inheriting calibration attribution.
+
+### Patch Changes
+
+- [#45](https://github.com/PanAchy/jevvy/pull/45) [`8bb92f5`](https://github.com/PanAchy/jevvy/commit/8bb92f5ba658578e51a44108b19ec2f04823f60c) - Use an Effect-native setup wizard with Unicode-safe terminal layouts, masked credentials, and clean cancellation on Ctrl+C or end of input.
+  
+  Run trusted setup installer commands through the Windows shell so npm-installed `.cmd` harness wrappers work as well as native executables.
+
+- [#42](https://github.com/PanAchy/jevvy/pull/42) [`7143594`](https://github.com/PanAchy/jevvy/commit/7143594d45b8c61d42bc0ecef0f12808583a072a) - Run calibration through the shared Effect workflow so provider judgments are actually evaluated. Preserve interrupted runs, record invalid judgments as errors, and refuse to overwrite existing calibration artifacts. The shipped permission policy and model defaults are unchanged.
+
+- [#40](https://github.com/PanAchy/jevvy/pull/40) [`74b785e`](https://github.com/PanAchy/jevvy/commit/74b785e5b5f8e0a1d6b4ea08f87ef91d6d65674e) - ### Configuration
+  
+  Identify Jevvy Permissions by its product name in setup prompts and CLI help. Clarify that the OpenCode 2.0.27 minimum applies to the OpenCode integration starting in 0.6.0; Claude-only use does not require OpenCode. Existing commands, settings, and permission behavior are unchanged.
+
+- [#41](https://github.com/PanAchy/jevvy/pull/41) [`4a275d7`](https://github.com/PanAchy/jevvy/commit/4a275d776cd29ed212f3bdaa9880cba9cc03400d) - ### Configuration
+  
+  Explain the README's permission flow in plain language with readable light and dark images, preserving every existing branch and adding descriptive alternative text. Keep image links usable in the published npm README. Permission behavior is unchanged.
+
+- [#44](https://github.com/PanAchy/jevvy/pull/44) [`c9f3f81`](https://github.com/PanAchy/jevvy/commit/c9f3f81589c8b3a0b0f4bc1e778188a68e8671c0) - Use scoped Effect services to inspect Claude Code settings and release Git inspection on timeout or interruption, while preserving host ask rules and linked-worktree settings.
+
+- [#46](https://github.com/PanAchy/jevvy/pull/46) [`06b03c5`](https://github.com/PanAchy/jevvy/commit/06b03c5929e8ac7f7990c9a307df7755f0369c88) - Check selected harness CLIs before saving setup configuration. Recognize OpenCode's `opencode v2.0.27` version output. Warn when the OpenCode CLI is older than 2.0.27 or its version cannot be verified, default to cancellation, and require an explicit override to continue. Keep the latest install command unchanged and provide manual guidance rather than automatically pinning or downgrading. Reuse setup's Windows command-wrapper support for version inspection.
+
+- [#60](https://github.com/PanAchy/jevvy/pull/60) [`3312d21`](https://github.com/PanAchy/jevvy/commit/3312d21f51c0a3df17b87fa818a84212d39a2e5a) - ### Configuration
+  
+  Set global `permissions.timeoutMs` to give Jevvy Permissions a longer review budget in OpenCode and Claude Code. The default remains 5000 milliseconds. Host deadlines may still end requests sooner, and timeouts leave host permission handling unchanged.
+
+- [#43](https://github.com/PanAchy/jevvy/pull/43) [`4d08c2e`](https://github.com/PanAchy/jevvy/commit/4d08c2e7fb9546fa6400daaa3f53852dd83a49ac) - Load global configuration through Effect filesystem services while preserving provider selection, setup diagnostics, and credential-file permissions.
+
+- [#59](https://github.com/PanAchy/jevvy/pull/59) [`ad50af2`](https://github.com/PanAchy/jevvy/commit/ad50af25e6eb5b54c6693be4e8743c12ecec0874) - ## Fixes
+  
+  Fix Jevvy Permissions authentication with OpenCode Zen by sending API keys as bearer tokens. Keep the default model and configured model selection unchanged.
+
 ## 0.6.0
 
 ### Configuration
