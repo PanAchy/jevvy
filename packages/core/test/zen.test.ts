@@ -29,7 +29,8 @@ describe("Zen client", () => {
 
     expect(headers.get("accept")).toBe("application/json")
     expect(headers.get("content-type")).toBe("application/json")
-    expect(headers.get("x-api-key")).toBe("secret")
+    expect(headers.get("authorization")).toBe("Bearer secret")
+    expect(headers.has("x-api-key")).toBe(false)
 
     const body = init?.body
 
@@ -40,6 +41,39 @@ describe("Zen client", () => {
     expect(JSON.parse(new TextDecoder().decode(body))).toEqual({
       model: "jev-test",
       state: { operation: "index", items: [1, 2] },
+      questions: { routine: { type: "noul", instructions: "Is this routine?" } },
+    })
+  }))
+
+  it.effect("preserves the default model and complete shell command with bearer authentication", () => Effect.gen(function*() {
+    const transport = vi.fn<typeof fetch>().mockResolvedValue(Response.json({
+      model: "jev-1.13-free",
+      answers: { routine: { type: "noul", noul: 0.9 } },
+    }))
+
+    const command = "cd packages/core && npm test > result.txt 2>&1; git status | cat"
+
+    yield* createZenClient("secret").evaluate({
+      state: { action: "shell", resource: command },
+      questions: { routine: { type: "noul", instructions: "Is this routine?" } },
+    }).pipe(Effect.provideService(FetchHttpClient.Fetch, transport))
+
+    expect(transport).toHaveBeenCalledOnce()
+
+    const [url, init] = transport.mock.calls[0] ?? []
+    const headers = new Headers(init?.headers)
+
+    expect(String(url)).toBe(ZEN_SYSTEMONE_URL)
+    expect(init?.method).toBe("POST")
+    expect(headers.get("authorization")).toBe("Bearer secret")
+    expect(headers.has("x-api-key")).toBe(false)
+    expect(init?.body).toBeInstanceOf(Uint8Array)
+
+    if (!(init?.body instanceof Uint8Array)) return
+
+    expect(JSON.parse(new TextDecoder().decode(init.body))).toEqual({
+      model: "jev-1.13-free",
+      state: { action: "shell", resource: command },
       questions: { routine: { type: "noul", instructions: "Is this routine?" } },
     })
   }))
