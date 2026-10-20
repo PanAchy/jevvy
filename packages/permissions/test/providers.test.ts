@@ -16,7 +16,15 @@ describe("configured provider creation", () => {
     const document = JSON.parse(readFileSync(new URL("../../../config.schema.json", import.meta.url), "utf8"))
     expect(document.$defs.systemOnePresetSettings).toEqual({
       type: "object", additionalProperties: false,
-      properties: { apiKey: { type: "string", minLength: 1 }, model: { type: "string", minLength: 1 } },
+      properties: {
+        apiKey: { type: "string", minLength: 1 },
+        model: { type: "string", minLength: 1 },
+        opencodeCredential: {
+          type: "string",
+          minLength: 1,
+          description: "OpenCode integration ID whose stored API key Jevvy reads when apiKey and the provider environment variable are absent. OpenCode only.",
+        },
+      },
     })
 
     for (const provider of ["zen", "typesafe", "openrouter", "vercel"]) {

@@ -140,6 +140,11 @@
         "model": {
           "type": "string",
           "minLength": 1
+        },
+        "opencodeCredential": {
+          "type": "string",
+          "minLength": 1,
+          "description": "OpenCode integration ID whose stored API key Jevvy reads when apiKey and the provider environment variable are absent. OpenCode only."
         }
       }
     },
