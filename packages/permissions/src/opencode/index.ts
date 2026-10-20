@@ -66,15 +66,11 @@ export default Plugin.define({
     const resolved = selection.provider === "laya" || selection.provider === "custom"
       ? selection
       : yield* withOpenCodeCredential(selection, (integrationID) => Effect.gen(function*() {
-        const connection = yield* ctx.integration.connection.active(integrationID).pipe(
-          Effect.orElseSucceed(() => undefined),
-        )
+        const connection = yield* ctx.integration.connection.active(integrationID)
 
         if (connection === undefined) return undefined
 
-        const credential = yield* ctx.integration.connection.resolve(connection).pipe(
-          Effect.orElseSucceed(() => undefined),
-        )
+        const credential = yield* ctx.integration.connection.resolve(connection)
 
         return apiKeyFromCredential(credential)
       }))
@@ -88,7 +84,7 @@ export default Plugin.define({
         return yield* new PluginSetupError({ message: "Jevvy could not construct the configured custom provider" })
       }
 
-      if ("opencodeCredential" in resolved && resolved.opencodeCredential !== undefined && resolved.apiKey === undefined) {
+      if ("opencodeCredential" in resolved && resolved.opencodeCredential !== undefined) {
         return yield* new PluginSetupError({
           message: missingOpenCodeCredentialMessage(provider, resolved.opencodeCredential, configPath),
         })

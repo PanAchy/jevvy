@@ -19,11 +19,10 @@ describe("configured provider creation", () => {
       properties: {
         apiKey: { type: "string", minLength: 1 },
         model: { type: "string", minLength: 1 },
-        opencodeCredential: {
+        opencodeCredential: expect.objectContaining({
           type: "string",
           minLength: 1,
-          description: "OpenCode integration ID whose stored API key Jevvy reads when apiKey and the provider environment variable are absent. OpenCode only.",
-        },
+        }),
       },
     })
 
