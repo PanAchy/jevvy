@@ -83,6 +83,7 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 | Setting | Default | Description |
 | ------- | ------- | ----------- |
 | `provider` | Required | Provider to use; see the table below. |
+| `providers.<provider>.opencodeCredential` | Unset | OpenCode integration ID for API-key reuse. File and environment keys take priority. OpenCode only. |
 | `permissions.timeoutMs` | `5000` | Timeout for model provider in ms. |
 
 ### Providers
@@ -99,24 +100,6 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 [laya-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/laya.md
 
 The plugin uses only the selected provider and never falls back to another one.
-
-### Use an OpenCode credential
-
-Set `providers.<name>.opencodeCredential` to an OpenCode integration ID to read that integration's stored API key. Jevvy reads it only when `providers.<name>.apiKey` and the provider environment variable are both absent. The option is available for OpenCode Zen, TypeSafe AI, OpenRouter, and Vercel, and only from OpenCode.
-
-```jsonc
-{
-  "$schema": "https://raw.githubusercontent.com/PanAchy/jevvy/main/config.schema.json",
-  "provider": "openrouter",
-  "providers": {
-    "openrouter": {
-      "opencodeCredential": "openrouter",
-    },
-  },
-}
-```
-
-A missing integration, a non-key credential, an empty key, or a failed lookup leaves the request to OpenCode's remaining permission flow.
 
 ### Custom System One endpoint
 
