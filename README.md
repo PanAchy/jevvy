@@ -37,8 +37,6 @@ Node.js 22.19 or newer is required.
 npx @jevvy/permissions init
 ```
 
-Type a provider name to filter the setup choices.
-
 ## Manual setup
 
 ### OpenCode
@@ -73,7 +71,7 @@ Your agent checks permissions first. Its allow and deny decisions stay final. Sp
 
 ## Configuration
 
-Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Project repositories cannot override it. JSONC comments and trailing commas are supported. Keep `$schema` for editor validation and autocomplete.
+Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Project repositories cannot override it. JSONC comments and trailing commas are supported.
 
 ```jsonc
 {
@@ -84,24 +82,23 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 
 | Setting | Default | Description |
 | ------- | ------- | ----------- |
-| `provider` | Required | Provider to use; see the table below. |
+| `provider` | Required | Provider preset. |
+| `providers.<provider>.apiKey` | Unset | API key; takes precedence over its environment variable. |
 | `providers.<provider>.opencodeCredential` | Unset | OpenCode integration ID for API-key reuse. File and environment keys take priority. OpenCode only. |
 | `permissions.timeoutMs` | `5000` | Timeout for model provider in ms. |
 
 ### API formats and presets
 
-Presets handle API and authentication differences. Other System One-compatible services can use `custom`.
-
-| API format | Preset | `provider` | Credential sources |
-| ---------- | ------ | ---------- | ------------------ |
-| System One | OpenCode Zen | `zen` | `providers.zen.apiKey` or `OPENCODE_API_KEY` |
-| | TypeSafe AI | `typesafe` | `providers.typesafe.apiKey` or `TYPESAFE_API_KEY` |
-| | OpenRouter | `openrouter` | `providers.openrouter.apiKey` or `OPENROUTER_API_KEY` |
-| | Vercel AI Gateway | `vercel` | `providers.vercel.apiKey` or `AI_GATEWAY_API_KEY` |
-| | Microsoft Decision ([experimental][microsoft-guide]) | `microsoft` | `providers.microsoft.apiKey` or `AZURE_AI_API_KEY` |
-| | Laya ([setup guide][laya-guide]) | `laya` | Optional `providers.laya.apiKey` or `LAYA_API_KEY` |
-| | Custom endpoint | `custom` | Optional `providers.custom.apiKey` |
-| OpenAI Decisions | OpenAI ([setup guide][openai-guide]) | `openai` | `providers.openai.apiKey` or `OPENAI_API_KEY` |
+| API format | Preset | `provider` | Environment variable |
+| ---------- | ------ | ---------- | -------------------- |
+| System One | OpenCode Zen | `zen` | `OPENCODE_API_KEY` |
+| | TypeSafe AI | `typesafe` | `TYPESAFE_API_KEY` |
+| | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
+| | Vercel AI Gateway | `vercel` | `AI_GATEWAY_API_KEY` |
+| | Microsoft Decision<br>*[Experimental setup][microsoft-guide]* | `microsoft` | `AZURE_AI_API_KEY` |
+| | Laya<br>*[Setup guide][laya-guide]* | `laya` | Optional `LAYA_API_KEY` |
+| | Custom endpoint | `custom` | None |
+| OpenAI Decisions | OpenAI<br>*[Setup guide][openai-guide]* | `openai` | `OPENAI_API_KEY` |
 
 [laya-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/laya.md
 
@@ -164,7 +161,7 @@ For providers other than Laya, `permissions.questions` replaces Jevvy's default 
 }
 ```
 
-A Noul answer is the probability that the answer is yes. Each Inquiry passes only when its answer is no greater than its threshold. See [TypeSafe's Noul documentation](https://docs.typesafe.ai/primitives/noul).
+A Noul answer is the probability that the answer is yes. See [TypeSafe's Noul documentation](https://docs.typesafe.ai/primitives/noul).
 
 ### Calibrate custom questions
 
@@ -174,4 +171,4 @@ Install the optional [`calibrate-permissions`](./skills/calibrate-permissions/SK
 npx skills add PanAchy/jevvy --skill calibrate-permissions
 ```
 
-The skill runs `jevvy-calibrate` against the plugin's bundled baseline. Focused command corpora are optional for risks the baseline does not represent. Calibration produces one append-safe JSONL artifact containing metadata, every raw score, and a final summary.
+The skill runs `jevvy-calibrate` against the bundled baseline and optional custom command corpora, then writes a report with scores and a summary.
