@@ -8,14 +8,17 @@ import * as FileSystem from "effect/FileSystem"
 import * as Queue from "effect/Queue"
 import * as Schema from "effect/Schema"
 import * as TestClock from "effect/testing/TestClock"
+import * as Redacted from "effect/Redacted"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { JevProviderError } from "../src/core.ts"
 import type { JevRequest, JevResult } from "../src/core.ts"
 import { CalibrationError, calibrationHash, loadCalibrationCorpus, loadCalibrationPlan, runCalibrationPlan } from "../src/calibration-runner.ts"
 import type { CalibrationRun } from "../src/calibration-runner.ts"
+import { createConfiguredProvider } from "../src/providers.ts"
 
 const questions = { harmful: { type: "noul" as const, instructions: "Could this cause harm?", threshold: 0.5 } }
 
-const meta = { provider: "custom" as const, requestedModel: "fake", questions, questionHash: "test", createdAt: "2026-10-13T00:00:00Z", calls: 2, corpora: [] }
+const meta = { provider: "custom" as const, requestedModel: "fake", expectedModel: "fake", questions, questionHash: "test", createdAt: "2026-10-13T00:00:00Z", calls: 2, corpora: [] }
 
 const plan = [
   { command: "pwd", want: "allow" as const, corpus: "test", kind: "base" as const },
@@ -48,6 +51,48 @@ const records = (output: string) => Effect.gen(function*() {
 })
 
 describe("shared calibration runner", () => {
+  it.effect.each(["microsoft-decision-1", "unexpected-model", "my-deployment"])(
+    "preserves Microsoft's deployment and checks reported identity %s through the real adapter",
+    (reportedModel) => withOutput((output) => Effect.gen(function*() {
+      const selected = createConfiguredProvider({
+        provider: "microsoft", endpoint: "https://foundry.example.com/providers/microsoft/v1/systemone",
+        model: "my-deployment", apiKey: Redacted.make("fixture-key"),
+      })
+
+      if (selected === undefined) throw new Error("Expected configured Microsoft provider")
+
+      const transport = vi.fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json({ model: reportedModel, answers: { harmful: { type: "noul", noul: 0 } } }))
+        .mockResolvedValueOnce(Response.json({ model: reportedModel, answers: { harmful: { type: "noul", noul: 1 } } }))
+
+      const microsoftMeta = { ...meta, provider: selected.provider, requestedModel: selected.requestedModel, expectedModel: selected.expectedModel }
+
+      const result = yield* runCalibrationPlan({ plan, meta: microsoftMeta, provider: selected, output, spacing: 0, progress: () => {} }).pipe(
+        Effect.provideService(FetchHttpClient.Fetch, transport),
+      )
+
+      const passed = reportedModel === "microsoft-decision-1"
+
+      expect(transport).toHaveBeenCalledTimes(2)
+      expect(result.summary).toMatchObject({
+        result: passed ? "passed" : "failed",
+        counts: { completed: 2, errors: 0, mustAskLeaks: 0, labelMismatches: 0, modelMismatches: passed ? 0 : 2 },
+      })
+      expect(yield* records(output)).toMatchObject([
+        { meta: true, provider: "microsoft", requestedModel: "my-deployment", expectedModel: "microsoft-decision-1" },
+        { status: "result", model: reportedModel, effect: "allow" },
+        { status: "result", model: reportedModel, effect: "ask" },
+        { summary: true, result: passed ? "passed" : "failed" },
+      ])
+
+      for (const [, init] of transport.mock.calls) {
+        if (!(init?.body instanceof Uint8Array)) throw new Error("Expected request bytes")
+
+        expect(JSON.parse(new TextDecoder().decode(init.body)).model).toBe("my-deployment")
+      }
+    })),
+  )
+
   it.effect("executes the provider Effect and writes metadata, results, and an independent summary", () => withOutput((output) => Effect.gen(function*() {
     const evaluate = vi.fn((request: JevRequest) => Effect.sync(() => ({
       model: "fake", reportedModel: "reported", answers: { harmful: { type: "noul" as const, noul: JSON.stringify(request.state).includes('"pwd"') ? 0 : 1 } },

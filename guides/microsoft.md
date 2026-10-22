@@ -21,7 +21,7 @@ This integration is experimental. Its request and API-key authentication follow 
 ```
 
 - `endpoint` is the full HTTPS inference URL, including `/providers/microsoft/v1/systemone`. Jevvy uses this URL as supplied; it does not append a path.
-- `model` is your deployment name, not necessarily the catalog ID `Microsoft-Decision-1`. The response's underlying model ID may differ and is retained in judgment results.
+- `model` is your deployment name, not the catalog ID. Calibration expects the provider-pinned response identity `microsoft-decision-1`; it records the deployment name and the actual reported identity separately. A different reported identity fails calibration. No additional model setting is needed.
 - `apiKey` is sent in Azure's `api-key` header, not Bearer auth. Alternatively, omit this field and set `AZURE_AI_API_KEY` in the agent process's environment. A file key takes precedence.
 
 This preset supports Azure API keys only. It does not acquire or refresh Microsoft Entra tokens; do not put an Entra token in `apiKey`.

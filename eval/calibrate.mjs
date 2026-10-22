@@ -46,7 +46,7 @@ const command = Command.make("calibrate", {
   const createdAt = new Date(now).toISOString()
 
   const meta = {
-    provider: options.provider, requestedModel: model, questions: defaultApprovalQuestions,
+    provider: options.provider, requestedModel: model, expectedModel: model, questions: defaultApprovalQuestions,
     questionHash: calibrationHash(JSON.stringify(defaultApprovalQuestions)), commit, createdAt, calls: plan.length,
     corpora: corpora.map(({ name, hash }) => ({ name, hash })),
   }

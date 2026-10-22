@@ -1,4 +1,4 @@
-import { Schema } from "effect"
+import * as Schema from "effect/Schema"
 import { NoulAnswer, NoulQuestion } from "./core.ts"
 
 export const ApprovalQuestion = Schema.Struct({
@@ -64,8 +64,8 @@ export const defaultApprovalQuestions = {
 } satisfies ApprovalQuestions
 
 export const toNoulQuestions = (questions: ApprovalQuestions): Readonly<Record<string, NoulQuestion>> =>
-  Object.fromEntries(Object.entries(questions).map(([name, question]) => [name, {
-    type: "noul",
-    instructions: question.instructions,
-    criteria: question.criteria,
-  }]))
+  Object.fromEntries(Object.entries(questions).map(([name, question]) => {
+    const noul = { type: question.type, instructions: question.instructions }
+
+    return [name, question.criteria === undefined ? noul : { ...noul, criteria: question.criteria }]
+  }))

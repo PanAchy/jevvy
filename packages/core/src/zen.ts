@@ -4,7 +4,7 @@ import type { JevClient, JevResult, NoulQuestion } from "./types.ts"
 
 export const ZEN_SYSTEMONE_URL = "https://opencode.ai/zen/v1/systemone"
 
-export const DEFAULT_ZEN_MODEL = "jev-1.13-free"
+export const DEFAULT_ZEN_MODEL = "jev-1.13"
 
 export interface ZenBodyInput {
   readonly model?: unknown
@@ -28,5 +28,5 @@ export const createZenClient = (
   provider: "zen",
   url: ZEN_SYSTEMONE_URL,
   model,
-  headers: { "x-api-key": apiKey },
+  headers: { Authorization: `Bearer ${apiKey}` },
 })

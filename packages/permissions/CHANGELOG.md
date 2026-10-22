@@ -1,5 +1,37 @@
 # @jevvy/permissions
 
+## 0.7.0
+
+### Breaking changes
+
+- [#61](https://github.com/PanAchy/jevvy/pull/61) [`cf41ba2`](https://github.com/PanAchy/jevvy/commit/cf41ba26bbcc2aeb165b31055878be0136a68196) - Zen now defaults to **paid `jev-1.13`**. Set `providers.zen.model` to `"jev-1.13-free"` to use the limited-time free route. Paid Zen does not inherit the free route's calibration attribution.
+
+### Configuration
+
+- [#61](https://github.com/PanAchy/jevvy/pull/61) [`cf41ba2`](https://github.com/PanAchy/jevvy/commit/cf41ba26bbcc2aeb165b31055878be0136a68196) - Choose a model with `providers.<provider>.model` for Zen, TypeSafe, OpenRouter, or Vercel. Jevvy Permissions sends the exact identifier without fallback and preserves it during setup. Unverified models can use shipped questions without inheriting calibration attribution.
+
+- [#60](https://github.com/PanAchy/jevvy/pull/60) [`3312d21`](https://github.com/PanAchy/jevvy/commit/3312d21f51c0a3df17b87fa818a84212d39a2e5a) - Set `permissions.timeoutMs` to change the provider timeout in either harness. The default remains 5000 ms. Host deadlines may end reviews sooner; timeout leaves host permission handling unchanged.
+
+- [#40](https://github.com/PanAchy/jevvy/pull/40) [`74b785e`](https://github.com/PanAchy/jevvy/commit/74b785e5b5f8e0a1d6b4ea08f87ef91d6d65674e) - Use Jevvy Permissions consistently in setup and help. Clarify that OpenCode 2.0.27 is required only for the OpenCode integration, starting in 0.6.0.
+
+- [#41](https://github.com/PanAchy/jevvy/pull/41) [`4a275d7`](https://github.com/PanAchy/jevvy/commit/4a275d776cd29ed212f3bdaa9880cba9cc03400d) - Explain permission handling with plain-language documentation and readable light and dark diagrams, including the npm README.
+
+### Reliability
+
+- [#45](https://github.com/PanAchy/jevvy/pull/45) [`8bb92f5`](https://github.com/PanAchy/jevvy/commit/8bb92f5ba658578e51a44108b19ec2f04823f60c) - Improve setup with Unicode-safe layouts, masked credentials, clean cancellation, and support for Windows `.cmd` harness installers.
+
+- [#46](https://github.com/PanAchy/jevvy/pull/46) [`06b03c5`](https://github.com/PanAchy/jevvy/commit/06b03c5929e8ac7f7990c9a307df7755f0369c88) - Check selected harness CLIs before saving setup. Warn about unsupported or unrecognized OpenCode versions and require an explicit override to continue.
+
+- [#44](https://github.com/PanAchy/jevvy/pull/44) [`c9f3f81`](https://github.com/PanAchy/jevvy/commit/c9f3f81589c8b3a0b0f4bc1e778188a68e8671c0) - Release Claude Code settings inspection on timeout or interruption while preserving host asks and linked-worktree settings.
+
+- [#43](https://github.com/PanAchy/jevvy/pull/43) [`4d08c2e`](https://github.com/PanAchy/jevvy/commit/4d08c2e7fb9546fa6400daaa3f53852dd83a49ac) - Load global configuration through Effect filesystem services while preserving credential-file permissions and setup diagnostics.
+
+### Fixes
+
+- [#59](https://github.com/PanAchy/jevvy/pull/59) [`ad50af2`](https://github.com/PanAchy/jevvy/commit/ad50af25e6eb5b54c6693be4e8743c12ecec0874) - Send Zen API keys as Bearer tokens so paid-model requests authenticate correctly.
+
+- [#42](https://github.com/PanAchy/jevvy/pull/42) [`7143594`](https://github.com/PanAchy/jevvy/commit/7143594d45b8c61d42bc0ecef0f12808583a072a) - Execute provider judgments during calibration. Preserve interrupted runs, record invalid responses as errors, and refuse to overwrite existing calibration artifacts.
+
 ## 0.6.0
 
 ### Configuration

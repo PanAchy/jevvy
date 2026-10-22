@@ -12,7 +12,7 @@ export type { LayaClientOptions } from "./laya.ts"
 
 export { createOpenAIClient, DEFAULT_OPENAI_MODEL, OPENAI_DECISIONS_URL } from "./openai.ts"
 
-export { createMicrosoftClient } from "./microsoft.ts"
+export { createMicrosoftClient, MICROSOFT_DECISION_MODEL } from "./microsoft.ts"
 
 export type { MicrosoftClientOptions } from "./microsoft.ts"
 

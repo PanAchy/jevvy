@@ -81,9 +81,10 @@ export const loadClaudeSetup = Effect.fn("ClaudeCode.loadSetup")(function*() {
     } as const
   }
 
-  const reviewer = config.kind === "custom-policy"
-    ? yield* createPermissionReviewer(selected.client, { questions: config.questions })
-    : yield* createPermissionReviewer(selected.client)
+  const reviewer = yield* createPermissionReviewer(selected.client, {
+    questions: config.kind === "custom-policy" ? config.questions : undefined,
+    timeoutMs: config.timeoutMs,
+  })
 
   return { kind: "ready", reviewer } as const
 })

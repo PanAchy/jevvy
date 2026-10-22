@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from "@effect/vitest"
-import { Cause, Effect, Exit, Fiber } from "effect"
-import { TestClock } from "effect/testing"
-import { JevProviderError } from "@jevvy/core"
+import * as Cause from "effect/Cause"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
+import * as FetchHttpClient from "effect/http/FetchHttpClient"
+import * as TestClock from "effect/testing/TestClock"
+import { createZenClient, JevProviderError } from "@jevvy/core"
 import type { JevClient, JevProviderError as JevProviderErrorType, JevRequest, JevResult } from "@jevvy/core"
 import { createPermissionReviewer } from "../src/engine.ts"
 import type { ApprovalQuestions } from "../src/questions.ts"
@@ -21,6 +25,66 @@ const fakeClient = (
 ): JevClient => ({ evaluate })
 
 describe("permission reviewer", () => {
+  it.effect("abstains on Zen authentication failure without caching it and retries the complete command", () => Effect.gen(function*() {
+    const transport = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({
+        type: "error",
+        error: { type: "AuthError", message: "Invalid API key" },
+      }, { status: 401 }))
+      .mockResolvedValue(Response.json({ answers: answer(0.01).answers, model: "jev-1.13-free" }))
+
+    const reviewer = yield* createPermissionReviewer({
+      evaluate: (request) => createZenClient("secret").evaluate(request).pipe(Effect.provideService(FetchHttpClient.Fetch, transport)),
+    })
+
+    const command = "cd packages/core && npm test > result.txt 2>&1; git status | cat"
+
+    expect(yield* reviewer.review({ action: "shell", resources: [command] })).toMatchObject({
+      effect: "ask",
+      reason: "unavailable",
+      failure: { provider: "zen", kind: "authentication", status: 401, code: "AuthError" },
+    })
+    expect(yield* reviewer.review({ action: "shell", resources: [command] })).toMatchObject({ effect: "allow" })
+    expect(transport).toHaveBeenCalledTimes(2)
+
+    for (const [, init] of transport.mock.calls) {
+      const headers = new Headers(init?.headers)
+
+      expect(headers.get("authorization")).toBe("Bearer secret")
+      expect(headers.has("x-api-key")).toBe(false)
+      expect(init?.body).toBeInstanceOf(Uint8Array)
+
+      if (!(init?.body instanceof Uint8Array)) continue
+
+      expect(JSON.parse(new TextDecoder().decode(init.body))).toMatchObject({
+        model: "jev-1.13",
+        state: { action: "shell", resource: command },
+      })
+    }
+  }))
+
+  it.effect.each([undefined, 12_000])("applies timeoutMs %s to a six-second provider and does not cache timeouts", (timeoutMs) => Effect.gen(function*() {
+    const evaluate = vi.fn(() => Effect.sleep("6 seconds").pipe(Effect.as(answer(0.01))))
+    const reviewer = yield* createPermissionReviewer(fakeClient(evaluate), { timeoutMs })
+    const request = { action: "shell", resources: ["pwd"] }
+    const running = yield* reviewer.review(request).pipe(Effect.forkChild)
+
+    yield* TestClock.adjust("5 seconds")
+
+    if (timeoutMs === undefined) {
+      expect(yield* Fiber.join(running)).toMatchObject({ effect: "ask", reason: "unavailable" })
+      const retry = yield* reviewer.review(request).pipe(Effect.forkChild)
+      yield* TestClock.adjust("5 seconds")
+      expect(yield* Fiber.join(retry)).toMatchObject({ effect: "ask", reason: "unavailable" })
+      expect(evaluate).toHaveBeenCalledTimes(2)
+    } else {
+      yield* TestClock.adjust("1 second")
+      expect(yield* Fiber.join(running)).toMatchObject({ effect: "allow" })
+      expect(yield* reviewer.review(request)).toMatchObject({ effect: "allow" })
+      expect(evaluate).toHaveBeenCalledOnce()
+    }
+  }))
+
   it.effect("allows only when every resource independently passes every question", () => Effect.gen(function*() {
     const requests: JevRequest[] = []
 

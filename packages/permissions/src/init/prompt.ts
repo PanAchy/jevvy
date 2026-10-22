@@ -255,15 +255,7 @@ const promptProvider = Effect.fn("Init.promptProvider")(function*(
     return { provider: "custom", endpoint: endpoint.trim(), model: model.trim(), apiKey }
   }
 
-  const labels = {
-    zen: "OpenCode Zen API key",
-    typesafe: "TypeSafe API key",
-    openrouter: "OpenRouter API key",
-    vercel: "Vercel AI Gateway key",
-    openai: "OpenAI API key",
-  } as const
-
-  const apiKey = yield* promptApiKey(`Enter your ${labels[provider]}`)
+  const apiKey = yield* promptApiKey(`Enter your ${providerDisplayName(provider)} API key`)
 
   return { provider, apiKey }
 })

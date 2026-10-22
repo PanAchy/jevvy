@@ -20,6 +20,12 @@ const ProviderCredentialSchema = Schema.Struct({
   apiKey: Schema.NonEmptyString,
 })
 
+const SystemOnePresetSettings = Schema.Struct({
+  apiKey: Schema.optionalKey(Schema.NonEmptyString),
+  model: Schema.optionalKey(Schema.NonEmptyString),
+  opencodeCredential: Schema.optionalKey(Schema.NonEmptyString),
+})
+
 const EndpointProviderSchema = Schema.Struct({
   endpoint: Schema.URLFromString,
   model: Schema.NonEmptyString,
@@ -44,16 +50,17 @@ const JevvyConfigSchema = Schema.Struct({
   $schema: Schema.optionalKey(Schema.String),
   provider: JevProvider,
   providers: Schema.optionalKey(Schema.Struct({
-    zen: Schema.optionalKey(ProviderCredentialSchema),
-    typesafe: Schema.optionalKey(ProviderCredentialSchema),
-    openrouter: Schema.optionalKey(ProviderCredentialSchema),
-    vercel: Schema.optionalKey(ProviderCredentialSchema),
+    zen: Schema.optionalKey(SystemOnePresetSettings),
+    typesafe: Schema.optionalKey(SystemOnePresetSettings),
+    openrouter: Schema.optionalKey(SystemOnePresetSettings),
+    vercel: Schema.optionalKey(SystemOnePresetSettings),
     openai: Schema.optionalKey(ProviderCredentialSchema),
     microsoft: Schema.optionalKey(EndpointProviderSchema),
     laya: Schema.optionalKey(LayaProviderSchema),
     custom: Schema.optionalKey(EndpointProviderSchema),
   })),
   permissions: Schema.optionalKey(Schema.Struct({
+    timeoutMs: Schema.optionalKey(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
     questions: Schema.optionalKey(ApprovalQuestions),
     opencode: Schema.optionalKey(HarnessReviewConfig),
     claude: Schema.optionalKey(HarnessReviewConfig),
@@ -64,11 +71,12 @@ interface ConfigDocument extends Schema.Schema.Type<typeof JevvyConfigSchema> {}
 
 export type JevvyConfig =
   | { readonly kind: "unconfigured" }
-  | { readonly kind: "shipped-policy"; readonly selection: ProviderSelection }
+  | { readonly kind: "shipped-policy"; readonly selection: ProviderSelection; readonly timeoutMs: number }
   | {
       readonly kind: "custom-policy"
       readonly selection: ProviderSelection
       readonly questions: ApprovalQuestions
+      readonly timeoutMs: number
     }
   | { readonly kind: "invalid"; readonly message: string }
 
@@ -91,11 +99,11 @@ const EnvironmentApiKeys = Config.all({
 type EnvironmentApiKeys = Config.Success<typeof EnvironmentApiKeys>
 
 const hasCredentials = (document: ConfigDocument): boolean =>
-  document.providers?.zen !== undefined ||
-  document.providers?.typesafe !== undefined ||
-  document.providers?.openrouter !== undefined ||
-  document.providers?.vercel !== undefined ||
-  document.providers?.openai !== undefined ||
+  document.providers?.zen?.apiKey !== undefined ||
+  document.providers?.typesafe?.apiKey !== undefined ||
+  document.providers?.openrouter?.apiKey !== undefined ||
+  document.providers?.vercel?.apiKey !== undefined ||
+  document.providers?.openai?.apiKey !== undefined ||
   document.providers?.microsoft?.apiKey !== undefined ||
   document.providers?.laya?.apiKey !== undefined ||
   document.providers?.custom?.apiKey !== undefined
@@ -199,12 +207,19 @@ const providerSelection = (
     ? environmentApiKey(document.provider, environment)
     : Redacted.make(fileApiKey)
 
-  return Effect.succeed({ provider: document.provider, apiKey })
+  if (document.provider === "openai") return Effect.succeed({ provider: "openai", apiKey })
+
+  return Effect.succeed({
+    provider: document.provider,
+    apiKey,
+    model: document.providers?.[document.provider]?.model,
+    opencodeCredential: document.providers?.[document.provider]?.opencodeCredential,
+  })
 }
 
 const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: ConfigProvider.ConfigProvider) {
   const document = yield* readDocument(path).pipe(
-    Effect.map(Option.some),
+    Effect.asSome,
     Effect.catchTag("ConfigMissing", () => Effect.succeed(Option.none<ConfigDocument>())),
   )
 
@@ -215,6 +230,7 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
   )
 
   const selection = yield* providerSelection(document.value, environmentKeys)
+  const timeoutMs = document.value.permissions?.timeoutMs ?? 5_000
 
   if (selection.provider === "laya") {
     const policy = document.value.providers?.laya?.policy
@@ -224,14 +240,14 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
       return yield* new ConfigFileError({ reason: "policy" })
     }
 
-    return { kind: "custom-policy" as const, selection, questions: policy.questions }
+    return { kind: "custom-policy" as const, selection, questions: policy.questions, timeoutMs }
   }
 
   const questions = document.value.permissions?.questions
 
-  if (questions === undefined) return { kind: "shipped-policy" as const, selection }
+  if (questions === undefined) return { kind: "shipped-policy" as const, selection, timeoutMs }
 
-  return { kind: "custom-policy" as const, selection, questions }
+  return { kind: "custom-policy" as const, selection, questions, timeoutMs }
 }, Effect.catchTag("ConfigFileError", (error) =>
   Effect.succeed({ kind: "invalid" as const, message: invalidMessage(error.reason) })))
 

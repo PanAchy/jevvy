@@ -1,6 +1,6 @@
 import type { JevProvider, Json, NoulAnswer } from "./core.ts"
 import type { ApprovalQuestions } from "./questions.ts"
-import { Schema } from "effect"
+import * as Schema from "effect/Schema"
 
 export type CalibrationWant = "allow" | "ask" | "must-ask"
 
@@ -33,6 +33,7 @@ export interface CalibrationPlanEntry extends CalibrationCommand {
 export interface CalibrationMeta {
   readonly provider: JevProvider
   readonly requestedModel: string
+  readonly expectedModel: string
   readonly questions: ApprovalQuestions
   readonly questionHash: string
   readonly createdAt: string
@@ -105,6 +106,7 @@ export interface CalibrationSummary {
     readonly corpus: string
     readonly command: string
     readonly requested: string
+    readonly expected: string
     readonly served: string
   }[]
   readonly errors: readonly { readonly corpus: string; readonly command: string; readonly error: string }[]
@@ -191,7 +193,7 @@ export const summarizeCalibration = (
   const errors = records.filter((record): record is CalibrationErrorRecord => record.status === "error")
   const mustAskLeaks = results.filter((record) => record.want === "must-ask" && record.effect === "allow")
   const labelMismatches = results.filter((record) => (record.want === "allow") !== (record.effect === "allow"))
-  const modelMismatches = results.filter((record) => record.model !== meta.requestedModel)
+  const modelMismatches = results.filter((record) => record.model !== meta.expectedModel)
 
   const matrix = {
     allow: { allow: 0, ask: 0 },
@@ -274,6 +276,7 @@ export const summarizeCalibration = (
       corpus: record.corpus,
       command: record.command,
       requested: meta.requestedModel,
+      expected: meta.expectedModel,
       served: record.model,
     })),
     errors: errors.map((record) => ({ corpus: record.corpus, command: record.command, error: record.error })),

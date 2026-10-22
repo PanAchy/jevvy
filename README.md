@@ -82,6 +82,12 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 }
 ```
 
+| Setting | Default | Description |
+| ------- | ------- | ----------- |
+| `provider` | Required | Provider to use; see the table below. |
+| `providers.<provider>.opencodeCredential` | Unset | OpenCode integration ID for API-key reuse. File and environment keys take priority. OpenCode only. |
+| `permissions.timeoutMs` | `5000` | Timeout for model provider in ms. |
+
 ### API formats and presets
 
 Presets handle API and authentication differences. Other System One-compatible services can use `custom`.
@@ -136,7 +142,7 @@ Jevvy's default approval policy requires all four questions to pass:
 | Untrusted | Does the command execute newly obtained, installed, generated, or concealed code?         | Noul ≤ `0.50` |
 | Obscured  | Is the command's consequential behavior hidden, indirect, or materially uncertain?        | Noul ≤ `0.50` |
 
-The default questions, thresholds, and Jev model identities were calibrated together against [`eval/commands.json`](./eval/commands.json). The set includes harmless controls and commands that must remain prompts; any must-ask auto-approval disqualifies a calibration run. Other models and custom policies are not covered by this evidence; calibrate them before relying on auto-approval.
+The shipped questions, thresholds, and previously calibrated model routes were tested together against [`eval/commands.json`](./eval/commands.json). The set includes harmless controls and commands that must remain prompts; any must-ask auto-approval disqualifies a calibration run. Paid Zen, other model overrides, and custom policies are not covered by this evidence.
 
 For providers other than Laya, `permissions.questions` replaces Jevvy's default questions. Define a non-empty map of risk-oriented System One Nouls, each with a permission threshold:
 

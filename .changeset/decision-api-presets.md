@@ -11,3 +11,9 @@ The existing questions and thresholds remain unchanged and calibrated for Jev. O
 ## Configuration
 
 Type a provider name to filter assisted setup choices. Group setup documentation by API format, with per-service credentials and examples for both new integrations.
+
+## Reliability
+
+Keep requested routes separate from expected model identities during calibration. Microsoft deployment names can differ from the provider-pinned `microsoft-decision-1` response identity without failing calibration, while unexpected reported identities still fail. No new configuration or setup step is required.
+
+Encode custom questions without optional criteria correctly instead of failing before the provider request.
