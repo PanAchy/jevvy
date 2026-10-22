@@ -44,6 +44,7 @@ const LayaProviderSchema = Schema.Struct({
 const JevvyConfigSchema = Schema.Struct({
   $schema: Schema.optionalKey(Schema.String),
   provider: JevProvider,
+  metrics: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
   providers: Schema.optionalKey(Schema.Struct({
     zen: Schema.optionalKey(SystemOnePresetSettings),
     typesafe: Schema.optionalKey(SystemOnePresetSettings),
@@ -64,12 +65,13 @@ interface ConfigDocument extends Schema.Schema.Type<typeof JevvyConfigSchema> {}
 
 export type JevvyConfig =
   | { readonly kind: "unconfigured" }
-  | { readonly kind: "shipped-policy"; readonly selection: ProviderSelection; readonly timeoutMs: number }
+  | { readonly kind: "shipped-policy"; readonly selection: ProviderSelection; readonly timeoutMs: number; readonly metricsEnabled: boolean }
   | {
       readonly kind: "custom-policy"
       readonly selection: ProviderSelection
       readonly questions: ApprovalQuestions
       readonly timeoutMs: number
+      readonly metricsEnabled: boolean
     }
   | { readonly kind: "invalid"; readonly message: string }
 
@@ -206,6 +208,7 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
 
   const selection = yield* providerSelection(document.value, environmentKeys)
   const timeoutMs = document.value.permissions?.timeoutMs ?? 5_000
+  const metricsEnabled = document.value.metrics?.enabled ?? false
 
   if (selection.provider === "laya") {
     const policy = document.value.providers?.laya?.policy
@@ -215,14 +218,14 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
       return yield* new ConfigFileError({ reason: "policy" })
     }
 
-    return { kind: "custom-policy" as const, selection, questions: policy.questions, timeoutMs }
+    return { kind: "custom-policy" as const, selection, questions: policy.questions, timeoutMs, metricsEnabled }
   }
 
   const questions = document.value.permissions?.questions
 
-  if (questions === undefined) return { kind: "shipped-policy" as const, selection, timeoutMs }
+  if (questions === undefined) return { kind: "shipped-policy" as const, selection, timeoutMs, metricsEnabled }
 
-  return { kind: "custom-policy" as const, selection, questions, timeoutMs }
+  return { kind: "custom-policy" as const, selection, questions, timeoutMs, metricsEnabled }
 }, Effect.catchTag("ConfigFileError", (error) =>
   Effect.succeed({ kind: "invalid" as const, message: invalidMessage(error.reason) })))
 

@@ -84,6 +84,7 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 | ------- | ------- | ----------- |
 | `provider` | Required | Provider to use; see the table below. |
 | `permissions.timeoutMs` | `5000` | Timeout for model provider in ms. |
+| `metrics.enabled` | `false` | Opt in to bounded OpenCode aggregate JSON in global `metrics/`, beside `jevvy.jsonc`. Read `metrics/AGENTS.md` and `schema.json` for the data API, seven-day windows, automatic cleanup and active-writer limit. POSIX-only initially; Windows opt-in reports an actionable diagnostic. Reload to apply. No command history or cumulative Claude Code metrics. |
 
 ### Providers
 

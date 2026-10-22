@@ -8,6 +8,7 @@ import { globalJevvyConfigPath, loadJevvyConfig } from "../config.ts"
 import { createPermissionReviewer } from "../engine.ts"
 import { createConfiguredProvider, shippedPolicyProvenance } from "../providers.ts"
 import { createEvaluate } from "./evaluate.ts"
+import { persistReviewMetrics } from "./metrics-files.ts"
 import { createCommandCapture } from "./command-capture.ts"
 import { hasExplicitAsk } from "./ask-rule.ts"
 import { createReviewControl } from "../review-control.ts"
@@ -73,10 +74,25 @@ export default Plugin.define({
 
     const questions = permissionConfig.kind === "custom-policy" ? permissionConfig.questions : undefined
 
-    const reviewer = yield* createPermissionReviewer(selected.client, {
+    const baseReviewer = yield* createPermissionReviewer(selected.client, {
       questions,
       timeoutMs: permissionConfig.timeoutMs,
     }).pipe(Effect.orDie)
+
+    const reviewer = yield* persistReviewMetrics(
+      baseReviewer,
+      permissionConfig.metricsEnabled,
+      configPath,
+      permissionConfig.kind === "custom-policy" ? "custom" : "shipped",
+      permissionConfig.timeoutMs,
+      (message) => {
+        if (message === problem) return
+
+        problem = message
+
+        if (message !== undefined) console.warn(message)
+      },
+    )
 
     const capture = createCommandCapture()
 

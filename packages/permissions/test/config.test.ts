@@ -63,6 +63,12 @@ const withConfigFile = <A, E, R>(
 )
 
 describe("Jevvy configuration", () => {
+  it.effect.each([undefined, false, true])("loads default-off metrics opt-in %s", (enabled) => Effect.gen(function*() {
+    const config = yield* withConfigFile(JSON.stringify({ provider: "typesafe", metrics: { enabled } }), load)
+
+    expect(config).toMatchObject({ kind: "shipped-policy", metricsEnabled: enabled ?? false })
+  }))
+
   it.effect.each(presets)("sends the exact configured %s model through the real client", ([provider, variable, defaultModel, endpoint]) => Effect.gen(function*() {
     for (const model of [undefined, defaultModel, "jev-1.13", "jev-1.13-free", "typesafe/jev-test-arbitrary", " unmodified "]) {
       const config = yield* withConfigFile(JSON.stringify({ provider, providers: { [provider]: { model } } }),
@@ -210,6 +216,7 @@ describe("Jevvy configuration", () => {
 
     expect(config).toEqual({
       kind: "custom-policy",
+      metricsEnabled: false,
       timeoutMs: 5_000,
       selection: { provider: "typesafe", apiKey: undefined },
       questions: customQuestions,
@@ -320,6 +327,7 @@ describe("Jevvy configuration", () => {
 
       expect(yield* withConfigFile(raw, load)).toEqual({
         kind: "custom-policy",
+        metricsEnabled: false,
         timeoutMs: 5_000,
         selection: {
           provider: "custom",
@@ -349,6 +357,7 @@ describe("Jevvy configuration", () => {
 
     expect(yield* withConfigFile(raw, load)).toEqual({
       kind: "custom-policy",
+      metricsEnabled: false,
       timeoutMs: 12_000,
       selection: { provider: "laya", endpoint: undefined, model: undefined, apiKey: undefined },
       questions: customQuestions,
@@ -444,6 +453,7 @@ describe("Jevvy configuration", () => {
 
       expect(yield* withConfigFile(raw, load)).toEqual({
         kind: "shipped-policy",
+        metricsEnabled: false,
         timeoutMs: 5_000,
         selection: {
           provider: "custom",
@@ -462,6 +472,7 @@ describe("Jevvy configuration", () => {
 
     expect(yield* withConfigFile(raw, load)).toEqual({
       kind: "shipped-policy",
+      metricsEnabled: false,
       timeoutMs: 5_000,
       selection: { provider: "typesafe", apiKey: undefined },
     })

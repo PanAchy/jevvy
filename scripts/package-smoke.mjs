@@ -4,7 +4,7 @@
 // both internal workspaces remain implementation details.
 
 import { execFileSync, spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -228,6 +228,30 @@ try {
   const review = await effect.Effect.runPromise(reviewer.review({ action: "shell", resources: ["pwd"] }))
 
   ensure(review.effect === "allow", `installed permission engine returned ${String(review.effect)}`)
+
+  const metrics = await import(pathToFileURL(join(permissionsRoot, "dist", "opencode", "metrics-files.js")).href)
+
+  ensure(metrics.metricsAgentInstructions.startsWith("# Jevvy Permissions aggregate API v1"), "packed metrics instructions are missing")
+
+  if (process.platform !== "win32") {
+    const fixture = join(realpathSync(temporary), "metrics-fixture")
+
+    mkdirSync(fixture, { mode: 0o700 })
+    await effect.Effect.runPromise(effect.Effect.scoped(effect.Effect.gen(function*() {
+      const observed = yield* metrics.persistReviewMetrics(reviewer, true, join(fixture, "jevvy.jsonc"), "shipped", 5_000)
+
+      yield* observed.review({ action: "shell", resources: ["packed-fixture-command"] })
+    })))
+
+    const root = join(fixture, "metrics")
+    const schema = JSON.parse(readFileSync(join(root, "schema.json"), "utf8"))
+    const snapshot = JSON.parse(readFileSync(join(root, "snapshot.json"), "utf8"))
+
+    ensure(schema.additionalProperties === false, "packed metrics schema is not closed")
+    ensure(snapshot.schemaVersion === 1 && snapshot.writers.length === 1 && snapshot.writers[0].snapshot.outcomes.allow === 1 && snapshot.writers[0].closed, "packed metrics snapshot or final flush failed")
+    ensure(readFileSync(join(root, "AGENTS.md"), "utf8") === metrics.metricsAgentInstructions, "packed metrics instructions were not installed")
+    ensure(!existsSync(join(fixture, "jevvy.jsonc")), "metrics wrote provider configuration")
+  }
 
   const permissions = await import(pathToFileURL(join(permissionsRoot, "dist", "index.js")).href)
 

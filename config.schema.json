@@ -37,6 +37,17 @@
         }
       }
     },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt in to bounded OpenCode plugin-instance aggregates in the global metrics directory. Takes effect on plugin reload; no cumulative Claude Code metrics."
+        }
+      }
+    },
     "permissions": {
       "type": "object",
       "additionalProperties": false,
