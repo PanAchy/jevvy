@@ -83,8 +83,7 @@ export default Plugin.define({
       baseReviewer,
       permissionConfig.metricsEnabled,
       configPath,
-      permissionConfig.kind === "custom-policy" ? "custom" : "shipped",
-      permissionConfig.timeoutMs,
+      permissionConfig.kind === "shipped-policy",
       (message) => {
         if (message === problem) return
 
@@ -92,7 +91,7 @@ export default Plugin.define({
 
         if (message !== undefined) console.warn(message)
       },
-    )
+    ).pipe(Effect.provide(NodePath.layer))
 
     const capture = createCommandCapture()
 

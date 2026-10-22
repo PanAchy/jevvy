@@ -44,7 +44,7 @@
         "enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Opt in to bounded OpenCode plugin-instance aggregates in the global metrics directory. Takes effect on plugin reload; no cumulative Claude Code metrics."
+          "description": "Opt in to recent, best-effort OpenCode review outcome counts and shipped-question abstention reasons in the global metrics directory. Takes effect on plugin reload; no command history or cumulative Claude Code metrics."
         }
       }
     },

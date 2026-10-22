@@ -234,20 +234,23 @@ try {
   ensure(metrics.metricsAgentInstructions.startsWith("# Jevvy Permissions aggregate API v1"), "packed metrics instructions are missing")
 
   if (process.platform !== "win32") {
+    const nodePath = await import(pathToFileURL(join(consumer, "node_modules", "@effect", "platform-node", "dist", "NodePath.js")).href)
+
     const fixture = join(realpathSync(temporary), "metrics-fixture")
 
     mkdirSync(fixture, { mode: 0o700 })
     await effect.Effect.runPromise(effect.Effect.scoped(effect.Effect.gen(function*() {
-      const observed = yield* metrics.persistReviewMetrics(reviewer, true, join(fixture, "jevvy.jsonc"), "shipped", 5_000)
+      const observed = yield* metrics.persistReviewMetrics(reviewer, true, join(fixture, "jevvy.jsonc"), true)
 
       yield* observed.review({ action: "shell", resources: ["packed-fixture-command"] })
-    })))
+    })).pipe(effect.Effect.provide(nodePath.layer)))
 
     const root = join(fixture, "metrics")
     const schema = JSON.parse(readFileSync(join(root, "schema.json"), "utf8"))
     const snapshot = JSON.parse(readFileSync(join(root, "snapshot.json"), "utf8"))
 
     ensure(schema.additionalProperties === false, "packed metrics schema is not closed")
+    ensure(schema.properties.writers.items.properties.snapshot.properties.outcomes.description.includes("review invocations"), "packed metrics schema lacks counter interpretation")
     ensure(snapshot.schemaVersion === 1 && snapshot.writers.length === 1 && snapshot.writers[0].snapshot.outcomes.allow === 1 && snapshot.writers[0].closed, "packed metrics snapshot or final flush failed")
     ensure(readFileSync(join(root, "AGENTS.md"), "utf8") === metrics.metricsAgentInstructions, "packed metrics instructions were not installed")
     ensure(!existsSync(join(fixture, "jevvy.jsonc")), "metrics wrote provider configuration")

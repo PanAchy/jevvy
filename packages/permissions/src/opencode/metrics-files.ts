@@ -2,17 +2,16 @@ import { randomUUID } from "node:crypto"
 import { constants, renameSync, unlinkSync } from "node:fs"
 import type { Stats } from "node:fs"
 import { lstat, mkdir, open, opendir } from "node:fs/promises"
-import { dirname, join, resolve } from "node:path"
 import * as Clock from "effect/Clock"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
+import * as Path from "effect/Path"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 import { acquireConfigLease } from "../config-lease.ts"
 import type { PermissionReviewer } from "../engine.ts"
 import { createReviewMetrics, decodeMetricsSnapshot, MetricsDocument, MetricsWriter, METRICS_WRITER_LIMIT } from "../metrics.ts"
-import type { MetricsSnapshot } from "../metrics.ts"
 
 export const METRICS_DOCUMENT_BYTES = 65_536
 
@@ -20,17 +19,16 @@ export const METRICS_STALE_MS = 120_000
 
 export const metricsAgentInstructions = `# Jevvy Permissions aggregate API v1
 
-- Read only snapshot.json and schema.json in this metrics directory. AGENTS.md and schema.json are generated resources that Jevvy updates. The adjacent jevvy.jsonc may contain credentials and is not needed for analysis.
-- Read snapshot.json at most 65536 bytes, and schema/instructions at most 16384 bytes each. Validate against schema.json. Ignore links, malformed or unknown-version documents, invalid writer entries and expired snapshots. Missing or unreadable data is unavailable, not zero. Never read .pending-* or lock artifacts.
-- writers contains at most 16 latest OpenCode plugin-instance aggregates. token is random local writer-ownership metadata, not a user, session or task ID. closed means the writer completed a best-effort shutdown flush. This is not command/review history. Claude Code cumulative metrics are not implemented; its hook is unchanged.
-- startedAtMs, updatedAtMs and expiresAtMs are Unix milliseconds: aggregate window start, snapshot time and expiry. Each instance rolls over its aggregate window after seven days. Enabled maintenance physically removes expired entries. No cleanup runs while disabled or no host is running. Closed entries can be evicted early at capacity; a heartbeat older than two minutes can also be reclaimed without proving the process died. Never interpret retained entries as complete history.
-- Normal shutdown/reload releases capacity automatically. At 16 fresh active writers, additional writers report an unavailable diagnostic and retry. No manual reset is needed for ordinary repeated starts. Data normally refreshes every 30 seconds; stale data may reflect shutdown, contention or storage failure.
-- completed = allow + judgedAsk + unavailable + empty. Duration bucket totals must equal completed; crossing counts cannot exceed judgedAsk. Cache hits count review invocations, not provider calls. Abstentions are judgedAsk + unavailable + empty, not host prompts or denials. Allows do not prove execution or prompts saved.
-- crossings counts strictly-greater-than shipped-question threshold crossings, once per question per judgedAsk review. Rows overlap; denominator is judgedAsk. Custom policy uses null and exposes no custom labels. Never infer threshold tuning or calibration evidence.
-- durationMs is completed engine-review elapsed time including cache/cooldown handling: below100=[0,100), from100To999=[100,1000), atLeast1000=[1000,infinity) milliseconds. It is not provider latency, exact percentiles, tokens, billing or cost. timeoutMs is the effective engine timeout; a host deadline may be shorter.
-- Example: show completed counts and allow/completed when completed is nonzero, and crossing/judgedAsk when judgedAsk is nonzero. Report missing, expired or saturated data. Matching policy and timeoutMs are insufficient for comparisons: model/provider identity and custom policy details are intentionally absent.
-- Data is best effort. Interruptions and defects have no completed count. incomplete marks an observer failure and saturated marks counters stopped at the safe-integer limit. Crashes, I/O failure, contention and capacity can lose updates without setting incomplete. Sparse aggregates can disclose an individual outcome. No exact-loss or crash-durability guarantee exists. Never read adjacent credentials to fill missing fields.
-- Persistence is currently POSIX-only with private 0700 directory and 0600 data/resource files. Windows opt-in reports an actionable unsupported-platform diagnostic because user-only ACL privacy is not verified. Reviews are unchanged. No dashboard, metrics CLI or network submission is provided.
+## Analysis
+
+- Before reporting, validate snapshot.json with schema.json, including the field descriptions and counter/time consistency checks.
+- Use valid, unexpired writer entries. Report missing or unreadable data as unavailable, not zero.
+- Flag incomplete or saturated entries and describe retained totals as partial, not a complete history.
+
+## Files
+
+- Jevvy maintains these generated files. Write reports elsewhere.
+- Keep analysis within this metrics directory. Adjacent provider configuration may contain credentials and is not needed.
 `
 
 export const metricsWindowsProblem = "Jevvy Permissions metrics are unavailable on Windows because this integration cannot verify user-only directory ACLs. Set metrics.enabled to false to dismiss this diagnostic. Permission reviews are unchanged."
@@ -109,8 +107,8 @@ const readPrivate = async (path: string, maximum: number): Promise<string | unde
   }
 }
 
-const prepareRoot = async (configPath: string): Promise<string> => {
-  const parent = resolve(dirname(configPath))
+const prepareRoot = async (configPath: string, paths: Path.Path): Promise<string> => {
+  const parent = paths.resolve(paths.dirname(configPath))
   let ancestor = parent
 
   for (;;) {
@@ -119,7 +117,7 @@ const prepareRoot = async (configPath: string): Promise<string> => {
     if (!info.isDirectory() || (info.uid !== 0 && info.uid !== process.getuid?.()) ||
       ((info.mode & 0o022) !== 0 && (info.mode & 0o1000) === 0)) throw new Error("unsafe metrics ancestor")
 
-    const next = dirname(ancestor)
+    const next = paths.dirname(ancestor)
 
     if (next === ancestor) break
 
@@ -127,7 +125,7 @@ const prepareRoot = async (configPath: string): Promise<string> => {
   }
 
   await secureDirectory(parent)
-  const root = join(parent, "metrics")
+  const root = paths.join(parent, "metrics")
 
   try {
     await mkdir(root, { mode: 0o700 })
@@ -166,8 +164,7 @@ export const persistReviewMetrics = Effect.fn("MetricsFiles.persist")(function*(
   reviewer: PermissionReviewer,
   enabled: boolean,
   configPath: string,
-  policy: MetricsSnapshot["policy"],
-  timeoutMs: number,
+  shippedQuestions: boolean,
   report: (problem: string | undefined) => void = () => undefined,
 ) {
   if (!enabled) return reviewer
@@ -186,14 +183,15 @@ export const persistReviewMetrics = Effect.fn("MetricsFiles.persist")(function*(
     return reviewer
   }
 
-  const metrics = yield* createReviewMetrics(reviewer, policy, timeoutMs)
+  const metrics = yield* createReviewMetrics(reviewer, shippedQuestions)
+  const paths = yield* Path.Path
   const operations = createNativeOperations()
   const native = operations.run
 
   const flush = Effect.fn("MetricsFiles.flush")(function*(closed: boolean) {
     return yield* Effect.scoped(Effect.gen(function*() {
-      const root = yield* native(() => prepareRoot(configPath))
-      const path = join(root, "snapshot.json")
+      const root = yield* native(() => prepareRoot(configPath, paths))
+      const path = paths.join(root, "snapshot.json")
 
       yield* native(async () => {
         try {
@@ -227,7 +225,7 @@ export const persistReviewMetrics = Effect.fn("MetricsFiles.persist")(function*(
       for (const name of names) {
         if (!pendingName(name)) continue
 
-        const pending = join(root, name)
+        const pending = paths.join(root, name)
 
         yield* native(() => readPrivate(pending, METRICS_DOCUMENT_BYTES))
         yield* lease.withOwnership(() => unlinkSync(pending))
@@ -236,12 +234,12 @@ export const persistReviewMetrics = Effect.fn("MetricsFiles.persist")(function*(
       const replace = Effect.fn("MetricsFiles.replace")(function*(name: string, content: string, maximum: number) {
         if (Buffer.byteLength(content) > maximum) return yield* new MetricsFilesError({ reason: "storage" })
 
-        const target = join(root, name)
+        const target = paths.join(root, name)
         const previous = yield* native(() => readPrivate(target, maximum))
 
         if (previous === content) return
 
-        const temporary = join(root, `.pending-${randomUUID()}`)
+        const temporary = paths.join(root, `.pending-${randomUUID()}`)
 
         yield* native(async () => {
           const file = await open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
