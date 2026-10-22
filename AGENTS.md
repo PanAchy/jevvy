@@ -47,7 +47,8 @@ Providers and harnesses are independent dimensions inside the product. OpenRoute
 - Read each harness's toggle when starting a review. OFF skips new reviews and cache lookups; started reviews finish normally. The toggle never changes host prompting or automatic acceptance.
 - Surface actionable setup failures through host diagnostics without turning them into permission decisions.
 - Limit local host-rule matching to distinguishing review asks from host asks. Never add local command verdicts, task authorization, credential detection, redaction, durable rules, or persistent decision records.
-- Read Jevvy provider credentials, questions, and thresholds only from the global Jevvy path. Host configuration may be read solely to distinguish review asks from host asks; repositories must not control Jevvy's provider credentials, questions, or thresholds.
+- Read Jevvy questions, thresholds, and credential-source settings only from the global Jevvy path. Repositories must not control Jevvy's provider credentials, questions, or thresholds.
+- Prefer the globally configured provider key, then its environment variable. OpenCode alone may fall back to an API key explicitly selected by global `providers.<name>.opencodeCredential`, through its integration API. Skip OAuth connections without resolving them; never read `auth.json` directly. Other host configuration reads remain limited to distinguishing review asks from host asks.
 - Cache valid allow and ask judgments for the owning process lifetime. Do not cache unavailable results.
 
 Question wording, thresholds, and model identity are one calibrated policy. A provider-specific model ID may reuse calibration only when its route is verified to serve the same model. Custom questions are supported, but only shipped defaults can carry Jevvy calibration evidence.

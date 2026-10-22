@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
+import { Integration } from "@opencode/schema/integration"
 import { apiKeyFromCredential, withOpenCodeCredential } from "../src/opencode/credential.ts"
 
 const selection = (opencodeCredential?: string) => ({
@@ -15,7 +16,7 @@ describe("OpenCode credential", () => {
   it("accepts only key credentials", () => {
     expect(apiKeyFromCredential({ type: "key", key: " sk-or-v1-test " })).toBe("sk-or-v1-test")
     expect(apiKeyFromCredential({ type: "key", key: "   " })).toBeUndefined()
-    expect(apiKeyFromCredential({ type: "oauth" })).toBeUndefined()
+    expect(apiKeyFromCredential({ type: "oauth", methodID: Integration.MethodID.make("oauth"), refresh: "fixture-refresh", access: "fixture-access", expires: 0 })).toBeUndefined()
     expect(apiKeyFromCredential(undefined)).toBeUndefined()
   })
 

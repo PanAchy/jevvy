@@ -70,6 +70,8 @@ export default Plugin.define({
 
         if (connection === undefined) return undefined
 
+        if (connection.type === "credential" && connection.method === "oauth") return undefined
+
         const credential = yield* ctx.integration.connection.resolve(connection)
 
         return apiKeyFromCredential(credential)
