@@ -19,6 +19,7 @@ export { globalJevvyConfigPath } from "./config-path.ts"
 const SystemOnePresetSettings = Schema.Struct({
   apiKey: Schema.optionalKey(Schema.NonEmptyString),
   model: Schema.optionalKey(Schema.NonEmptyString),
+  opencodeCredential: Schema.optionalKey(Schema.NonEmptyString),
 })
 
 const CustomProviderSchema = Schema.Struct({
@@ -189,7 +190,12 @@ const providerSelection = (
     ? environmentApiKey(document.provider, environment)
     : Redacted.make(fileApiKey)
 
-  return Effect.succeed({ provider: document.provider, apiKey, model: document.providers?.[document.provider]?.model })
+  return Effect.succeed({
+    provider: document.provider,
+    apiKey,
+    model: document.providers?.[document.provider]?.model,
+    opencodeCredential: document.providers?.[document.provider]?.opencodeCredential,
+  })
 }
 
 const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: ConfigProvider.ConfigProvider) {

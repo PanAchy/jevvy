@@ -83,6 +83,7 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 | Setting | Default | Description |
 | ------- | ------- | ----------- |
 | `provider` | Required | Provider to use; see the table below. |
+| `providers.<provider>.opencodeCredential` | Unset | OpenCode integration ID for API-key reuse. File and environment keys take priority. OpenCode only. |
 | `permissions.timeoutMs` | `5000` | Timeout for model provider in ms. |
 
 ### Providers

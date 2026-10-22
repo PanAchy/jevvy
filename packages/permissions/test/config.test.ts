@@ -184,6 +184,19 @@ describe("Jevvy configuration", () => {
     expect(yield* withConfigFile(JSON.stringify(document), load)).toMatchObject({ kind: "invalid" })
   }))
 
+  it.effect("loads an OpenCode credential integration id", () => Effect.gen(function*() {
+    const raw = JSON.stringify({ provider: "openrouter", providers: { openrouter: { opencodeCredential: "openrouter" } } })
+
+    expect(yield* withConfigFile(raw, load)).toMatchObject({
+      kind: "shipped-policy",
+      selection: { provider: "openrouter", opencodeCredential: "openrouter" },
+    })
+
+    const empty = JSON.stringify({ provider: "openrouter", providers: { openrouter: { opencodeCredential: "" } } })
+
+    expect(yield* withConfigFile(empty, load)).toMatchObject({ kind: "invalid" })
+  }))
+
   it.effect.each([undefined, 12_000, 0.5])("loads timeoutMs %s for shipped and custom policies", (timeoutMs) => Effect.gen(function*() {
     for (const questions of [undefined, customQuestions]) {
       const raw = JSON.stringify({ provider: "typesafe", providers: { typesafe: { model: "configured-route" } }, permissions: { timeoutMs, questions } })

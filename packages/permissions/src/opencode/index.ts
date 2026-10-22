@@ -7,6 +7,7 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import { globalJevvyConfigPath, loadJevvyConfig } from "../config.ts"
 import { createPermissionReviewer } from "../engine.ts"
 import { createConfiguredProvider, shippedPolicyProvenance } from "../providers.ts"
+import { apiKeyFromCredential, withOpenCodeCredential } from "./credential.ts"
 import { createEvaluate } from "./evaluate.ts"
 import { createCommandCapture } from "./command-capture.ts"
 import { hasExplicitAsk } from "./ask-rule.ts"
@@ -18,6 +19,7 @@ import {
   invalidConfigurationMessage,
   missingConfigurationMessage,
   missingCredentialMessage,
+  missingOpenCodeCredentialMessage,
 } from "./setup.ts"
 
 class PluginSetupError extends Schema.TaggedError<PluginSetupError>()("PluginSetupError", { message: Schema.String }) {}
@@ -59,13 +61,35 @@ export default Plugin.define({
       return yield* new PluginSetupError({ message: missingConfigurationMessage(configPath) })
     }
 
-    const selected = createConfiguredProvider(permissionConfig.selection)
+    const selection = permissionConfig.selection
+
+    const resolved = selection.provider === "laya" || selection.provider === "custom"
+      ? selection
+      : yield* withOpenCodeCredential(selection, (integrationID) => Effect.gen(function*() {
+        const connection = yield* ctx.integration.connection.active(integrationID)
+
+        if (connection === undefined) return undefined
+
+        if (connection.type === "credential" && connection.method === "oauth") return undefined
+
+        const credential = yield* ctx.integration.connection.resolve(connection)
+
+        return apiKeyFromCredential(credential)
+      }))
+
+    const selected = createConfiguredProvider(resolved)
 
     if (selected === undefined) {
-      const provider = permissionConfig.selection.provider
+      const provider = resolved.provider
 
       if (provider === "custom") {
         return yield* new PluginSetupError({ message: "Jevvy could not construct the configured custom provider" })
+      }
+
+      if ("opencodeCredential" in resolved && resolved.opencodeCredential !== undefined) {
+        return yield* new PluginSetupError({
+          message: missingOpenCodeCredentialMessage(provider, resolved.opencodeCredential, configPath),
+        })
       }
 
       return yield* new PluginSetupError({ message: missingCredentialMessage(provider, configPath) })

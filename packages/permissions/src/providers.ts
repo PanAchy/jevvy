@@ -26,6 +26,7 @@ export type ProviderSelection =
       readonly provider: Exclude<BuiltInProvider, "laya">
       readonly model?: string
       readonly apiKey?: Redacted.Redacted<string>
+      readonly opencodeCredential?: string
     }
   | {
       readonly provider: "laya"

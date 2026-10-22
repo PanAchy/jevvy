@@ -16,7 +16,14 @@ describe("configured provider creation", () => {
     const document = JSON.parse(readFileSync(new URL("../../../config.schema.json", import.meta.url), "utf8"))
     expect(document.$defs.systemOnePresetSettings).toEqual({
       type: "object", additionalProperties: false,
-      properties: { apiKey: { type: "string", minLength: 1 }, model: { type: "string", minLength: 1 } },
+      properties: {
+        apiKey: { type: "string", minLength: 1 },
+        model: { type: "string", minLength: 1 },
+        opencodeCredential: expect.objectContaining({
+          type: "string",
+          minLength: 1,
+        }),
+      },
     })
 
     for (const provider of ["zen", "typesafe", "openrouter", "vercel"]) {
