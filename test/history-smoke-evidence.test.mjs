@@ -150,6 +150,37 @@ it("observes worker errors without suppressing native unhandled-error behavior",
   expect(text).not.toContain("synthetic-unhandled-worker-error")
 }))
 
+it("records synchronous native send failure without consuming the thrown error or its payload", () => fixture((root) => {
+  const trace = prepareHistoryTrace(root, true)
+  const program = "import { Worker } from 'node:worker_threads'; const worker = new Worker(new URL('data:text/javascript,setInterval(() => {}, 1000)'), { execArgv: [] }); try { worker.postMessage([0, { _tag: 'Append', sequence: 1, events: [{ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', secret: () => 'never-trace-function-body' }] }]); throw new Error('send must throw') } catch (error) { if (error.name !== 'DataCloneError') throw error } finally { await worker.terminate() }"
+  const result = spawnSync(process.execPath, [...trace.args, "--input-type=module", "-e", program], { env: { ...process.env, ...trace.env }, encoding: "utf8", timeout: 5000 })
+  expect(result.status).toBe(0)
+  expect(result.stdout).toBe("")
+  expect(result.stderr).toBe("")
+  const text = readFileSync(trace.file, "utf8")
+  expect(text).toContain('"event":"error"')
+  expect(text).not.toContain("DataCloneError")
+  expect(text).not.toContain("never-trace-function-body")
+}))
+
+it("identifies the constant history role and marks unknown frames, extra Failed fields and invalid Append IDs", () => fixture((root) => {
+  const trace = prepareHistoryTrace(root, true)
+  writeFileSync(join(root, "package.json"), JSON.stringify({ type: "module" }))
+  const worker = join(root, "history-worker.js")
+  writeFileSync(worker, "import { parentPort } from 'node:worker_threads'; parentPort.postMessage([1, { _tag: 'NeverTraceUnknownPayload', secret: 'never-trace-payload' }]); parentPort.postMessage([0]); parentPort.on('message', () => parentPort.postMessage([1, { _tag: 'Failed', kind: 'busy', message: 'never-trace-payload' }]))")
+  const program = `import { Worker } from 'node:worker_threads'; const worker = new Worker(${JSON.stringify(worker)}, { execArgv: ${JSON.stringify(trace.args)} }); worker.on('message', async (value) => { if (value.length === 1) worker.postMessage([0, { _tag: 'Append', sequence: 1, events: [{ id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, { id: 'never-trace-invalid-id' }] }]); else if (value[1]._tag === 'Failed') await worker.terminate() })`
+  const result = spawnSync(process.execPath, [...trace.args, "--input-type=module", "-e", program], { env: { ...process.env, ...trace.env }, encoding: "utf8", timeout: 5000 })
+  expect(result.status).toBe(0)
+  expect(result.stdout).toBe("")
+  expect(result.stderr).toBe("")
+  const text = readFileSync(trace.file, "utf8")
+  const events = text.trim().split("\n").map((line) => JSON.parse(line))
+  expect(events.find((entry) => entry.event === "spawn").role).toBe("history")
+  expect(events.filter((entry) => entry.event === "invalid-frame")).toHaveLength(3)
+
+  for (const excluded of [root, "NeverTraceUnknownPayload", "never-trace-payload", "never-trace-invalid-id"]) expect(text).not.toContain(excluded)
+}))
+
 it("traces actual worker protocol timing without frames, commands, keys or recursive worker patches", () => fixture((root) => {
   const trace = prepareHistoryTrace(root, true)
 
@@ -171,6 +202,7 @@ it("traces actual worker protocol timing without frames, commands, keys or recur
   const text = readFileSync(trace.file, "utf8")
   const events = text.trim().split("\n").map((line) => JSON.parse(line))
   expect(events.filter((entry) => entry.event === "spawn")).toHaveLength(1)
+  expect(events.find((entry) => entry.event === "spawn").role).toBe("other")
   expect(events.some((entry) => entry.event === "preload" && entry.thread > 0)).toBe(true)
   expect(events.some((entry) => entry.event === "invalid-frame")).toBe(true)
   expect(events.find((entry) => entry.tag === "Failed").kind).toBe("busy")

@@ -104,6 +104,19 @@ describe("review history projection", () => {
 })
 
 describe("history at the OpenCode boundary", () => {
+  it.effect.each([
+    { effect: "allow", judgments: [judgment] },
+    { effect: "ask", reason: "judged", judgments: [{ ...judgment, effect: "ask" }] },
+    { effect: "ask", reason: "unavailable", judgments: [] },
+    { effect: "ask", reason: "empty", judgments: [] },
+  ] satisfies readonly PermissionReview[])("offers exactly the complete eligible review %j", (result) => Effect.gen(function*() {
+    const observations: HistoryObservation[] = []
+    const event = hostEvent()
+    yield* createEvaluate({ review: () => Effect.succeed(result) }, { inspect: () => Effect.succeed({ command, explicitAsk: false }), history: { provider: "custom", observer: { observe: (entry) => Effect.sync(() => { observations.push(entry) }) } } })(event)
+    expect(event.effect).toBe(result.effect)
+    expect(observations).toEqual([{ command, result, provider: "custom", tsMs: 0, latencyMs: 0 }])
+  }))
+
   it.effect.each([["allow", "shell"], ["deny", "shell"], ["ask", "read"]] as const)("does not observe native %s / %s", ([effect, action]) => Effect.gen(function*() {
     const observe = vi.fn(() => Effect.void)
     const review = vi.fn(() => Effect.succeed({ effect: "allow" as const, judgments: [judgment] }))
@@ -128,6 +141,7 @@ describe("history at the OpenCode boundary", () => {
     expect(event.effect).toBe("ask")
     expect(review).not.toHaveBeenCalled()
     expect(observe.mock.calls[0]?.[0]).toMatchObject({ command, result: "explicit-ask", latencyMs: null })
+    expect(observe.mock.calls).toEqual([[{ command, result: "explicit-ask", provider: "custom", tsMs: 0, latencyMs: null }]])
   }))
 
   it.effect("measures engine duration including cache hits without extra provider calls", () => Effect.gen(function*() {

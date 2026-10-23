@@ -3,6 +3,7 @@ import { syncBuiltinESMExports } from "node:module"
 import workers from "node:worker_threads"
 import assert from "node:assert/strict"
 import { errorMonitor } from "node:events"
+import { basename } from "node:path"
 
 const destination = new URL("./history-worker-trace.jsonl", import.meta.url)
 
@@ -38,6 +39,12 @@ if (process.env.JEVVY_SMOKE_TRACE === "1") {
       ...["Stored", "Close", "Closed"].map((tag) => [tag, () => ({})]),
     ])
 
+    const fieldsByTag = new Map([
+      ["Append", ["_tag", "sequence", "events"]],
+      ["Failed", ["_tag", "kind"]],
+      ...["Stored", "Close", "Closed"].map((tag) => [tag, ["_tag", "sequence"]]),
+    ])
+
     const frame = (direction, value, worker) => {
       if (!Array.isArray(value)) {
         record("invalid-frame", { worker, direction })
@@ -60,8 +67,19 @@ if (process.env.JEVVY_SMOKE_TRACE === "1") {
       const body = value[1]
       const project = projectors.get(body?._tag)
 
-      if (!project) return
+      if (!project) {
+        record("invalid-frame", { worker, direction })
+
+        return
+      }
+
+      const allowed = fieldsByTag.get(body._tag)
+      const keys = Object.keys(body)
+
+      if (![Object.prototype, null].includes(Object.getPrototypeOf(body)) || keys.length !== allowed.length || keys.some((key) => !allowed.includes(key))) record("invalid-frame", { worker, direction })
       const fields = { worker, direction, tag: body._tag, ...project(body) }
+
+      if (fields.ids && (!Array.isArray(body.events) || fields.ids.length !== body.events.length)) record("invalid-frame", { worker, direction })
 
       if (Number.isSafeInteger(body.sequence) && body.sequence > 0) fields.sequence = body.sequence
       record("frame", fields)
@@ -71,7 +89,9 @@ if (process.env.JEVVY_SMOKE_TRACE === "1") {
       constructor(...args) {
         super(...args)
         this.traceId = this.threadId
-        record("spawn", { worker: this.traceId })
+        const entry = args[0] instanceof URL ? args[0].pathname : String(args[0])
+        this.traceRole = ["claude-history-worker.js", "history-worker.js"].includes(basename(entry)) ? "history" : "other"
+        record("spawn", { worker: this.traceId, role: this.traceRole })
         this.on("online", () => record("online", { worker: this.traceId }))
         this.on("message", (value) => frame("receive", value, this.traceId))
         this.on("messageerror", () => record("messageerror", { worker: this.traceId }))
@@ -82,13 +102,15 @@ if (process.env.JEVVY_SMOKE_TRACE === "1") {
       postMessage(value, ...args) {
         frame("send", value, this.traceId)
 
-        return super.postMessage(value, ...args)
+        try { return super.postMessage(value, ...args) }
+        catch (error) { record("error", { worker: this.traceId }); throw error }
       }
 
       terminate(...args) {
         record("terminate", { worker: this.traceId })
 
-        return super.terminate(...args)
+        try { return super.terminate(...args) }
+        catch (error) { record("error", { worker: this.traceId }); throw error }
       }
     }
 

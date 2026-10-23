@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 
+import assert from "node:assert/strict"
 import { spawn, spawnSync } from "node:child_process"
 import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { isDeepStrictEqual } from "node:util"
 import { withPermissionSmoke } from "./opencode-permission-smoke.mjs"
 import { verifyControlCommand } from "./opencode-control-smoke.mjs"
 import { captureHistoryFailure, prepareHistoryTrace } from "./history-smoke-evidence.mjs"
+import { checkHistoryCoverage, inspectHistory, loadHistoryCodec, readHistoryTrace } from "./history-smoke-contract.mjs"
 
 const root = "/tmp/jevvy-opencode-smoke"
 
@@ -287,6 +290,8 @@ const invokeClaudeWriter = (index) => {
 
 let historyPasses = 0
 
+const expectedOpenCode = []
+
 await withPermissionSmoke(project, async (endpoint, exercise, reviewAskPatterns) => {
   writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
     provider: "custom",
@@ -302,11 +307,13 @@ await withPermissionSmoke(project, async (endpoint, exercise, reviewAskPatterns)
     exercise(api),
     Promise.all([1, 2, 3].map((index) => invokeClaudeWriter(pass * 4 + index))),
   ]))
-}).catch(preserveFailure)
+}, (entry) => expectedOpenCode.push(entry)).catch(preserveFailure)
 
 const { DatabaseSync } = await import("node:sqlite")
 
 const verifyHistory = async () => {
+  const codec = await loadHistoryCodec(join(root, "node_modules", "@jevvy", "permissions"))
+  const store = inspectHistory(join(root, "metrics"), codec)
   const history = new DatabaseSync(historyPath, { readOnly: true })
 
   try {
@@ -321,11 +328,39 @@ const verifyHistory = async () => {
     const claudeRows = rows.filter((row) => String(row.command).startsWith("echo jevvy-claude-concurrent-"))
 
     const expected = Array.from({ length: historyPasses * 4 }, (_, index) => `echo jevvy-claude-concurrent-${index}`)
-    const observed = claudeRows.map((row) => row.command)
-    const missing = expected.filter((command) => !observed.includes(command))
     const invalid = claudeRows.filter((row) => !expected.includes(row.command) || row.reason !== "explicit-ask" || row.effect !== "ask" || row.model !== null || row.latency_ms !== null)
 
-    if (claudeRows.length !== expected.length || new Set(observed).size !== expected.length || missing.length > 0 || invalid.length > 0) throw new Error(`best-effort host history did not match the normal-envelope fixture: ${JSON.stringify({ expected: expected.length, observed: claudeRows.length, unique: new Set(observed).size, missing, invalid })}`)
+    if (invalid.length > 0) throw new Error(`Invalid Claude observations: ${JSON.stringify(invalid)}`)
+    checkHistoryCoverage({ expected: expected.map((command) => ({ command, pid: invocations.find((entry) => entry.command === command)?.pid })), store, events: readHistoryTrace(trace.file), requireRole: true, validate: (row) => {
+      if (row.reason !== "explicit-ask" || row.effect !== "ask" || row.model !== null || row.latency_ms !== null || JSON.stringify(row.detail_json) !== JSON.stringify({ version: 1, provider: null, answers: null, failure: null })) throw new Error("Invalid complete Claude observation")
+    } })
+
+    const remaining = [...expectedOpenCode]
+
+    for (const row of store.rows.filter((row) => !expected.includes(row.command))) {
+      const candidate = remaining.findIndex((entry) => {
+        const judged = entry.mode === "allow" || entry.mode === "ask" || entry.mode.startsWith("inquiry:")
+        const reason = entry.mode === "explicit-ask" ? "explicit-ask" : judged ? "judged" : "unavailable"
+
+        if (row.command !== entry.command || row.reason !== reason || row.effect !== (entry.mode === "allow" ? "allow" : "ask") || row.model !== (judged ? "smoke-model" : null)) return false
+        const answers = judged ? Object.fromEntries(entry.questions.map((key) => [key, { type: "noul", noul: entry.mode === "ask" || entry.mode === `inquiry:${key}` ? 1 : 0 }])) : null
+
+        return isDeepStrictEqual(row.detail_json.answers, answers)
+      })
+
+      assert.ok(candidate >= 0, `Unknown OpenCode observation payload: ${JSON.stringify(row)}`)
+      const [entry] = remaining.splice(candidate, 1)
+      assert.equal(row.detail_json.provider, entry.mode === "explicit-ask" ? null : "custom")
+
+      if (entry.mode === "failure") {
+        assert.equal(row.detail_json.failure.provider, "custom")
+        assert.equal(row.detail_json.failure.status, 503)
+      }
+
+      assert.equal(JSON.stringify(row).includes("Smoke provider unavailable"), false)
+    }
+
+    console.log(`Actual OpenCode history payloads validated: ${store.rows.length - claudeRows.length} stored, ${expectedOpenCode.length} eligible fixture observations`)
 
     if (rows.some((row) => String(row.command).startsWith("echo jevvy-allowed") || String(row.command).startsWith("echo jevvy-denied"))) throw new Error("native finalized outcomes entered history")
   } finally { history.close() }

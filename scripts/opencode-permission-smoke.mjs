@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { createServer } from "node:http"
 import { join } from "node:path"
 
-export const withPermissionSmoke = async (project, runHost) => {
+export const withPermissionSmoke = async (project, runHost, record = () => undefined) => {
   const judgments = []
   let nextCommand
   let answer = "allow"
@@ -272,6 +272,8 @@ export const withPermissionSmoke = async (project, runHost) => {
 
         await api("POST", `/api/experimental/session/${sessionID}/wait`)
         assert.deepEqual((await api("GET", "/api/permission/saved")).data, [], "nomination must never save a durable rule")
+
+        if (scenario.native === undefined) record({ command: scenario.command, mode: scenario.delegated ? scenario.inquiry === undefined ? "allow" : `inquiry:${scenario.inquiry}` : "explicit-ask", questions: inquiryNames })
         console.log(`nomination ${nominations.name}: ${scenario.name}: passed (${judgments.length - before} Jev HTTP requests)`)
       }
 
@@ -287,6 +289,7 @@ export const withPermissionSmoke = async (project, runHost) => {
     assert.deepEqual(judgments[0].state, { action: "shell", resource: "echo jevvy-reviewed" })
     assertExecuted(first, "jevvy-reviewed")
     await api("POST", `/api/experimental/session/${sessionID}/wait`)
+    record({ command: "echo jevvy-reviewed", mode: "allow", questions: Object.keys(judgments[0].questions) })
 
     const compound = await run(sessionID, "echo jevvy-compound && echo second-command")
 
@@ -294,6 +297,7 @@ export const withPermissionSmoke = async (project, runHost) => {
     assert.equal(judgments.length, 2)
     assert.deepEqual(judgments[1].state, { action: "shell", resource: "echo jevvy-compound && echo second-command" })
     await api("POST", `/api/experimental/session/${sessionID}/wait`)
+    record({ command: "echo jevvy-compound && echo second-command", mode: "allow", questions: Object.keys(judgments[1].questions) })
 
     const saved = await api("GET", "/api/permission/saved")
 
@@ -334,6 +338,7 @@ export const withPermissionSmoke = async (project, runHost) => {
       assert.equal(judgments.length, 2, "human-only asks must not call Jev")
       await api("POST", `/api/session/${humanSession}/permission/${outcome.pending[0].id}/reply`, { decision: "reject" })
       await api("POST", `/api/experimental/session/${humanSession}/wait`)
+      record({ command, mode: "explicit-ask" })
     }
 
     for (const mode of ["ask", "failure", "malformed", "timeout"]) {
@@ -353,6 +358,7 @@ export const withPermissionSmoke = async (project, runHost) => {
 
       assertExecuted(await waitForOutcome(fallbackSession, outcome.callID), `jevvy-fallback-${mode}`)
       await api("POST", `/api/experimental/session/${fallbackSession}/wait`)
+      record({ command, mode, questions: Object.keys(judgments.at(-1).questions) })
     }
 
     assert.deepEqual((await api("GET", "/api/permission/saved")).data, [], "all approvals must remain one-action")
@@ -372,6 +378,7 @@ export const withPermissionSmoke = async (project, runHost) => {
     assertExecuted(resumed, "jevvy-reviewed")
     assert.equal(judgments.length, beforePause, "ON must reuse valid process-lifetime cached judgments")
     await api("POST", `/api/experimental/session/${resumedSession}/wait`)
+    record({ command: "echo jevvy-reviewed", mode: "allow", questions: Object.keys(judgments[0].questions) })
   }
 
   try {

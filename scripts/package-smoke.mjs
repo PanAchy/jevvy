@@ -223,6 +223,9 @@ try {
   ensure(setupNotification.hookSpecificOutput === undefined, "Claude Code setup notification made a permission decision")
 
   if (process.platform !== "win32") {
+    const writerSmoke = spawnSync(process.execPath, [join(repo, "scripts", "history-writer-smoke.mjs"), permissionsRoot, "--node-only"], { encoding: "utf8", timeout: 30000 })
+    ensure(writerSmoke.status === 0, `Positive packed Node writer failed: ${writerSmoke.stdout}\n${writerSmoke.stderr}`)
+    console.log(writerSmoke.stdout.trim())
     const historySmoke = spawnSync(process.execPath, [join(repo, "scripts", "claude-history-smoke.mjs"), permissionsRoot], { encoding: "utf8", timeout: 30000 })
     ensure(historySmoke.status === 0, `Standalone Claude history failed: ${historySmoke.stdout}\n${historySmoke.stderr}`)
     console.log(historySmoke.stdout.trim())

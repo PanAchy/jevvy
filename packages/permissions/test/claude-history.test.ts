@@ -55,6 +55,7 @@ describe("Claude Code shared history boundary", () => {
 
     expect(observation.command).toBe(command)
     expect(observation.latencyMs).toBe(12)
+    expect(observation).toEqual({ command, result, provider: "custom", tsMs: 12, latencyMs: 12 })
     const row = projectHistory(observation, "00000000-0000-4000-8000-000000000001")
     expect(row?.model).toBe(result.effect === "ask" && result.reason === "unavailable" ? null : "actual-model")
     expect(JSON.stringify(row)).not.toContain("arbitrary-provider-secret")

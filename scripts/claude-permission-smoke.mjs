@@ -1,10 +1,11 @@
 import assert from "node:assert/strict"
 import { spawn, spawnSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
-import { DatabaseSync } from "node:sqlite"
 import { createServer } from "node:http"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { captureHistoryFailure, prepareHistoryTrace } from "./history-smoke-evidence.mjs"
+import { checkHistoryCoverage, inspectHistory, loadHistoryCodec, readHistoryTrace } from "./history-smoke-contract.mjs"
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 
@@ -34,6 +35,16 @@ const packed = spawnSync("tar", ["-xzf", resolve(artifact), "-C", temporary], { 
 assert.equal(packed.status, 0, packed.stderr)
 
 const plugin = join(temporary, "package")
+
+const codec = await loadHistoryCodec(join(root, "packages", "permissions"))
+
+const packedBytes = ["dist/claude-hook.js", "dist/claude-history-worker.js", "hooks/hooks.json", ".claude-plugin/plugin.json"].map((name) => [name, readFileSync(join(plugin, name))])
+
+const positive = spawnSync(process.execPath, [join(root, "scripts", "history-writer-smoke.mjs"), join(root, "packages", "permissions"), "--node-only", "--worker", join(plugin, "dist", "claude-history-worker.js")], { encoding: "utf8", timeout: 30000 })
+
+assert.equal(positive.status, 0, `${positive.stdout}\n${positive.stderr}`)
+
+console.log(positive.stdout.trim())
 
 const results = []
 
@@ -156,6 +167,7 @@ const run = async (name, options = {}) => {
   const config = join(home, ".claude")
   const xdg = join(home, ".config")
   mkdirSync(directory, { mode: 0o700 })
+  const trace = prepareHistoryTrace(directory)
   mkdirSync(project, { mode: 0o700 })
   mkdirSync(home, { mode: 0o700 })
   mkdirSync(config, { mode: 0o700 })
@@ -185,11 +197,14 @@ const run = async (name, options = {}) => {
   const state = current
 
   const environment = {
+    ...trace.env,
     PATH: process.env.PATH, HOME: home, CLAUDE_CONFIG_DIR: config, XDG_CONFIG_HOME: xdg,
     TERM: "xterm-256color", LANG: "C.UTF-8", ANTHROPIC_API_KEY: "sk-ant-jevvy-fixture-only",
     ANTHROPIC_BASE_URL: endpoint, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1", DISABLE_AUTOUPDATER: "1",
     TMPDIR: directory,
   }
+
+  if (trace.args.length > 0) environment.NODE_OPTIONS = `--import=${trace.args[1]}`
 
   const child = spawn("python3", ["-u", "-c", python, project, claude, "Run the local permission fixture.",
     "--model", "claude-sonnet-4-6", "--permission-mode", "manual", "--debug-file", join(directory, "debug.log"),
@@ -248,6 +263,8 @@ const run = async (name, options = {}) => {
     transcript.lastIndexOf("tool error: Bash"),
   )
 
+  let failure
+
   try {
     const deadline = Date.now() + 30000
 
@@ -305,6 +322,9 @@ const run = async (name, options = {}) => {
     const metrics = join(xdg, "jevvy", "metrics")
     const filename = join(metrics, "history.sqlite")
     const expectedRows = options.metrics === false || options.enabled === false || requests.length === 0 || options.unreliable === true || options.unsafeRoot === true ? 0 : 1
+    const events = readHistoryTrace(trace.file)
+    const historyWorkers = events?.filter((entry) => entry.event === "spawn" && entry.role === "history") ?? []
+    let historyCoverage
 
     if (options.unsafeRoot === true) {
       assert.ok(transcript.includes("Jevvy Permissions review history is unavailable"), "Actual SessionStart must show the history setup warning")
@@ -313,24 +333,22 @@ const run = async (name, options = {}) => {
       assert.ok(debug.includes("Hooks: SessionStart:startup [node"))
     }
 
-    if (expectedRows === 0) assert.equal(existsSync(filename), false, "Disabled, finalized and unreliable requests must not start storage")
-    else {
-      assert.ok(existsSync(filename), "Completed native PermissionRequest must persist before hook exit")
-      assert.equal(statSync(metrics).mode & 0o777, 0o700)
-      const database = new DatabaseSync(filename, { readOnly: true })
+    if (expectedRows === 0) {
+      assert.equal(existsSync(filename), false, "Disabled, finalized and unreliable requests must not start storage")
+      assert.equal(existsSync(metrics), false, "Excluded requests must not create a metrics directory")
+      assert.equal(historyWorkers.length, 0, "Excluded requests must not spawn a history worker")
 
-      try {
-        assert.deepEqual(database.prepare("PRAGMA application_id").get().application_id, 1246058070)
-        assert.deepEqual(database.prepare("PRAGMA user_version").get().user_version, 1)
-        const definitions = database.prepare("SELECT name FROM sqlite_schema ORDER BY name").all().map((row) => row.name)
-        assert.deepEqual(definitions, ["events", "events_ts", "sqlite_autoindex_events_1"])
-        const rows = database.prepare("SELECT * FROM events").all()
-        assert.equal(rows.length, expectedRows)
-        const row = rows[0]
+      if (events) assert.ok(events.some((entry) => entry.event === "preload" && entry.thread === 0), "Actual host must propagate the test preload to Node hooks")
+    }
+    else {
+      if (events) assert.equal(historyWorkers.length, 1, "One actual PermissionRequest history worker must identify its hook PID")
+      const store = inspectHistory(metrics, codec)
+      assert.ok(store.rows.every((row) => row.command === command))
+      historyCoverage = checkHistoryCoverage({ expected: [{ command, pid: historyWorkers[0]?.pid }], store, events, requireRole: true, validate: (row) => {
         assert.equal(row.command, command)
         assert.ok(Number.isFinite(Date.parse(row.ts)))
         assert.match(row.id, /^[0-9a-f-]{36}$/)
-        const detail = JSON.parse(row.detail_json)
+        const detail = row.detail_json
         const skipped = expectedCalls === 0
         assert.equal(row.reason, skipped ? "explicit-ask" : options.answer === "failure" ? "unavailable" : "judged")
         assert.equal(row.effect, skipped || options.answer === "failure" || options.answer === "ask" ? "ask" : "allow")
@@ -350,14 +368,14 @@ const run = async (name, options = {}) => {
           assert.equal(detail.failure.status, 503)
           assert.equal(JSON.stringify(row).includes("fixture unavailable"), false)
         } else assert.equal(detail.failure, null)
-      } finally {
-        database.close()
-      }
+      } })
 
-      for (const name of ["history.sqlite", "AGENTS.md", "schema.sql", "event.schema.json"]) assert.equal(statSync(join(metrics, name)).mode & 0o777, 0o600)
-      assert.ok(readFileSync(join(metrics, "AGENTS.md"), "utf8").includes("untrusted data"))
-      assert.ok(readFileSync(join(metrics, "schema.sql"), "utf8").includes("CREATE TABLE events"))
-      assert.ok(JSON.parse(readFileSync(join(metrics, "event.schema.json"), "utf8")).properties.detail_json.contentSchema)
+      if (!store.uninitialized) {
+        for (const name of ["history.sqlite", "AGENTS.md", "schema.sql", "event.schema.json"]) assert.equal(statSync(join(metrics, name)).mode & 0o777, 0o600)
+        assert.ok(readFileSync(join(metrics, "AGENTS.md"), "utf8").includes("untrusted data"))
+        assert.ok(readFileSync(join(metrics, "schema.sql"), "utf8").includes("CREATE TABLE events"))
+        assert.ok(JSON.parse(readFileSync(join(metrics, "event.schema.json"), "utf8")).properties.detail_json.contentSchema)
+      }
     }
 
     if (options.outcome === "prompt") {
@@ -376,9 +394,10 @@ const run = async (name, options = {}) => {
       state.cancelled = true
     }
 
-    results.push({ name, status: "PASS", outcome: options.outcome ?? "execute", judgments: state.judgments.length, permissionEvents: requests.length, historyRows: expectedRows, command })
+    results.push({ name, status: "PASS", outcome: options.outcome ?? "execute", judgments: state.judgments.length, permissionEvents: requests.length, historyRows: historyCoverage?.delivered.length ?? 0, historyCoverage, command })
     console.log(`PASS ${name}: ${options.outcome ?? "execute"}, Jev HTTP=${state.judgments.length}, native PermissionRequest=${requests.length}`)
   } catch (error) {
+    failure = error
     results.push({ name, status: "FAIL", error: String(error) })
 
     throw error
@@ -388,6 +407,8 @@ const run = async (name, options = {}) => {
     const teardown = setTimeout(() => child.kill("SIGKILL"), 3000)
     await completion
     clearTimeout(teardown)
+
+    if (failure) await captureHistoryFailure({ metricsPath: join(xdg, "jevvy", "metrics"), tracePath: trace.file, invocations: [{ command, event: "PermissionRequest", expected: options.outcome ?? "execute" }] }, failure)
     writeFileSync(join(directory, "terminal.txt"), transcript)
     writeFileSync(join(directory, "observations.json"), JSON.stringify({ ...state, chat: state.chat.map((body) => ({ model: body.model, stream: body.stream })) }, null, 2))
   }
@@ -411,6 +432,8 @@ try {
   await run("redirect-uncertainty", { command: "echo jevvy-redirect-uncertainty > marker.txt", outcome: "prompt", calls: 0, unreliable: true })
   await run("metrics-disabled", { metrics: false })
   await run("history-unsafe-root", { unsafeRoot: true, ask: [], allow: ["Bash(echo jevvy-*)"], calls: 0, permissionEvents: 0 })
+
+  for (const [name, bytes] of packedBytes) assert.deepEqual(readFileSync(join(plugin, name)), bytes, "Tracing must not alter packed hooks, workers or manifests")
   succeeded = true
   console.log(`Claude Code 2.1.296 real-host permission smoke passed (${results.length} cases; localhost fake chat and judgment providers).`)
 } finally {

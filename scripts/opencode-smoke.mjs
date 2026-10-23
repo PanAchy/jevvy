@@ -60,6 +60,8 @@ try {
       `${join(root, "scripts", "history-smoke-evidence.mjs")}:/tmp/history-smoke-evidence.mjs:ro`,
       "--volume",
       `${join(root, "scripts", "history-worker-trace.mjs")}:/tmp/history-worker-trace.mjs:ro`,
+      "--volume",
+      `${join(root, "scripts", "history-smoke-contract.mjs")}:/tmp/history-smoke-contract.mjs:ro`,
       "node:24-bookworm-slim",
       "node",
       "/tmp/smoke.mjs",
