@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { spawn } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { lstat, mkdtemp, readdir, rm } from "node:fs/promises"
+import { lstat, mkdtemp, readdir, realpath, rm } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -129,7 +129,7 @@ if (writer) {
   const nodeOnly = process.argv.includes("--node-only")
 
   if (!nodeOnly) assert.ok(process.env.BUN_BIN, "Set BUN_BIN to a Bun executable for the mixed-runtime writer smoke")
-  const root = await mkdtemp(join(tmpdir(), "jevvy-history-writers-"))
+  const root = await mkdtemp(join(await realpath(tmpdir()), "jevvy-history-writers-"))
   const script = fileURLToPath(import.meta.url)
 
   const run = (runtime) => new Promise((resolveResult, reject) => {
