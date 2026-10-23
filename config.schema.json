@@ -11,7 +11,7 @@
     },
     "provider": {
       "type": "string",
-      "enum": ["zen", "typesafe", "openrouter", "vercel", "laya", "custom"]
+      "enum": ["zen", "typesafe", "openrouter", "vercel", "openai", "microsoft", "laya", "custom"]
     },
     "providers": {
       "type": "object",
@@ -29,6 +29,12 @@
         "vercel": {
           "$ref": "#/$defs/systemOnePresetSettings"
         },
+        "openai": {
+          "$ref": "#/$defs/providerCredential"
+        },
+        "microsoft": {
+          "$ref": "#/$defs/microsoftProvider"
+        },
         "laya": {
           "$ref": "#/$defs/layaProvider"
         },
@@ -44,7 +50,19 @@
         "enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Opt in to recent, best-effort OpenCode review outcome counts and shipped-question abstention reasons in the global metrics directory. Takes effect on plugin reload; no command history or cumulative Claude Code metrics."
+          "deprecated": true,
+          "description": "Legacy aggregate setting. Never enables history; true produces a migration diagnostic."
+        },
+        "history": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "default": false,
+              "description": "Opt in to bounded local Jevvy Permissions OpenCode review history. Verbatim commands and raw answers may contain secrets. POSIX-only; reload to apply. Capacity eviction and drops make coverage incomplete. No age expiry; disabling does not erase records."
+            }
+          }
         }
       }
     },
@@ -126,9 +144,30 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": { "provider": { "const": "microsoft" } },
+        "required": ["provider"]
+      },
+      "then": {
+        "required": ["providers"],
+        "properties": { "providers": { "required": ["microsoft"] } }
+      }
     }
   ],
   "$defs": {
+    "providerCredential": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["apiKey"],
+      "properties": {
+        "apiKey": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "harnessReview": {
       "type": "object",
       "additionalProperties": false,
@@ -151,6 +190,11 @@
         "model": {
           "type": "string",
           "minLength": 1
+        },
+        "opencodeCredential": {
+          "type": "string",
+          "minLength": 1,
+          "description": "OpenCode integration ID whose stored API key Jevvy reads when apiKey and the provider environment variable are absent. OpenCode only."
         }
       }
     },
@@ -181,6 +225,29 @@
         "apiKey": {
           "type": "string",
           "minLength": 1
+        }
+      }
+    },
+    "microsoftProvider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["endpoint", "model"],
+      "properties": {
+        "endpoint": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https://[^/@?#]+(?:/|$)",
+          "description": "Full Foundry inference URL ending in /providers/microsoft/v1/systemone."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Your Microsoft-Decision-1 deployment name, not the catalog model ID."
+        },
+        "apiKey": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Azure AI API key sent in the api-key header. Alternatively set AZURE_AI_API_KEY."
         }
       }
     },

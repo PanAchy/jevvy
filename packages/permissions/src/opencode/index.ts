@@ -7,8 +7,9 @@ import * as NodePath from "@effect/platform-node/NodePath"
 import { globalJevvyConfigPath, loadJevvyConfig } from "../config.ts"
 import { createPermissionReviewer } from "../engine.ts"
 import { createConfiguredProvider, shippedPolicyProvenance } from "../providers.ts"
+import { apiKeyFromCredential, withOpenCodeCredential } from "./credential.ts"
 import { createEvaluate } from "./evaluate.ts"
-import { persistReviewMetrics } from "./metrics-files.ts"
+import { createHistoryObserver, legacyHistoryProblem } from "./history.ts"
 import { createCommandCapture } from "./command-capture.ts"
 import { hasExplicitAsk } from "./ask-rule.ts"
 import { createReviewControl } from "../review-control.ts"
@@ -19,6 +20,7 @@ import {
   invalidConfigurationMessage,
   missingConfigurationMessage,
   missingCredentialMessage,
+  missingOpenCodeCredentialMessage,
 } from "./setup.ts"
 
 class PluginSetupError extends Schema.TaggedError<PluginSetupError>()("PluginSetupError", { message: Schema.String }) {}
@@ -60,13 +62,35 @@ export default Plugin.define({
       return yield* new PluginSetupError({ message: missingConfigurationMessage(configPath) })
     }
 
-    const selected = createConfiguredProvider(permissionConfig.selection)
+    const selection = permissionConfig.selection
+
+    const resolved = selection.provider === "laya" || selection.provider === "custom" || selection.provider === "openai" || selection.provider === "microsoft"
+      ? selection
+      : yield* withOpenCodeCredential(selection, (integrationID) => Effect.gen(function*() {
+        const connection = yield* ctx.integration.connection.active(integrationID)
+
+        if (connection === undefined) return undefined
+
+        if (connection.type === "credential" && connection.method === "oauth") return undefined
+
+        const credential = yield* ctx.integration.connection.resolve(connection)
+
+        return apiKeyFromCredential(credential)
+      }))
+
+    const selected = createConfiguredProvider(resolved)
 
     if (selected === undefined) {
-      const provider = permissionConfig.selection.provider
+      const provider = resolved.provider
 
       if (provider === "custom") {
         return yield* new PluginSetupError({ message: "Jevvy could not construct the configured custom provider" })
+      }
+
+      if ("opencodeCredential" in resolved && resolved.opencodeCredential !== undefined) {
+        return yield* new PluginSetupError({
+          message: missingOpenCodeCredentialMessage(provider, resolved.opencodeCredential, configPath),
+        })
       }
 
       return yield* new PluginSetupError({ message: missingCredentialMessage(provider, configPath) })
@@ -74,24 +98,27 @@ export default Plugin.define({
 
     const questions = permissionConfig.kind === "custom-policy" ? permissionConfig.questions : undefined
 
-    const baseReviewer = yield* createPermissionReviewer(selected.client, {
+    const reviewer = yield* createPermissionReviewer(selected.client, {
       questions,
       timeoutMs: permissionConfig.timeoutMs,
     }).pipe(Effect.orDie)
 
-    const reviewer = yield* persistReviewMetrics(
-      baseReviewer,
-      permissionConfig.metricsEnabled,
+    if (permissionConfig.historyMigrationNeeded) {
+      problem = legacyHistoryProblem
+      console.warn(problem)
+    }
+
+    const history = yield* createHistoryObserver({
+      enabled: permissionConfig.historyEnabled,
       configPath,
-      permissionConfig.kind === "shipped-policy",
-      (message) => {
+      report: (message) => {
         if (message === problem) return
 
         problem = message
 
         if (message !== undefined) console.warn(message)
       },
-    ).pipe(Effect.provide(NodePath.layer))
+    })
 
     const capture = createCommandCapture()
 
@@ -100,6 +127,7 @@ export default Plugin.define({
     yield* ctx.tool.hook("execute.after", capture.after)
 
     const evaluate = createEvaluate(reviewer, {
+      history: history === undefined ? undefined : { observer: history, provider: selected.provider },
       control,
       inspect: (event) => Effect.gen(function*() {
         const command = capture.commandFor(event)
@@ -137,7 +165,7 @@ export default Plugin.define({
     yield* Effect.sync(() => {
       console.info("[jevvy] loaded", {
         provider: selected.provider,
-        model: selected.model,
+        model: selected.requestedModel,
         questions: permissionConfig.kind === "custom-policy"
           ? "custom"
           : shippedPolicyProvenance(selected),

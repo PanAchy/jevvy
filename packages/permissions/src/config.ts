@@ -16,12 +16,17 @@ import { globalJevvyConfigPath } from "./config-path.ts"
 
 export { globalJevvyConfigPath } from "./config-path.ts"
 
+const ProviderCredentialSchema = Schema.Struct({
+  apiKey: Schema.NonEmptyString,
+})
+
 const SystemOnePresetSettings = Schema.Struct({
   apiKey: Schema.optionalKey(Schema.NonEmptyString),
   model: Schema.optionalKey(Schema.NonEmptyString),
+  opencodeCredential: Schema.optionalKey(Schema.NonEmptyString),
 })
 
-const CustomProviderSchema = Schema.Struct({
+const EndpointProviderSchema = Schema.Struct({
   endpoint: Schema.URLFromString,
   model: Schema.NonEmptyString,
   apiKey: Schema.optionalKey(Schema.NonEmptyString),
@@ -44,14 +49,19 @@ const LayaProviderSchema = Schema.Struct({
 const JevvyConfigSchema = Schema.Struct({
   $schema: Schema.optionalKey(Schema.String),
   provider: JevProvider,
-  metrics: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
+  metrics: Schema.optionalKey(Schema.Struct({
+    enabled: Schema.optionalKey(Schema.Boolean),
+    history: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
+  })),
   providers: Schema.optionalKey(Schema.Struct({
     zen: Schema.optionalKey(SystemOnePresetSettings),
     typesafe: Schema.optionalKey(SystemOnePresetSettings),
     openrouter: Schema.optionalKey(SystemOnePresetSettings),
     vercel: Schema.optionalKey(SystemOnePresetSettings),
+    openai: Schema.optionalKey(ProviderCredentialSchema),
+    microsoft: Schema.optionalKey(EndpointProviderSchema),
     laya: Schema.optionalKey(LayaProviderSchema),
-    custom: Schema.optionalKey(CustomProviderSchema),
+    custom: Schema.optionalKey(EndpointProviderSchema),
   })),
   permissions: Schema.optionalKey(Schema.Struct({
     timeoutMs: Schema.optionalKey(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
@@ -65,13 +75,14 @@ interface ConfigDocument extends Schema.Schema.Type<typeof JevvyConfigSchema> {}
 
 export type JevvyConfig =
   | { readonly kind: "unconfigured" }
-  | { readonly kind: "shipped-policy"; readonly selection: ProviderSelection; readonly timeoutMs: number; readonly metricsEnabled: boolean }
+  | { readonly kind: "shipped-policy"; readonly selection: ProviderSelection; readonly timeoutMs: number; readonly historyEnabled: boolean; readonly historyMigrationNeeded: boolean }
   | {
       readonly kind: "custom-policy"
       readonly selection: ProviderSelection
       readonly questions: ApprovalQuestions
       readonly timeoutMs: number
-      readonly metricsEnabled: boolean
+      readonly historyEnabled: boolean
+      readonly historyMigrationNeeded: boolean
     }
   | { readonly kind: "invalid"; readonly message: string }
 
@@ -86,6 +97,8 @@ const EnvironmentApiKeys = Config.all({
   typesafe: Config.option(Config.Redacted(providerApiKeyEnvironment("typesafe"))),
   openrouter: Config.option(Config.Redacted(providerApiKeyEnvironment("openrouter"))),
   vercel: Config.option(Config.Redacted(providerApiKeyEnvironment("vercel"))),
+  openai: Config.option(Config.Redacted(providerApiKeyEnvironment("openai"))),
+  microsoft: Config.option(Config.Redacted(providerApiKeyEnvironment("microsoft"))),
   laya: Config.option(Config.Redacted(providerApiKeyEnvironment("laya"))),
 })
 
@@ -96,6 +109,8 @@ const hasCredentials = (document: ConfigDocument): boolean =>
   document.providers?.typesafe?.apiKey !== undefined ||
   document.providers?.openrouter?.apiKey !== undefined ||
   document.providers?.vercel?.apiKey !== undefined ||
+  document.providers?.openai?.apiKey !== undefined ||
+  document.providers?.microsoft?.apiKey !== undefined ||
   document.providers?.laya?.apiKey !== undefined ||
   document.providers?.custom?.apiKey !== undefined
 
@@ -150,17 +165,24 @@ const providerSelection = (
   document: ConfigDocument,
   environment: EnvironmentApiKeys,
 ): Effect.Effect<ProviderSelection, ConfigFileError> => {
-  if (document.provider === "custom") {
-    const custom = document.providers?.custom
+  if (document.provider === "custom" || document.provider === "microsoft") {
+    const custom = document.providers?.[document.provider]
 
     if (custom === undefined || (custom.endpoint.protocol !== "http:" && custom.endpoint.protocol !== "https:")) {
       return new ConfigFileError({ reason: "schema" })
     }
 
-    const apiKey = custom.apiKey === undefined ? undefined : Redacted.make(custom.apiKey)
+    if (document.provider === "microsoft" && (custom.endpoint.protocol !== "https:" ||
+      custom.endpoint.username !== "" || custom.endpoint.password !== "")) {
+      return new ConfigFileError({ reason: "schema" })
+    }
+
+    const apiKey = custom.apiKey === undefined
+      ? document.provider === "microsoft" ? environmentApiKey("microsoft", environment) : undefined
+      : Redacted.make(custom.apiKey)
 
     return Effect.succeed({
-      provider: "custom",
+      provider: document.provider,
       endpoint: custom.endpoint.href,
       model: custom.model,
       apiKey,
@@ -191,7 +213,14 @@ const providerSelection = (
     ? environmentApiKey(document.provider, environment)
     : Redacted.make(fileApiKey)
 
-  return Effect.succeed({ provider: document.provider, apiKey, model: document.providers?.[document.provider]?.model })
+  if (document.provider === "openai") return Effect.succeed({ provider: "openai", apiKey })
+
+  return Effect.succeed({
+    provider: document.provider,
+    apiKey,
+    model: document.providers?.[document.provider]?.model,
+    opencodeCredential: document.providers?.[document.provider]?.opencodeCredential,
+  })
 }
 
 const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: ConfigProvider.ConfigProvider) {
@@ -208,7 +237,8 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
 
   const selection = yield* providerSelection(document.value, environmentKeys)
   const timeoutMs = document.value.permissions?.timeoutMs ?? 5_000
-  const metricsEnabled = document.value.metrics?.enabled ?? false
+  const historyEnabled = document.value.metrics?.history?.enabled ?? false
+  const historyMigrationNeeded = document.value.metrics?.enabled === true
 
   if (selection.provider === "laya") {
     const policy = document.value.providers?.laya?.policy
@@ -218,14 +248,14 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
       return yield* new ConfigFileError({ reason: "policy" })
     }
 
-    return { kind: "custom-policy" as const, selection, questions: policy.questions, timeoutMs, metricsEnabled }
+    return { kind: "custom-policy" as const, selection, questions: policy.questions, timeoutMs, historyEnabled, historyMigrationNeeded }
   }
 
   const questions = document.value.permissions?.questions
 
-  if (questions === undefined) return { kind: "shipped-policy" as const, selection, timeoutMs, metricsEnabled }
+  if (questions === undefined) return { kind: "shipped-policy" as const, selection, timeoutMs, historyEnabled, historyMigrationNeeded }
 
-  return { kind: "custom-policy" as const, selection, questions, timeoutMs, metricsEnabled }
+  return { kind: "custom-policy" as const, selection, questions, timeoutMs, historyEnabled, historyMigrationNeeded }
 }, Effect.catchTag("ConfigFileError", (error) =>
   Effect.succeed({ kind: "invalid" as const, message: invalidMessage(error.reason) })))
 

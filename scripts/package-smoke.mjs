@@ -229,31 +229,45 @@ try {
 
   ensure(review.effect === "allow", `installed permission engine returned ${String(review.effect)}`)
 
-  const metrics = await import(pathToFileURL(join(permissionsRoot, "dist", "opencode", "metrics-files.js")).href)
+  const history = await import(pathToFileURL(join(permissionsRoot, "dist", "opencode", "history.js")).href)
+  const historyFiles = await import(pathToFileURL(join(permissionsRoot, "dist", "opencode", "history-files.js")).href)
 
-  ensure(metrics.metricsAgentInstructions.startsWith("# Jevvy Permissions aggregate API v1"), "packed metrics instructions are missing")
+  ensure(historyFiles.historyAgentInstructions.startsWith("# Jevvy Permissions review history v1"), "packed history instructions are missing")
 
   if (process.platform !== "win32") {
-    const nodePath = await import(pathToFileURL(join(consumer, "node_modules", "@effect", "platform-node", "dist", "NodePath.js")).href)
-
-    const fixture = join(realpathSync(temporary), "metrics-fixture")
+    const { DatabaseSync } = await import("node:sqlite")
+    const fixture = join(realpathSync(temporary), "history-fixture")
+    const root = join(fixture, "metrics")
+    const filename = join(root, "history.sqlite")
 
     mkdirSync(fixture, { mode: 0o700 })
     await effect.Effect.runPromise(effect.Effect.scoped(effect.Effect.gen(function*() {
-      const observed = yield* metrics.persistReviewMetrics(reviewer, true, join(fixture, "jevvy.jsonc"), true)
+      const observer = yield* history.createHistoryObserver({ enabled: true, configPath: join(fixture, "jevvy.jsonc"), report: () => undefined })
 
-      yield* observed.review({ action: "shell", resources: ["packed-fixture-command"] })
-    })).pipe(effect.Effect.provide(nodePath.layer)))
+      ensure(observer !== undefined, "packed history observer did not start")
+      yield* observer.observe({ command: "packed-fixture-command", result: "explicit-ask", provider: "custom", tsMs: 0, latencyMs: null })
 
-    const root = join(fixture, "metrics")
-    const schema = JSON.parse(readFileSync(join(root, "schema.json"), "utf8"))
-    const snapshot = JSON.parse(readFileSync(join(root, "snapshot.json"), "utf8"))
+      for (let attempt = 0; attempt < 200; attempt++) {
+        try {
+          const db = new DatabaseSync(filename, { readOnly: true })
 
-    ensure(schema.additionalProperties === false, "packed metrics schema is not closed")
-    ensure(schema.properties.writers.items.properties.snapshot.properties.outcomes.description.includes("review invocations"), "packed metrics schema lacks counter interpretation")
-    ensure(snapshot.schemaVersion === 1 && snapshot.writers.length === 1 && snapshot.writers[0].snapshot.outcomes.allow === 1 && snapshot.writers[0].closed, "packed metrics snapshot or final flush failed")
-    ensure(readFileSync(join(root, "AGENTS.md"), "utf8") === metrics.metricsAgentInstructions, "packed metrics instructions were not installed")
-    ensure(!existsSync(join(fixture, "jevvy.jsonc")), "metrics wrote provider configuration")
+          try {
+            if (db.prepare("SELECT count(*) AS count FROM events").get()?.count === 1) return
+          } finally { db.close() }
+        } catch {}
+
+        yield* effect.Effect.sleep("25 millis")
+      }
+
+      throw new Error("packed history worker did not persist a synthetic event")
+    })))
+
+    const schema = JSON.parse(readFileSync(join(root, "event.schema.json"), "utf8"))
+
+    ensure(schema.additionalProperties === false, "packed history schema is not closed")
+    ensure(readFileSync(join(root, "schema.sql"), "utf8").includes("CREATE TABLE events"), "packed history SQL schema is missing")
+    ensure(readFileSync(join(root, "AGENTS.md"), "utf8") === historyFiles.historyAgentInstructions, "packed history instructions were not installed")
+    ensure(!existsSync(join(fixture, "jevvy.jsonc")), "history wrote provider configuration")
   }
 
   const permissions = await import(pathToFileURL(join(permissionsRoot, "dist", "index.js")).href)

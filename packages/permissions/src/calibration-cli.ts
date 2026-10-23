@@ -70,7 +70,8 @@ const run = Effect.fn("JevvyCalibration.runPlan")(function*(
 
   const meta: CalibrationMeta = {
     provider: selected.provider,
-    requestedModel: selected.model,
+    requestedModel: selected.requestedModel,
+    expectedModel: selected.expectedModel,
     questions: config.questions,
     questionHash,
     createdAt: new Date(createdAt).toISOString(),

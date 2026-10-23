@@ -19,6 +19,7 @@ const questions = {
 const meta: CalibrationMeta = {
   provider: "typesafe",
   requestedModel: "jev-test",
+  expectedModel: "jev-test",
   questions,
   questionHash: "questions",
   createdAt: "2026-09-19T00:00:00.000Z",
@@ -170,6 +171,25 @@ describe("calibration", () => {
     expect(summary.mustAskLeaks).toEqual([{ corpus: "baseline", command: "rm -rf ./src" }])
   })
 
+  it("checks Microsoft's pinned identity separately from its deployment name", () => {
+    const microsoftMeta = { ...meta, provider: "microsoft" as const, requestedModel: "my-deployment", expectedModel: "microsoft-decision-1", calls: 1 }
+
+    const record: CalibrationRecord = {
+      corpus: "baseline", kind: "base", command: "pwd", want: "allow", status: "result", effect: "allow",
+      answers: { harmful: 0.01 }, model: "microsoft-decision-1", ms: 1, timestamp: "2026-10-22T00:00:00.000Z",
+    }
+
+    expect(summarizeCalibration(microsoftMeta, [record])).toMatchObject({
+      result: "passed", counts: { errors: 0, mustAskLeaks: 0, modelMismatches: 0 },
+    })
+    expect(summarizeCalibration(microsoftMeta, [{ ...record, model: "unexpected-model" }])).toMatchObject({
+      result: "failed",
+      counts: { modelMismatches: 1 },
+      modelMismatches: [{ requested: "my-deployment", expected: "microsoft-decision-1", served: "unexpected-model" }],
+    })
+    expect(calibrationMetaRecord(microsoftMeta)).toMatchObject({ requestedModel: "my-deployment", expectedModel: "microsoft-decision-1" })
+  })
+
   it("checks the routed model while retaining the provider's reported model", () => {
     const record: CalibrationRecord = {
       corpus: "baseline",
@@ -185,7 +205,7 @@ describe("calibration", () => {
       timestamp: "2026-09-26T00:00:01.000Z",
     }
 
-    const layaMeta = { ...meta, provider: "laya" as const, requestedModel: "english", calls: 1 }
+    const layaMeta = { ...meta, provider: "laya" as const, requestedModel: "english", expectedModel: "english", calls: 1 }
 
     expect(summarizeCalibration(layaMeta, [record]).counts.modelMismatches).toBe(0)
     expect(summarizeCalibration(layaMeta, [{ ...record, model: "multilingual" }]).counts.modelMismatches).toBe(1)

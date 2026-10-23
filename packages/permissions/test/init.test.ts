@@ -163,6 +163,35 @@ describe("Jevvy initializer", () => {
     })
   }))
 
+  it.effect("renders OpenAI setup without changing the default policy", () => Effect.gen(function*() {
+    const raw = yield* renderJevvyConfig(undefined, { provider: "openai", apiKey: Redacted.make("openai-secret") })
+
+    expect(parse(raw)).toEqual({
+      $schema: "https://raw.githubusercontent.com/PanAchy/jevvy/main/config.schema.json",
+      provider: "openai", providers: { openai: { apiKey: "openai-secret" } },
+    })
+  }))
+
+  it.effect("renders Microsoft setup and identifies Azure key storage without exposing the key", () => Effect.gen(function*() {
+    const provider = {
+      provider: "microsoft" as const,
+      endpoint: "https://foundry.example.com/providers/microsoft/v1/systemone",
+      model: "my-deployment", apiKey: Redacted.make("azure-secret"),
+    }
+
+    const raw = yield* renderJevvyConfig(undefined, provider)
+
+    expect(parse(raw).providers.microsoft).toEqual({ endpoint: provider.endpoint, model: "my-deployment", apiKey: "azure-secret" })
+
+    const summary = initPlanSummary({ provider, harnesses: ["claude"] }, "/isolated/jevvy.jsonc")
+
+    expect(summary).toContain("Microsoft Decision for Claude Code")
+    expect(summary).toContain("Model: my-deployment")
+    expect(summary).toContain("Azure API key: saved in private config")
+    expect(summary).not.toContain("azure-secret")
+    expect(summary).not.toContain("Bearer key")
+  }))
+
   it.effect("configures Laya without embedding an uncalibrated permission policy", () => Effect.gen(function*() {
     const rendered = yield* renderJevvyConfig(undefined, { provider: "laya" })
 

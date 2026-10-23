@@ -12,3 +12,10 @@ export const invalidConfigurationMessage = (configPath: string, detail: string):
 
 export const missingCredentialMessage = (provider: BuiltInProvider, configPath: string): string =>
   `${providerDisplayName(provider)} has no credential. Set ${providerApiKeyEnvironment(provider)}, add providers.${provider}.apiKey to ${configPath}, or run "npx @jevvy/permissions init". OpenCode's remaining permission flow remains unchanged.`
+
+export const missingOpenCodeCredentialMessage = (
+  provider: BuiltInProvider,
+  integrationID: string,
+  configPath: string,
+): string =>
+  `${providerDisplayName(provider)} has no credential. Jevvy could not read a key from the "${integrationID}" integration in OpenCode. Connect that integration, or add providers.${provider}.apiKey to ${configPath}, or set ${providerApiKeyEnvironment(provider)}. OpenCode's remaining permission flow remains unchanged.`

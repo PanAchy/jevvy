@@ -71,7 +71,7 @@ Your agent checks permissions first. Its allow and deny decisions stay final. Sp
 
 ## Configuration
 
-Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Project repositories cannot override it. JSONC comments and trailing commas are supported. Keep `$schema` for editor validation and autocomplete.
+Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Project repositories cannot override it. JSONC comments and trailing commas are supported.
 
 ```jsonc
 {
@@ -82,28 +82,38 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 
 | Setting | Default | Description |
 | ------- | ------- | ----------- |
-| `provider` | Required | Provider to use; see the table below. |
+| `provider` | Required | Provider preset. |
+| `providers.<provider>.apiKey` | Unset | API key; takes precedence over its environment variable. |
+| `providers.<provider>.opencodeCredential` | Unset | OpenCode integration ID for API-key reuse. File and environment keys take priority. OpenCode only. |
 | `permissions.timeoutMs` | `5000` | Timeout for model provider in ms. |
-| `metrics.enabled` | `false` | Opt in to recent, best-effort OpenCode review counts and shipped-question reasons in global `metrics/`. See its `schema.json` and `AGENTS.md`. POSIX-only; reload to apply. No command history. |
+| `metrics.history.enabled` | `false` | Opt in to local Jevvy Permissions OpenCode review history. Verbatim commands and raw answers may contain secrets. POSIX-only; reload to apply. Legacy `metrics.enabled` does not enable it. |
 
-### Providers
+History lives in `metrics/history.sqlite` beside the global Jevvy configuration. Follow `metrics/AGENTS.md`, `schema.sql` and `event.schema.json` for read-only agent reports with any requested cutoff. Coverage is incomplete because of capacity eviction, drops and disabled periods. Limits are 10,000 rows, 16 MiB logical event bytes and 32 MiB main DB; active rollback journals use extra space. There is no age expiry, and disabling history does not erase existing records. The directory and global configuration root must be owner-only POSIX directories. SQLite reopens the verified pathname, so protection against hostile same-user path replacement is not guaranteed.
 
-| Provider                          | `provider`   | Credential sources                                            |
-| --------------------------------- | ------------ | ------------------------------------------------------------- |
-| OpenCode Zen                      | `zen`        | `providers.zen.apiKey` or `OPENCODE_API_KEY`                  |
-| TypeSafe AI                       | `typesafe`   | `providers.typesafe.apiKey` or `TYPESAFE_API_KEY`             |
-| OpenRouter                        | `openrouter` | `providers.openrouter.apiKey` or `OPENROUTER_API_KEY`         |
-| Vercel AI Gateway                 | `vercel`     | `providers.vercel.apiKey` or `AI_GATEWAY_API_KEY`             |
-| Laya ([setup guide][laya-guide])  | `laya`       | Optional `providers.laya.apiKey` or `LAYA_API_KEY`            |
-| Custom endpoint                   | `custom`     | Optional `providers.custom.apiKey`                            |
+### API formats and presets
+
+| API format | Preset | `provider` | Environment variable |
+| ---------- | ------ | ---------- | -------------------- |
+| System One | OpenCode Zen | `zen` | `OPENCODE_API_KEY` |
+| | TypeSafe AI | `typesafe` | `TYPESAFE_API_KEY` |
+| | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
+| | Vercel AI Gateway | `vercel` | `AI_GATEWAY_API_KEY` |
+| | Microsoft Decision<br>*[Experimental setup][microsoft-guide]* | `microsoft` | `AZURE_AI_API_KEY` |
+| | Laya<br>*[Setup guide][laya-guide]* | `laya` | Optional `LAYA_API_KEY` |
+| | Custom endpoint | `custom` | None |
+| OpenAI Decisions | OpenAI<br>*[Setup guide][openai-guide]* | `openai` | `OPENAI_API_KEY` |
 
 [laya-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/laya.md
+
+[openai-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/openai.md
+
+[microsoft-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/microsoft.md
 
 The plugin uses only the selected provider and never falls back to another one.
 
 ### Custom System One endpoint
 
-Select `custom` to use any HTTP endpoint that accepts the System One request shape and returns typed System One answers:
+Select `custom` to use an HTTP endpoint that accepts the System One request shape and returns typed System One answers, with optional Bearer auth:
 
 ```jsonc
 {
@@ -154,7 +164,7 @@ For providers other than Laya, `permissions.questions` replaces Jevvy's default 
 }
 ```
 
-A Noul answer is the probability that the answer is yes. Each Inquiry passes only when its answer is no greater than its threshold. See [TypeSafe's Noul documentation](https://docs.typesafe.ai/primitives/noul).
+A Noul answer is the probability that the answer is yes. See [TypeSafe's Noul documentation](https://docs.typesafe.ai/primitives/noul).
 
 ### Calibrate custom questions
 
@@ -164,4 +174,4 @@ Install the optional [`calibrate-permissions`](./skills/calibrate-permissions/SK
 npx skills add PanAchy/jevvy --skill calibrate-permissions
 ```
 
-The skill runs `jevvy-calibrate` against the plugin's bundled baseline. Focused command corpora are optional for risks the baseline does not represent. Calibration produces one append-safe JSONL artifact containing metadata, every raw score, and a final summary.
+The skill runs `jevvy-calibrate` against the bundled baseline and optional custom command corpora, then writes a report with scores and a summary.

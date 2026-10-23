@@ -90,12 +90,12 @@ const choiceAt = <A>(choices: readonly Choice<A>[], index: number): Choice<A> =>
   return choice
 }
 
-const renderMenu = <A>(choices: readonly Choice<A>[], multiple: boolean, state: MenuState, layout: Layout): readonly string[] => {
+const renderMenu = <A>(choices: readonly Choice<A>[], multiple: boolean, state: MenuState, layout: Layout, hint?: string): readonly string[] => {
   const { width, colors } = layout
 
-  const footer = wrapText(multiple
+  const footer = wrapText(hint ?? (multiple
     ? "↑/↓ to navigate • Space: select • Enter: confirm"
-    : "↑/↓ to navigate • Enter: confirm", width).map((line) => paint(line, colors.muted))
+    : "↑/↓ to navigate • Enter: confirm"), width).map((line) => paint(line, colors.muted))
 
   const errors = state.error === undefined ? [] : wrapText(state.error, width).map((line) => paint(line, colors.error))
   const errorRows = Math.min(errors.length, Math.max(0, layout.rows - 2))
@@ -182,6 +182,63 @@ const menu = Effect.fn("Init.menu")(function*<A, Output>(
 
 export const select = Effect.fn("Init.select")(function*<A>(options: SelectOptions<A>) {
   return yield* menu(options, false, 1, (state) => choiceAt(options.choices, state.cursor), (choice) => choice.title).pipe(Effect.map((choice) => choice.value))
+})
+
+interface SearchState {
+  readonly query: string
+  readonly cursor: number
+}
+
+export const searchableSelect = Effect.fn("Init.searchableSelect")(function*<A>(options: SelectOptions<A>) {
+  if (options.choices.length === 0) return yield* Effect.die(new Error("Prompt requires at least one choice"))
+  const Action = Data.taggedEnum<Prompt.Action<SearchState, Choice<A>>>()
+
+  const matches = (query: string) => options.choices.filter(({ title, description }) =>
+    `${title} ${description ?? ""}`.toLowerCase().includes(query.trim().toLowerCase()))
+
+  const choice = yield* runControl<SearchState, Choice<A>>(options.message, { query: "", cursor: 0 },
+    (state, action, layout) => {
+      if (Predicate.isTagged(action, "Submit")) {
+        return wrapText(action.value.title, layout.width).map((line) => paint(line, layout.colors.muted))
+      }
+
+      const choices = matches(state.query)
+
+      const search = wrapText(`Search: ${state.query || "(type a name)"}`, layout.width)
+        .slice(0, Math.max(0, layout.rows - 1)).map((line) => paint(line, layout.colors.muted))
+
+      return [...search, ...renderMenu(choices, false, {
+        cursor: state.cursor, selected: [], error: choices.length === 0 ? "No matching choices" : undefined,
+      }, { ...layout, rows: Math.max(1, layout.rows - search.length) }, "Type to filter • ↑/↓ navigate • Enter select • Esc clear")]
+    },
+    (input, state) => Effect.sync(() => {
+      const choices = matches(state.query)
+      const search = (query: string) => Action.NextFrame({ state: { query, cursor: 0 } })
+
+      if (input.key.ctrl) return input.key.name === "u" ? search("") : Action.Beep()
+
+      switch (input.key.name) {
+        case "up": return choices.length === 0 ? Action.Beep() : Action.NextFrame({
+          state: { ...state, cursor: (state.cursor + choices.length - 1) % choices.length },
+        })
+        case "down":
+        case "tab": return choices.length === 0 ? Action.Beep() : Action.NextFrame({
+          state: { ...state, cursor: (state.cursor + 1) % choices.length },
+        })
+        case "escape": return search("")
+        case "backspace": return search(graphemes(state.query).slice(0, -1).join(""))
+        case "return":
+        case "enter": return choices.length === 0 ? Action.Beep() : Action.Submit({ value: choiceAt(choices, state.cursor) })
+        default: {
+          const inserted = Option.getOrElse(input.input, () => "")
+
+          return inserted === "" || /\p{Cc}/u.test(inserted) ? Action.Beep() : search(state.query + inserted)
+        }
+      }
+    }),
+  )
+
+  return choice.value
 })
 
 export const multiSelect = Effect.fn("Init.multiSelect")(function*<A>(options: SelectOptions<A> & { readonly min: number }) {

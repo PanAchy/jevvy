@@ -10,6 +10,12 @@ export { createLayaClient, DEFAULT_LAYA_ENDPOINT, DEFAULT_LAYA_MODEL } from "./l
 
 export type { LayaClientOptions } from "./laya.ts"
 
+export { createOpenAIClient, DEFAULT_OPENAI_MODEL, OPENAI_DECISIONS_URL } from "./openai.ts"
+
+export { createMicrosoftClient, MICROSOFT_DECISION_MODEL } from "./microsoft.ts"
+
+export type { MicrosoftClientOptions } from "./microsoft.ts"
+
 export {
   createOpenRouterClient,
   DEFAULT_OPENROUTER_MODEL,

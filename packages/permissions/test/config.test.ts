@@ -63,10 +63,88 @@ const withConfigFile = <A, E, R>(
 )
 
 describe("Jevvy configuration", () => {
-  it.effect.each([undefined, false, true])("loads default-off metrics opt-in %s", (enabled) => Effect.gen(function*() {
-    const config = yield* withConfigFile(JSON.stringify({ provider: "typesafe", metrics: { enabled } }), load)
+  it.effect.each([undefined, false, true])("loads default-off history opt-in %s", (enabled) => Effect.gen(function*() {
+    const config = yield* withConfigFile(JSON.stringify({ provider: "typesafe", metrics: { history: { enabled } } }), load)
 
-    expect(config).toMatchObject({ kind: "shipped-policy", metricsEnabled: enabled ?? false })
+    expect(config).toMatchObject({ kind: "shipped-policy", historyEnabled: enabled ?? false, historyMigrationNeeded: false })
+  }))
+
+  it.effect("does not activate history from a legacy aggregate opt-in", () => Effect.gen(function*() {
+    const config = yield* withConfigFile(JSON.stringify({ provider: "typesafe", metrics: { enabled: true } }), load)
+    expect(config).toMatchObject({ historyEnabled: false, historyMigrationNeeded: true })
+  }))
+
+  it.effect.each([
+    ["openai", "OPENAI_API_KEY"], ["microsoft", "AZURE_AI_API_KEY"],
+  ] as const)("loads %s credentials from the file before its environment variable", ([provider, variable]) => Effect.gen(function*() {
+    const fields = provider === "microsoft"
+      ? { endpoint: "https://foundry.example.com/providers/microsoft/v1/systemone", model: "my-deployment" }
+      : {}
+
+    const environment = ConfigProvider.fromUnknown({ [variable]: "environment-secret", TYPESAFE_API_KEY: "unrelated-key" })
+
+    for (const apiKey of [undefined, "file-secret"]) {
+      const settings = apiKey === undefined ? fields : { ...fields, apiKey }
+      const raw = JSON.stringify({ provider, providers: { [provider]: settings } })
+
+      const config = yield* withConfigFile(provider === "openai" && apiKey === undefined ? JSON.stringify({ provider }) : raw,
+        (path) => load(path, environment))
+
+      expect(config.kind).toBe("shipped-policy")
+
+      if (config.kind !== "shipped-policy" || config.selection.apiKey === undefined) throw new Error("Expected configured credentials")
+
+      expect(config.selection.provider).toBe(provider)
+      expect(Redacted.value(config.selection.apiKey)).toBe(apiKey ?? "environment-secret")
+
+      if (config.selection.provider === "microsoft") {
+        expect(config.selection.model).toBe("my-deployment")
+        expect(config.selection.endpoint).toBe(fields.endpoint)
+      }
+    }
+  }))
+
+  it.effect.each(["openai", "microsoft"] as const)("allows user-calibrated %s questions without changing shipped defaults", (provider) => Effect.gen(function*() {
+    const providers = provider === "microsoft"
+      ? { microsoft: { endpoint: "https://foundry.example.com/providers/microsoft/v1/systemone", model: "deployment" } }
+      : undefined
+
+    const config = yield* withConfigFile(JSON.stringify({ provider, providers, permissions: { questions: customQuestions } }), load)
+
+    expect(config).toMatchObject({ kind: "custom-policy", selection: { provider }, questions: customQuestions })
+  }))
+
+  it.effect.each([
+    { provider: "microsoft" },
+    { provider: "microsoft", providers: { microsoft: { model: "deployment" } } },
+    { provider: "microsoft", providers: { microsoft: { endpoint: "https://foundry.example.com/providers/microsoft/v1/systemone" } } },
+    { provider: "microsoft", providers: { microsoft: { endpoint: "file:///tmp/model", model: "deployment" } } },
+    { provider: "microsoft", providers: { microsoft: { endpoint: "http://foundry.example.com/providers/microsoft/v1/systemone", model: "deployment" } } },
+    { provider: "microsoft", providers: { microsoft: { endpoint: "https://user:secret@foundry.example.com/providers/microsoft/v1/systemone", model: "deployment" } } },
+    { provider: "microsoft", providers: { microsoft: { endpoint: "https://foundry.example.com", model: "deployment", apiKey: "" } } },
+  ])("rejects incomplete or invalid Microsoft configuration: %j", (document) => Effect.gen(function*() {
+    expect(yield* withConfigFile(JSON.stringify(document), load)).toMatchObject({ kind: "invalid" })
+  }))
+
+  it.effect.each(["openai", "microsoft"] as const)("does not use another provider's credential for %s", (provider) => Effect.gen(function*() {
+    const providers = provider === "microsoft"
+      ? { microsoft: { endpoint: "https://foundry.example.com/providers/microsoft/v1/systemone", model: "deployment" } }
+      : undefined
+
+    const environment = ConfigProvider.fromUnknown({ TYPESAFE_API_KEY: "other-key" })
+    const config = yield* withConfigFile(JSON.stringify({ provider, providers }), (path) => load(path, environment))
+
+    expect(config).toMatchObject({ kind: "shipped-policy", selection: { provider, apiKey: undefined } })
+  }))
+
+  it.effect.each([
+    { openai: { model: "override", apiKey: "fixture-key" } },
+    { openai: { opencodeCredential: "openai", apiKey: "fixture-key" } },
+    { microsoft: { endpoint: "https://foundry.example.com/providers/microsoft/v1/systemone", model: "deployment", opencodeCredential: "azure" } },
+  ])("does not extend preset overrides or OpenCode key reuse to decision providers: %j", (providers) => Effect.gen(function*() {
+    const provider = "openai" in providers ? "openai" : "microsoft"
+
+    expect(yield* withConfigFile(JSON.stringify({ provider, providers }), load)).toMatchObject({ kind: "invalid" })
   }))
 
   it.effect.each(presets)("sends the exact configured %s model through the real client", ([provider, variable, defaultModel, endpoint]) => Effect.gen(function*() {
@@ -89,7 +167,8 @@ describe("Jevvy configuration", () => {
       const input = { state: { command: "pwd && ls > listing" }, questions: { routine: { type: "noul" as const, instructions: "Is this routine?" } } }
       const result = yield* selected.client.evaluate(input).pipe(Effect.provideService(FetchHttpClient.Fetch, transport))
       expect(result.model).toBe("reported-model")
-      expect(selected.model).toBe(model ?? defaultModel)
+      expect(selected.requestedModel).toBe(model ?? defaultModel)
+      expect(selected.expectedModel).toBe(model ?? defaultModel)
       const calibratedModel = provider === "zen" ? "jev-1.13-free" : defaultModel
       expect(shippedPolicyProvenance(selected)).toBe((model ?? defaultModel) === calibratedModel ? "calibrated-defaults" : "shipped-defaults-unverified")
       expect(transport).toHaveBeenCalledOnce()
@@ -190,6 +269,19 @@ describe("Jevvy configuration", () => {
     expect(yield* withConfigFile(JSON.stringify(document), load)).toMatchObject({ kind: "invalid" })
   }))
 
+  it.effect("loads an OpenCode credential integration id", () => Effect.gen(function*() {
+    const raw = JSON.stringify({ provider: "openrouter", providers: { openrouter: { opencodeCredential: "openrouter" } } })
+
+    expect(yield* withConfigFile(raw, load)).toMatchObject({
+      kind: "shipped-policy",
+      selection: { provider: "openrouter", opencodeCredential: "openrouter" },
+    })
+
+    const empty = JSON.stringify({ provider: "openrouter", providers: { openrouter: { opencodeCredential: "" } } })
+
+    expect(yield* withConfigFile(empty, load)).toMatchObject({ kind: "invalid" })
+  }))
+
   it.effect.each([undefined, 12_000, 0.5])("loads timeoutMs %s for shipped and custom policies", (timeoutMs) => Effect.gen(function*() {
     for (const questions of [undefined, customQuestions]) {
       const raw = JSON.stringify({ provider: "typesafe", providers: { typesafe: { model: "configured-route" } }, permissions: { timeoutMs, questions } })
@@ -216,7 +308,8 @@ describe("Jevvy configuration", () => {
 
     expect(config).toEqual({
       kind: "custom-policy",
-      metricsEnabled: false,
+      historyEnabled: false,
+      historyMigrationNeeded: false,
       timeoutMs: 5_000,
       selection: { provider: "typesafe", apiKey: undefined },
       questions: customQuestions,
@@ -327,7 +420,8 @@ describe("Jevvy configuration", () => {
 
       expect(yield* withConfigFile(raw, load)).toEqual({
         kind: "custom-policy",
-        metricsEnabled: false,
+        historyEnabled: false,
+        historyMigrationNeeded: false,
         timeoutMs: 5_000,
         selection: {
           provider: "custom",
@@ -357,7 +451,8 @@ describe("Jevvy configuration", () => {
 
     expect(yield* withConfigFile(raw, load)).toEqual({
       kind: "custom-policy",
-      metricsEnabled: false,
+      historyEnabled: false,
+      historyMigrationNeeded: false,
       timeoutMs: 12_000,
       selection: { provider: "laya", endpoint: undefined, model: undefined, apiKey: undefined },
       questions: customQuestions,
@@ -453,7 +548,8 @@ describe("Jevvy configuration", () => {
 
       expect(yield* withConfigFile(raw, load)).toEqual({
         kind: "shipped-policy",
-        metricsEnabled: false,
+        historyEnabled: false,
+        historyMigrationNeeded: false,
         timeoutMs: 5_000,
         selection: {
           provider: "custom",
@@ -472,7 +568,8 @@ describe("Jevvy configuration", () => {
 
     expect(yield* withConfigFile(raw, load)).toEqual({
       kind: "shipped-policy",
-      metricsEnabled: false,
+      historyEnabled: false,
+      historyMigrationNeeded: false,
       timeoutMs: 5_000,
       selection: { provider: "typesafe", apiKey: undefined },
     })
@@ -490,5 +587,23 @@ describe("Jevvy configuration", () => {
       expect(config.kind).toBe("shipped-policy")
       expect(info.mode & 0o777).toBe(0o600)
     }), mode)
+  })
+
+  it.effect.each(["openai", "microsoft"] as const)("secures stored %s credentials", (provider) => {
+    if (process.platform === "win32") return Effect.void
+
+    const settings = provider === "microsoft"
+      ? { endpoint: "https://foundry.example.com/providers/microsoft/v1/systemone", model: "deployment", apiKey: "file-key" }
+      : { apiKey: "file-key" }
+
+    const raw = JSON.stringify({ provider, providers: { [provider]: settings } })
+
+    return withConfigFile(raw, (path) => Effect.gen(function*() {
+      const config = yield* load(path)
+      const info = yield* Effect.promise(() => stat(path))
+
+      expect(config.kind).toBe("shipped-policy")
+      expect(info.mode & 0o777).toBe(0o600)
+    }), 0o644)
   })
 })

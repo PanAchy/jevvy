@@ -1,18 +1,20 @@
 #!/usr/bin/env node
 
 import { spawn, spawnSync } from "node:child_process"
-import { mkdirSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { withPermissionSmoke } from "./opencode-permission-smoke.mjs"
 import { verifyControlCommand } from "./opencode-control-smoke.mjs"
 
 const root = "/tmp/jevvy-opencode-smoke"
 
-const opencodeVersion = process.env.JEVVY_OPENCODE_VERSION ?? "2.0.27"
+const opencodeVersion = process.env.JEVVY_OPENCODE_VERSION ?? "2.1.3"
 
 const project = join(root, "project")
 
 const home = join(root, "home")
+
+mkdirSync(root, { recursive: true, mode: 0o700 })
 
 mkdirSync(project, { recursive: true })
 
@@ -131,6 +133,10 @@ const inspectPlugin = async (port, expectedProblem, exercise) => {
           throw new Error(`Jevvy controls did not default to enabled: ${JSON.stringify(control)}`)
         }
 
+        if (expectedProblem === undefined && control.output?.problem !== undefined) {
+          throw new Error(`Jevvy reported an unexpected setup problem: ${JSON.stringify(control)}`)
+        }
+
         if (exercise !== undefined) {
           const api = async (method, path, body) => {
             const options = {
@@ -213,4 +219,34 @@ await withPermissionSmoke(project, async (endpoint, exercise) => {
   await inspectPlugin(4100, undefined, exercise)
 })
 
-console.log(`OpenCode ${opencodeVersion} host smoke passed: setup diagnostics, activation, and real shell permission review`)
+const historyPath = join(root, "metrics", "history.sqlite")
+
+if (existsSync(historyPath)) throw new Error("default-off history created a database")
+
+await withPermissionSmoke(project, async (endpoint, exercise) => {
+  writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
+    provider: "custom",
+    providers: { custom: { endpoint, model: "smoke-model" } },
+    metrics: { history: { enabled: true } },
+  }, null, 2)}\n`, { mode: 0o600 })
+
+  await inspectPlugin(4101, undefined, exercise)
+})
+
+const { DatabaseSync } = await import("node:sqlite")
+
+const history = new DatabaseSync(historyPath, { readOnly: true })
+
+try {
+  const rows = history.prepare("SELECT command, effect, reason, model, latency_ms FROM events").all()
+
+  if (!rows.some((row) => row.command === "echo jevvy-reviewed" && row.effect === "allow" && row.reason === "judged" && row.model === "smoke-model")) throw new Error("packed worker did not retain the real boundary judgment")
+
+  if (!rows.some((row) => row.reason === "explicit-ask" && row.model === null && row.latency_ms === null)) throw new Error("packed worker did not retain a truthful explicit-ask skip")
+
+  if (!rows.some((row) => row.reason === "unavailable")) throw new Error("packed worker did not retain an unavailable review")
+
+  if (rows.some((row) => String(row.command).startsWith("echo jevvy-allowed") || String(row.command).startsWith("echo jevvy-denied"))) throw new Error("native finalized outcomes entered history")
+} finally { history.close() }
+
+console.log(`OpenCode ${opencodeVersion} host smoke passed: setup diagnostics, activation, real shell permission review, packed worker history OFF/ON and disposal`)
