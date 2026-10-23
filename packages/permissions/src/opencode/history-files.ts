@@ -1,15 +1,11 @@
-import { constants } from "node:fs"
 import type { Stats } from "node:fs"
-import { lstat, mkdir, open, opendir } from "node:fs/promises"
-import { dirname, join, resolve } from "node:path"
 import * as Effect from "effect/Effect"
+import * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
 import { HISTORY_DATABASE_BYTES, HistoryDetail, StoredHistoryRow, HistoryStorageError } from "../history.ts"
 import { historySchema } from "./history-store.ts"
-
-const missing = Schema.is(Schema.Struct({ code: Schema.Literal("ENOENT") }))
-
-const exists = Schema.is(Schema.Struct({ code: Schema.Literal("EEXIST") }))
+import { historyNative } from "./history-native.ts"
+import type { HistoryNative, HistoryNativeError } from "./history-native.ts"
 
 export const historyAgentInstructions = `# Jevvy Permissions review history v1
 
@@ -24,36 +20,31 @@ export const historyAgentInstructions = `# Jevvy Permissions review history v1
 const privateFile = (info: Stats, maximum: number): boolean =>
   info.isFile() && info.uid === process.getuid?.() && info.nlink === 1 && (info.mode & 0o777) === 0o600 && info.size <= maximum
 
-const inspect = async (path: string, maximum: number): Promise<Stats | undefined> => {
-  try {
-    const info = await lstat(path)
+export const createHistoryFiles = (files: HistoryNative) => {
+  const inspect = Effect.fn("ReviewHistory.inspectFile")(function*(path: string, maximum: number) {
+    const info = yield* files.lstat(path).pipe(Effect.catchIf((error) => error.kind === "missing", () => Effect.succeed(undefined)))
 
-    if (!privateFile(info, maximum)) throw new HistoryStorageError({ kind: "unsafe-path" })
+    if (info !== undefined && !privateFile(info, maximum)) return yield* new HistoryStorageError({ kind: "unsafe-path" })
 
     return info
-  } catch (error) {
-    if (missing(error)) return undefined
-    throw error
-  }
-}
+  })
 
-const inspectJournal = async (filename: string): Promise<void> => {
-  const path = `${filename}-journal`
-  const info = await inspect(path, 40 * 1024 * 1024)
+  const inspectJournal = Effect.fn("ReviewHistory.inspectJournal")(function*(filename: string) {
+    const path = `${filename}-journal`
+    const info = yield* inspect(path, 40 * 1024 * 1024)
 
-  if (info === undefined) return
+    if (info === undefined) return
 
-  try {
-    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW)
+    const acquire = files.open(path, false).pipe(Effect.catchIf((error) => error.kind === "missing", () => Effect.succeed(undefined)))
+    yield* Effect.acquireUseRelease(acquire, (file) => Effect.gen(function*() {
+      if (file === undefined) return
+      const opened = yield* file.stat
 
-    try {
-      const opened = await file.stat()
+      if (!privateFile(opened, 40 * 1024 * 1024) || opened.dev !== info.dev || opened.ino !== info.ino) return yield* new HistoryStorageError({ kind: "unsafe-path" })
 
-      if (!privateFile(opened, 40 * 1024 * 1024) || opened.dev !== info.dev || opened.ino !== info.ino) throw new HistoryStorageError({ kind: "unsafe-path" })
+      const { buffer, bytesRead } = yield* file.read(28)
 
-      const { buffer, bytesRead } = await file.read({ buffer: Buffer.alloc(28), length: 28, position: 0 })
-
-      if (bytesRead < 28) throw new HistoryStorageError({ kind: "busy" })
+      if (bytesRead < 28) return yield* new HistoryStorageError({ kind: "busy" })
 
       const magic = buffer.subarray(0, 8).toString("hex")
       const pages = buffer.readUInt32BE(8)
@@ -63,84 +54,68 @@ const inspectJournal = async (filename: string): Promise<void> => {
 
       if ((magic !== "d9d505f920a163d7" && magic !== "0000000000000000") ||
         (pages > 8192 && pages !== 0xffffffff) || initialPages > 8192 || pageSize !== 4096 ||
-        sector < 512 || sector > 65_536 || (sector & (sector - 1)) !== 0) throw new HistoryStorageError({ kind: "unsupported-schema" })
+        sector < 512 || sector > 65_536 || (sector & (sector - 1)) !== 0) return yield* new HistoryStorageError({ kind: "unsupported-schema" })
 
-      if (opened.size < sector) throw new HistoryStorageError({ kind: "busy" })
-    } finally { await file.close() }
-  } catch (error) {
-    if (!missing(error)) throw error
-  }
-}
+      if (opened.size < sector) return yield* new HistoryStorageError({ kind: "busy" })
+    }), (file) => file === undefined ? Effect.void : file.close)
+  })
 
-const inspectDatabase = async (filename: string): Promise<void> => {
-  const file = await open(filename, constants.O_RDONLY | constants.O_NOFOLLOW)
+  const inspectDatabase = Effect.fn("ReviewHistory.inspectDatabase")(function*(filename: string) {
+    yield* Effect.acquireUseRelease(files.open(filename, false), (file) => Effect.gen(function*() {
+      const info = yield* file.stat
 
-  try {
-    const info = await file.stat()
+      if (!privateFile(info, HISTORY_DATABASE_BYTES)) return yield* new HistoryStorageError({ kind: "unsafe-path" })
 
-    if (!privateFile(info, HISTORY_DATABASE_BYTES)) throw new HistoryStorageError({ kind: "unsafe-path" })
+      if (info.size === 0) return
 
-    if (info.size === 0) return
+      const { buffer, bytesRead } = yield* file.read(100)
 
-    const { buffer, bytesRead } = await file.read({ buffer: Buffer.alloc(100), length: 100, position: 0 })
+      if (bytesRead < 100 || info.size % 4096 !== 0 || buffer.subarray(0, 16).toString("hex") !== "53514c69746520666f726d6174203300" ||
+        buffer.readUInt16BE(16) !== 4096 || buffer[18] !== 1 || buffer[19] !== 1) return yield* new HistoryStorageError({ kind: "unsupported-schema" })
+    }), (file) => file.close)
+  })
 
-    if (bytesRead < 100 || info.size % 4096 !== 0 || buffer.subarray(0, 16).toString("hex") !== "53514c69746520666f726d6174203300" ||
-      buffer.readUInt16BE(16) !== 4096 || buffer[18] !== 1 || buffer[19] !== 1) throw new HistoryStorageError({ kind: "unsupported-schema" })
-  } finally { await file.close() }
-}
+  const storageError = Effect.mapError((error: HistoryStorageError | HistoryNativeError) => error instanceof HistoryStorageError ? error : new HistoryStorageError({ kind: "storage" }))
 
-export interface VerifiedHistoryPath {
-  readonly filename: string
-  readonly dev: number
-  readonly ino: number
-}
+  const verifyHistoryPath = Effect.fn("ReviewHistory.verifyPath")(function*(path: VerifiedHistoryPath) {
+    const info = yield* inspect(path.filename, HISTORY_DATABASE_BYTES)
 
-const native = <A>(operation: () => Promise<A>) => Effect.tryPromise({
-  try: operation,
-  catch: (error) => error instanceof HistoryStorageError ? error : new HistoryStorageError({ kind: "storage" }),
-})
-
-export const verifyHistoryPath = Effect.fn("ReviewHistory.verifyPath")(function*(path: VerifiedHistoryPath) {
-  yield* native(async () => {
-    const info = await inspect(path.filename, HISTORY_DATABASE_BYTES)
-
-    if (info === undefined || info.dev !== path.dev || info.ino !== path.ino) throw new HistoryStorageError({ kind: "unsafe-path" })
+    if (info === undefined || info.dev !== path.dev || info.ino !== path.ino) return yield* new HistoryStorageError({ kind: "unsafe-path" })
 
     for (const suffix of ["-wal", "-shm"]) {
-      if (await inspect(`${path.filename}${suffix}`, HISTORY_DATABASE_BYTES) !== undefined) throw new HistoryStorageError({ kind: "unsupported-schema" })
+      if ((yield* inspect(`${path.filename}${suffix}`, HISTORY_DATABASE_BYTES)) !== undefined) return yield* new HistoryStorageError({ kind: "unsupported-schema" })
     }
 
-    await inspectJournal(path.filename)
-  })
-})
+    yield* inspectJournal(path.filename)
+  }, storageError)
 
-export const prepareHistoryStore = Effect.fn("ReviewHistory.preparePath")(function*(configPath: string) {
-  if (process.platform === "win32") return yield* new HistoryStorageError({ kind: "unsupported-platform" })
+  const prepareHistoryStore = Effect.fn("ReviewHistory.preparePath")(function*(configPath: string) {
+    if (process.platform === "win32") return yield* new HistoryStorageError({ kind: "unsupported-platform" })
+    const { dirname, join, resolve } = yield* Path.Path
 
-  return yield* native(async () => {
     const parent = resolve(dirname(configPath))
     let ancestor = parent
 
     for (;;) {
-      const info = await lstat(ancestor)
+      const info = yield* files.lstat(ancestor)
 
-      if (!info.isDirectory() || (info.uid !== 0 && info.uid !== process.getuid?.()) || ((info.mode & 0o022) !== 0 && (info.mode & 0o1000) === 0)) throw new HistoryStorageError({ kind: "unsafe-path" })
+      if (!info.isDirectory() || (info.uid !== 0 && info.uid !== process.getuid?.()) || ((info.mode & 0o022) !== 0 && (info.mode & 0o1000) === 0)) return yield* new HistoryStorageError({ kind: "unsafe-path" })
       const next = dirname(ancestor)
 
       if (next === ancestor) break
       ancestor = next
     }
 
-    const parentInfo = await lstat(parent)
+    const parentInfo = yield* files.lstat(parent)
 
-    if (parentInfo.uid !== process.getuid?.() || (parentInfo.mode & 0o777) !== 0o700) throw new HistoryStorageError({ kind: "unsafe-path" })
+    if (parentInfo.uid !== process.getuid?.() || (parentInfo.mode & 0o777) !== 0o700) return yield* new HistoryStorageError({ kind: "unsafe-path" })
     const root = join(parent, "metrics")
 
-    try { await mkdir(root, { mode: 0o700 }) } catch (error) { if (!exists(error)) throw error }
+    yield* files.mkdir(root).pipe(Effect.catchIf((error) => error.kind === "exists", () => Effect.void))
 
-    const rootInfo = await lstat(root)
+    const rootInfo = yield* files.lstat(root)
 
-    if (!rootInfo.isDirectory() || rootInfo.uid !== process.getuid?.() || (rootInfo.mode & 0o777) !== 0o700) throw new HistoryStorageError({ kind: "unsafe-path" })
+    if (!rootInfo.isDirectory() || rootInfo.uid !== process.getuid?.() || (rootInfo.mode & 0o777) !== 0o700) return yield* new HistoryStorageError({ kind: "unsafe-path" })
 
     const rowSchema = Schema.toJsonSchemaDocument(StoredHistoryRow, { onExcessProperty: "error" })
     const detailSchema = Schema.toJsonSchemaDocument(HistoryDetail, { onExcessProperty: "error" })
@@ -154,67 +129,74 @@ export const prepareHistoryStore = Effect.fn("ReviewHistory.preparePath")(functi
       "event.schema.json": `${JSON.stringify(schema, null, 2)}\n`,
     }
 
-    if (Object.values(metadata).reduce((sum, text) => sum + Buffer.byteLength(text), 0) > 65_536) throw new HistoryStorageError({ kind: "storage" })
+    if (Object.values(metadata).reduce((sum, text) => sum + Buffer.byteLength(text), 0) > 65_536) return yield* new HistoryStorageError({ kind: "storage" })
     const allowed = new Set(["history.sqlite", "history.sqlite-journal", ...Object.keys(metadata)])
-    const directory = await opendir(root)
-    const entries: string[] = []
 
-    try {
+    const entries = yield* Effect.acquireUseRelease(files.opendir(root), (directory) => Effect.gen(function*() {
+      const entries: string[] = []
+
       for (let index = 0; index <= allowed.size; index++) {
-        const entry = await directory.read()
+        const entry = yield* directory.read
 
         if (entry === null) break
 
         entries.push(entry.name)
       }
-    } finally { await directory.close() }
 
-    if (entries.length > allowed.size || entries.some((name) => !allowed.has(name))) throw new HistoryStorageError({ kind: "unsupported-schema" })
+      return entries
+    }), (directory) => directory.close)
 
-    if (entries.includes("history.sqlite-journal") && !entries.includes("history.sqlite")) throw new HistoryStorageError({ kind: "unsupported-schema" })
+    if (entries.length > allowed.size || entries.some((name) => !allowed.has(name))) return yield* new HistoryStorageError({ kind: "unsupported-schema" })
+
+    if (entries.includes("history.sqlite-journal") && !entries.includes("history.sqlite")) return yield* new HistoryStorageError({ kind: "unsupported-schema" })
     let total = 0
 
     for (const name of entries) {
       const maximum = name === "history.sqlite" ? HISTORY_DATABASE_BYTES : 65_536
-      const info = await inspect(join(root, name), name === "history.sqlite-journal" ? 40 * 1024 * 1024 : maximum)
+      const info = yield* inspect(join(root, name), name === "history.sqlite-journal" ? 40 * 1024 * 1024 : maximum)
       total += info?.size ?? 0
     }
 
-    if (total > 80 * 1024 * 1024) throw new HistoryStorageError({ kind: "storage" })
+    if (total > 80 * 1024 * 1024) return yield* new HistoryStorageError({ kind: "storage" })
     const filename = join(root, "history.sqlite")
 
-    try {
-      const file = await open(filename, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
-      await file.close()
-    } catch (error) { if (!exists(error)) throw error }
+    const create = files.open(filename, true).pipe(Effect.catchIf((error) => error.kind === "exists", () => Effect.succeed(undefined)))
+    yield* Effect.acquireUseRelease(create, () => Effect.void, (file) => file === undefined ? Effect.void : file.close)
 
-    const info = await inspect(filename, HISTORY_DATABASE_BYTES)
+    const info = yield* inspect(filename, HISTORY_DATABASE_BYTES)
 
-    if (info === undefined) throw new HistoryStorageError({ kind: "unsafe-path" })
+    if (info === undefined) return yield* new HistoryStorageError({ kind: "unsafe-path" })
 
-    await inspectDatabase(filename)
-    await inspectJournal(filename)
+    yield* inspectDatabase(filename)
+    yield* inspectJournal(filename)
 
     for (const [name, content] of Object.entries(metadata)) {
       const target = join(root, name)
 
-      try {
-        const file = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600)
+      const file = files.open(target, true).pipe(Effect.map((handle) => ({ handle, created: true })), Effect.catchIf((error) => error.kind === "exists", () => Effect.gen(function*() {
+        yield* inspect(target, 65_536)
 
-        try { await file.writeFile(content) } finally { await file.close() }
-      } catch (error) {
-        if (!exists(error)) throw error
-        await inspect(target, 65_536)
-        const file = await open(target, constants.O_RDONLY | constants.O_NOFOLLOW)
+        return { handle: yield* files.open(target, false), created: false }
+      })))
 
-        try {
-          const actual = await file.readFile("utf8")
+      yield* Effect.acquireUseRelease(file, ({ handle, created }) => Effect.gen(function*() {
+        if (created) return yield* handle.writeText(content)
+        const actual = yield* handle.readText
 
-          if (actual !== content) throw new HistoryStorageError({ kind: content.startsWith(actual) ? "busy" : "unsupported-schema" })
-        } finally { await file.close() }
-      }
+        if (actual !== content) return yield* new HistoryStorageError({ kind: content.startsWith(actual) ? "busy" : "unsupported-schema" })
+      }), ({ handle }) => handle.close)
     }
 
     return { filename, dev: info.dev, ino: info.ino }
-  })
-})
+  }, storageError, Effect.provide(Path.layer))
+
+  return { prepareHistoryStore, verifyHistoryPath }
+}
+
+export interface VerifiedHistoryPath {
+  readonly filename: string
+  readonly dev: number
+  readonly ino: number
+}
+
+export const { prepareHistoryStore, verifyHistoryPath } = createHistoryFiles(historyNative)

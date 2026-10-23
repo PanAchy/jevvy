@@ -3,11 +3,25 @@ import { chmod, link, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } 
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { randomUUID } from "node:crypto"
+import type { Stats } from "node:fs"
 import * as Effect from "effect/Effect"
+import * as Cause from "effect/Cause"
+import * as Clock from "effect/Clock"
+import * as Deferred from "effect/Deferred"
+import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
+import * as Stream from "effect/Stream"
+import * as TestClock from "effect/testing/TestClock"
+import * as Reactivity from "effect/reactivity/Reactivity"
+import * as Match from "effect/Match"
 import * as SqlClient from "effect/sql/SqlClient"
+import * as SqlError from "effect/sql/SqlError"
+import * as Statement from "effect/sql/Statement"
+import type * as SqlConnection from "effect/sql/SqlConnection"
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient"
 import { HistoryEvent, decodeHistoryRow, projectHistory } from "../src/history.ts"
-import { prepareHistoryStore, verifyHistoryPath } from "../src/opencode/history-files.ts"
+import { createHistoryFiles, prepareHistoryStore, verifyHistoryPath } from "../src/opencode/history-files.ts"
+import { HistoryNativeError, historyNative } from "../src/opencode/history-native.ts"
 import { appendHistory, initializeHistory } from "../src/opencode/history-store.ts"
 import type { VerifiedHistoryPath } from "../src/opencode/history-files.ts"
 
@@ -33,7 +47,251 @@ const event = (index = 0, size = 0): HistoryEvent => {
 const withStore = <A, E>(path: VerifiedHistoryPath, use: Effect.Effect<A, E, SqlClient.SqlClient>) =>
   use.pipe(Effect.provide(SqliteClient.layer({ filename: path.filename, disableWAL: true, busyTimeout: 25 })))
 
+const withSql = <A, E, R>(execute: SqlConnection.Connection["execute"], use: Effect.Effect<A, E, R | SqlClient.SqlClient>) => Effect.gen(function*() {
+  const connection: SqlConnection.Connection = {
+    execute, executeRaw: (query, params) => execute(query, params, undefined), executeUnprepared: execute,
+    executeStream: () => Stream.die("unexpected stream"),
+    executeValues: () => Effect.die("unexpected values"),
+    executeValuesUnprepared: () => Effect.die("unexpected values"),
+  }
+
+  const sql = yield* SqlClient.make({ acquirer: Effect.succeed(connection), compiler: Statement.makeCompilerSqlite(), spanAttributes: [] })
+
+  return yield* use.pipe(Effect.provideService(SqlClient.SqlClient, sql))
+}).pipe(Effect.provide(Reactivity.layer))
+
+describe("history SQL boundary faults", () => {
+  it.effect("performs only one physical capacity recovery for SQLITE_FULL", () => Effect.gen(function*() {
+    const queries: string[] = []
+    let attempts = 0
+
+    const result = yield* withSql((query) => Effect.gen(function*() {
+      queries.push(query)
+
+      if (query.startsWith("INSERT")) {
+        attempts++
+
+        return yield* new SqlError.SqlError({ reason: new SqlError.UnknownError({ cause: { errno: 13 } }) })
+      }
+
+      return []
+    }), appendHistory([event()])).pipe(Effect.flip)
+
+    expect(result).toMatchObject({ kind: "storage" })
+    expect(attempts).toBe(2)
+    expect(queries.filter((query) => query.includes("LIMIT 256"))).toHaveLength(1)
+  }))
+
+  it.effect.each([true, false])("retries only typed lock timeouts without driver errno: %s", (busy) => Effect.gen(function*() {
+    const times: number[] = []
+    const error = new SqlError.SqlError({ reason: busy ? new SqlError.LockTimeoutError({ cause: undefined }) : new SqlError.UnknownError({ cause: undefined }) })
+
+    const result = yield* withSql((query) => Effect.gen(function*() {
+      if (query.startsWith("INSERT")) {
+        times.push(yield* Clock.currentTimeMillis)
+
+        return yield* error
+      }
+
+      return []
+    }), appendHistory([event()])).pipe(Effect.flip, Effect.forkChild)
+
+    yield* TestClock.adjust("24 millis")
+    expect(times).toEqual([0])
+    yield* TestClock.adjust("1 millis")
+    expect(times).toEqual(busy ? [0, 25] : [0])
+    yield* TestClock.adjust("25 millis")
+    expect(yield* Fiber.join(result)).toMatchObject({ kind: busy ? "busy" : "storage" })
+    expect(times).toEqual(busy ? [0, 25, 50] : [0])
+  }))
+
+  it.effect.each(["journal_mode", "application_id", "user_version", "quick_check(1)", "page_size", "definitions"])("rejects malformed, absent and duplicate %s rows before pruning", (boundary) => Effect.gen(function*() {
+    const valid = new Map<string, string | number>([["journal_mode", "delete"], ["application_id", 0], ["user_version", 0], ["quick_check", "ok"], ["page_size", 4096]])
+    const key = boundary === "quick_check(1)" ? "quick_check" : boundary
+    const row = { [key]: valid.get(key) }
+
+    const integrityFailure = [{ quick_check: "corrupt" }]
+
+    for (const bad of [[], [{ wrong: true }], [row, row], ...(boundary === "quick_check(1)" ? [integrityFailure] : [])]) {
+      const queries: string[] = []
+
+      const result = yield* withSql((query) => Effect.sync(() => {
+        queries.push(query)
+        const pragma = query.replace("PRAGMA ", "")
+
+        if (pragma === boundary || (boundary === "definitions" && query.startsWith("SELECT name"))) return bad
+        const settings = new Map<string, string | number>([["journal_mode", "delete"], ["page_size", 4096], ["max_page_count", 8192], ["synchronous", 2], ["secure_delete", 1], ["temp_store", 2], ["journal_size_limit", 0], ["trusted_schema", 0], ["busy_timeout", 25], ["application_id", boundary === "definitions" ? 1246058070 : 0], ["user_version", 0], ["quick_check(1)", "ok"]])
+        const key = Match.value(pragma).pipe(Match.when("busy_timeout", () => "timeout"), Match.when("quick_check(1)", () => "quick_check"), Match.orElse((value) => value))
+
+        if (settings.has(pragma)) return [{ [key]: settings.get(pragma) }]
+
+        return []
+      }), initializeHistory()).pipe(Effect.flip)
+
+      expect(result).toMatchObject({ kind: bad === integrityFailure ? "storage" : "unsupported-schema" })
+      expect(queries.some((query) => query.startsWith("DELETE"))).toBe(false)
+    }
+  }))
+})
+
 describe.skipIf(process.platform === "win32")("private history SQL store", () => {
+  it.effect.each(["pathname", "descriptor"] as const)("rejects a foreign %s owner without metadata writes", (boundary) => fixture((root) => Effect.gen(function*() {
+    const path = yield* prepareHistoryStore(join(root, "jevvy.jsonc"))
+    let writes = 0
+
+    const foreign = (info: Stats) => {
+      info.uid++
+
+      return info
+    }
+
+    const files = createHistoryFiles({ ...historyNative,
+      lstat: (name) => historyNative.lstat(name).pipe(Effect.map((info) => boundary === "pathname" && name === path.filename ? foreign(info) : info)),
+      open: (name, create) => historyNative.open(name, create).pipe(Effect.map((file) => ({
+        ...file,
+        stat: boundary === "descriptor" ? file.stat.pipe(Effect.map(foreign)) : file.stat,
+        writeText: () => Effect.sync(() => { writes++ }),
+      }))),
+    })
+
+    expect(yield* files.prepareHistoryStore(join(root, "jevvy.jsonc")).pipe(Effect.flip)).toMatchObject({ kind: "unsafe-path" })
+    expect(writes).toBe(0)
+  })))
+
+  it.effect.each(["read", "close"] as const)("preserves typed %s failure and closes exactly once", (operation) => fixture((root) => Effect.gen(function*() {
+    const path = yield* prepareHistoryStore(join(root, "jevvy.jsonc"))
+    let closes = 0
+    let writes = 0
+
+    const files = createHistoryFiles({ ...historyNative, open: (name, create) => historyNative.open(name, create).pipe(Effect.map((file) => ({
+      ...file,
+      readText: new HistoryNativeError({ kind: "missing" }),
+      writeText: () => Effect.sync(() => { writes++ }),
+      close: Effect.gen(function*() {
+        closes++
+        yield* file.close
+
+        if (operation === "close") return yield* new HistoryNativeError({ kind: "exists" })
+      }),
+    }))) })
+
+    expect(yield* files.prepareHistoryStore(join(root, "jevvy.jsonc")).pipe(Effect.flip)).toMatchObject({ kind: "storage" })
+    expect(closes).toBe(operation === "close" ? 1 : 2)
+    expect(writes).toBe(0)
+    yield* verifyHistoryPath(path)
+  })))
+
+  it.effect.each(["file", "directory"] as const)("owns in-flight %s acquisition through interruption without later writes", (kind) => fixture((root) => Effect.gen(function*() {
+    const entered = yield* Deferred.make<void>()
+    const finish = yield* Deferred.make<void>()
+    let closes = 0
+    let writes = 0
+
+    const files = createHistoryFiles({
+      ...historyNative,
+      open: (name, create) => historyNative.open(name, create).pipe(Effect.flatMap((file) => Effect.gen(function*() {
+        yield* Deferred.succeed(entered, undefined)
+
+        if (kind === "file") yield* Deferred.await(finish)
+
+        return { ...file, writeText: () => Effect.sync(() => { writes++ }), close: file.close.pipe(Effect.tap(() => Effect.sync(() => { closes++ }))) }
+      }))),
+      opendir: (name) => historyNative.opendir(name).pipe(Effect.flatMap((directory) => Effect.gen(function*() {
+        if (kind === "directory") {
+          yield* Deferred.succeed(entered, undefined)
+          yield* Deferred.await(finish)
+        }
+
+        return { ...directory, close: directory.close.pipe(Effect.tap(() => Effect.sync(() => { closes++ }))) }
+      }))),
+    })
+
+    const pending = yield* files.prepareHistoryStore(join(root, "jevvy.jsonc")).pipe(Effect.forkChild)
+    yield* Deferred.await(entered)
+    yield* Effect.sync(() => pending.interruptUnsafe())
+    yield* Deferred.succeed(finish, undefined)
+    const result = yield* Fiber.await(pending)
+    expect(Exit.isFailure(result) && Cause.hasInterrupts(result.cause)).toBe(true)
+    expect(closes).toBe(kind === "file" ? 2 : 1)
+    expect(writes).toBe(0)
+    expect(Exit.isFailure(yield* Effect.promise(() => readFile(join(root, "metrics", "AGENTS.md"), "utf8")).pipe(Effect.exit))).toBe(true)
+  })))
+
+  it.effect.each(["read", "close"] as const)("reports typed directory %s faults before file creation", (operation) => fixture((root) => Effect.gen(function*() {
+    let closes = 0
+    let opens = 0
+
+    const files = createHistoryFiles({ ...historyNative,
+      open: (name, create) => Effect.sync(() => { opens++ }).pipe(Effect.andThen(historyNative.open(name, create))),
+      opendir: (name) => historyNative.opendir(name).pipe(Effect.map((directory) => ({
+        read: operation === "read" ? new HistoryNativeError({ kind: "missing" }) : directory.read,
+        close: Effect.gen(function*() {
+          closes++
+          yield* directory.close
+
+          if (operation === "close") return yield* new HistoryNativeError({ kind: "exists" })
+        }),
+      }))),
+    })
+
+    expect(yield* files.prepareHistoryStore(join(root, "jevvy.jsonc")).pipe(Effect.flip)).toMatchObject({ kind: "storage" })
+    expect(closes).toBe(1)
+    expect(opens).toBe(0)
+  })))
+
+  it.effect("interrupts an acquired metadata read and never writes later metadata", () => fixture((root) => Effect.gen(function*() {
+    yield* prepareHistoryStore(join(root, "jevvy.jsonc"))
+    const entered = yield* Deferred.make<void>()
+    let closes = 0
+    let writes = 0
+
+    const files = createHistoryFiles({ ...historyNative, open: (name, create) => historyNative.open(name, create).pipe(Effect.map((file) => ({
+      ...file,
+      readText: Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never)),
+      writeText: () => Effect.sync(() => { writes++ }),
+      close: file.close.pipe(Effect.tap(() => Effect.sync(() => { closes++ }))),
+    }))) })
+
+    const pending = yield* files.prepareHistoryStore(join(root, "jevvy.jsonc")).pipe(Effect.forkChild)
+    yield* Deferred.await(entered)
+    yield* Fiber.interrupt(pending)
+    const result = yield* Fiber.await(pending)
+    expect(Exit.isFailure(result) && Cause.hasInterrupts(result.cause)).toBe(true)
+    expect(closes).toBe(2)
+    expect(writes).toBe(0)
+  })))
+
+  it.effect.each(["read", "close", "vanished"] as const)("distinguishes journal %s errors from an absent acquisition", (operation) => fixture((root) => Effect.gen(function*() {
+    const path = yield* prepareHistoryStore(join(root, "jevvy.jsonc"))
+    const journal = `${path.filename}-journal`
+    const header = Buffer.alloc(512)
+    header.writeUInt32BE(512, 20)
+    header.writeUInt32BE(4096, 24)
+    yield* Effect.promise(() => writeFile(journal, header, { mode: 0o600 }))
+    let closes = 0
+
+    const files = createHistoryFiles({ ...historyNative, open: (name, create) => {
+      if (name === journal && operation === "vanished") return new HistoryNativeError({ kind: "missing" })
+
+      return historyNative.open(name, create).pipe(Effect.map((file) => ({
+        ...file,
+        read: operation === "close" ? file.read : () => new HistoryNativeError({ kind: "missing" }),
+        close: Effect.gen(function*() {
+          closes++
+          yield* file.close
+
+          if (operation === "close") return yield* new HistoryNativeError({ kind: "missing" })
+        }),
+      })))
+    } })
+
+    const result = yield* files.verifyHistoryPath(path).pipe(Effect.exit)
+    expect(Exit.isSuccess(result)).toBe(operation === "vanished")
+
+    if (Exit.isFailure(result)) expect(Cause.squash(result.cause)).toMatchObject({ kind: "storage" })
+    expect(closes).toBe(operation === "vanished" ? 0 : 1)
+  })))
+
   it.effect("roundtrips verbatim data, uses idempotent insertion and keeps old records without age expiry", () => fixture((root) => Effect.gen(function*() {
     const path = yield* prepareHistoryStore(join(root, "jevvy.jsonc"))
     const entry = event()

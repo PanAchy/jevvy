@@ -7,7 +7,7 @@ import * as Deferred from "effect/Deferred"
 import * as Schema from "effect/Schema"
 import * as TestClock from "effect/testing/TestClock"
 import { Session } from "@opencode/schema/session"
-import { HISTORY_EVENT_BYTES, HistoryEvent, eventBytes, projectHistory } from "../src/history.ts"
+import { HISTORY_EVENT_BYTES, HistoryEvent, StoredHistoryRow, decodeHistoryRow, eventBytes, projectHistory } from "../src/history.ts"
 import { HistoryCommand, HistoryReply } from "../src/opencode/history-protocol.ts"
 import type { HistoryObservation } from "../src/history.ts"
 import { createPermissionReviewer } from "../src/engine.ts"
@@ -26,6 +26,26 @@ const input = (result: PermissionReview | "explicit-ask" = { effect: "allow", ju
 const hostEvent = (effect: EvaluationEvent["effect"] = "ask", action = "shell"): EvaluationEvent => ({ sessionID: Session.ID.make("ses_history"), action, resources: ["partial-pattern"], effect })
 
 describe("review history projection", () => {
+  it.effect.each(["judged", "explicit-ask"] as const)("roundtrips stored %s rows through the owning codec", (reason) => Effect.gen(function*() {
+    const answers = Object.fromEntries(["__proto__", "constructor", "🔐答案"].map((name) => [name, { type: "noul" as const, noul: 0.125 }]))
+    const event = projectHistory(input(reason === "judged" ? { effect: "allow", judgments: [{ ...judgment, answers }] } : "explicit-ask"), id)
+
+    if (event === undefined) return yield* Effect.die("missing fixture event")
+    const row = { id: event.id, ts: event.ts, effect: event.effect, reason: event.reason, command: event.command, model: event.model, latency_ms: event.latencyMs, detail_json: event.detail, event_bytes: eventBytes(event) }
+    const encoded = yield* Schema.encodeEffect(StoredHistoryRow, { onExcessProperty: "error" })(row)
+    expect(encoded.detail_json).toBe(JSON.stringify(event.detail))
+    expect(yield* decodeHistoryRow(encoded)).toEqual(row)
+    expect(encoded.command).toBe(command)
+
+    for (const invalid of [
+      { ...encoded, secret: "unknown" },
+      { ...encoded, detail_json: "{" },
+      { ...encoded, detail_json: JSON.stringify({ ...event.detail, secret: "unknown" }) },
+      { ...encoded, detail_json: "null" },
+      { ...encoded, event_bytes: encoded.event_bytes + 1 },
+    ]) expect(Exit.isFailure(yield* decodeHistoryRow(invalid).pipe(Effect.exit))).toBe(true)
+  }))
+
   it("keeps exact commands, dynamic raw answers and actual model without policy or error envelopes", () => {
     const event = projectHistory(input(), id)
     expect(event).toMatchObject({ id, command, effect: "allow", reason: "judged", model: judgment.model, latencyMs: 7, detail: { answers: judgment.answers } })
