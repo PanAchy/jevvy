@@ -95,6 +95,18 @@ try {
   const readme = readFileSync(join(permissionsRoot, "README.md"), "utf8")
 
   ensure(existsSync(coreBundle), "permissions is missing its bundled core")
+  const core = await import(pathToFileURL(coreBundle))
+  const schemas = await import(pathToFileURL(join(permissionsRoot, "dist", "core-schemas.js")))
+
+  for (const name of ["JevProvider", "JevProviderErrorKind", "NoulAnswer"]) ensure(core[name] === schemas[name], `packed schema-only entry duplicated ${name}`)
+
+  const metadataPath = join(permissionsRoot, "dist", "history", "metadata-values.js")
+  const { historyMetadata } = await import(pathToFileURL(metadataPath))
+  const { createHistoryMetadata } = await import(pathToFileURL(join(permissionsRoot, "dist", "history", "metadata.js")))
+
+  ensure(Object.isFrozen(historyMetadata), "packed history metadata is mutable")
+  ensure(JSON.stringify(historyMetadata) === JSON.stringify(createHistoryMetadata()), "packed history metadata differs from the authoritative schemas")
+  ensure(!readFileSync(metadataPath, "utf8").includes("createHistoryMetadata"), "packed history metadata still generates schemas at runtime")
   ensure(
     readme.includes("https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-demo.gif"),
     "permissions README is missing its public OpenCode demo URL",
@@ -238,9 +250,8 @@ try {
 
   const history = await import(pathToFileURL(join(permissionsRoot, "dist", "history", "observer.js")).href)
   const historyTransport = await import(pathToFileURL(join(permissionsRoot, "dist", "history", "history-transport.js")).href)
-  const historyFiles = await import(pathToFileURL(join(permissionsRoot, "dist", "history", "history-files.js")).href)
 
-  ensure(historyFiles.historyAgentInstructions.startsWith("# Jevvy Permissions review history v1"), "packed history instructions are missing")
+  ensure(historyMetadata["AGENTS.md"].startsWith("# Jevvy Permissions review history v1"), "packed history instructions are missing")
 
   if (process.platform !== "win32") {
     const { DatabaseSync } = await import("node:sqlite")
@@ -250,7 +261,7 @@ try {
 
     mkdirSync(fixture, { mode: 0o700 })
     await effect.Effect.runPromise(effect.Effect.scoped(effect.Effect.gen(function*() {
-      const observer = yield* history.createHistoryObserver({ enabled: true, configPath: join(fixture, "jevvy.jsonc"), report: () => undefined }).pipe(effect.Effect.provide(historyTransport.historyWorkersLayer))
+      const observer = yield* history.createHistoryObserver({ enabled: true, lifetime: "invocation", configPath: join(fixture, "jevvy.jsonc"), report: () => undefined }).pipe(effect.Effect.provide(historyTransport.historyWorkersLayer))
 
       ensure(observer !== undefined, "packed history observer did not start")
       yield* observer.observe({ command: "packed-fixture-command", result: "explicit-ask", provider: "custom", tsMs: 0, latencyMs: null })
@@ -274,7 +285,7 @@ try {
 
     ensure(schema.additionalProperties === false, "packed history schema is not closed")
     ensure(readFileSync(join(root, "schema.sql"), "utf8").includes("CREATE TABLE events"), "packed history SQL schema is missing")
-    ensure(readFileSync(join(root, "AGENTS.md"), "utf8") === historyFiles.historyAgentInstructions, "packed history instructions were not installed")
+    ensure(readFileSync(join(root, "AGENTS.md"), "utf8") === historyMetadata["AGENTS.md"], "packed history instructions were not installed")
     ensure(!existsSync(join(fixture, "jevvy.jsonc")), "history wrote provider configuration")
   }
 

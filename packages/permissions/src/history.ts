@@ -3,7 +3,7 @@ import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
-import { JevProvider, JevProviderErrorKind, NoulAnswer } from "./core.ts"
+import { JevProvider, JevProviderErrorKind, NoulAnswer } from "./core-schemas.ts"
 import type { PermissionReview } from "./engine.ts"
 
 export const HISTORY_EVENT_BYTES = 65_536

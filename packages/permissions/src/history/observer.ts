@@ -50,7 +50,7 @@ export const createHistoryObserver = Effect.fn("ReviewHistory.createObserver")(f
   readonly enabled: boolean
   readonly configPath: string
   readonly report: (problem: string | undefined) => void
-  readonly deferUntilObservation?: boolean
+  readonly lifetime: "invocation" | "host"
 }) {
   if (!options.enabled) return undefined
   const problem = yield* Ref.make<HistoryProblem | undefined>(undefined)
@@ -146,13 +146,16 @@ export const createHistoryObserver = Effect.fn("ReviewHistory.createObserver")(f
   })
 
   const background = yield* Effect.gen(function*() {
-    if (options.deferUntilObservation === true) yield* Queue.take(wake)
+    if (options.lifetime === "host") yield* Queue.take(wake)
 
     if ((yield* Ref.get(stopping)) && (yield* Ref.get(pending)).events.length === 0) return
 
-    yield* Effect.scoped(session()).pipe(
+    const attempt = Effect.scoped(session()).pipe(
       Effect.catch((error) => drop(error instanceof HistoryStorageError ? error.kind : "worker")),
       Effect.catchCauseIf((cause) => !Cause.hasInterrupts(cause), () => drop("worker")),
+    )
+
+    yield* options.lifetime === "invocation" ? attempt : attempt.pipe(
       Effect.repeat({ schedule: Schedule.spaced("30 seconds"), while: () => Ref.get(stopping).pipe(Effect.map((value) => !value)) }),
     )
   }).pipe(

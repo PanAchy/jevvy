@@ -1,6 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
+import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Queue from "effect/Queue"
 import * as Ref from "effect/Ref"
@@ -24,9 +26,12 @@ const fixture = Effect.gen(function*() {
   }>(4)
 
   const constructorFailure = yield* Ref.make(false)
+  const attempts = yield* Ref.make(0)
 
   const service = HistoryWorkers.of({
     open: () => Effect.gen(function*() {
+      yield* Ref.update(attempts, (count) => count + 1)
+
       if (yield* Ref.get(constructorFailure)) return yield* new WorkerError.WorkerError({ reason: new WorkerError.WorkerSpawnError({ message: "synthetic" }) })
       const ready = yield* Deferred.make<void>()
       const replies = yield* Queue.dropping<unknown, WorkerError.WorkerError>(1)
@@ -42,32 +47,145 @@ const fixture = Effect.gen(function*() {
 
           if (HistoryCommand.guards.Close(command)) yield* Queue.offer(replies, HistoryReply.cases.Closed.make({ sequence: command.sequence }))
         }),
-        run: (handler, options) => Effect.gen(function*() {
-          yield* Deferred.await(ready)
-          yield* options?.onSpawn ?? Effect.void
-
-          return yield* Queue.take(replies).pipe(Effect.flatMap(handler), Effect.forever)
-        }).pipe(Effect.ensuring(Ref.set(disposed, true))),
+        run: (handler, options) => Effect.raceFirst(
+          Deferred.await(ready).pipe(Effect.andThen(options?.onSpawn ?? Effect.void), Effect.andThen(Effect.never)),
+          Queue.take(replies).pipe(Effect.flatMap(handler), Effect.forever),
+        ).pipe(Effect.ensuring(Ref.set(disposed, true))),
       }
 
       return worker
     }),
   })
 
-  return { opened, constructorFailure, service }
+  return { opened, constructorFailure, attempts, service }
 })
 
 describe.skipIf(process.platform === "win32")("bounded Effect history worker", () => {
-  it.effect("OFF never acquires a worker", () => Effect.gen(function*() {
+  it.effect.each(["invocation", "host"] as const)("OFF never acquires a %s worker", (lifetime) => Effect.gen(function*() {
     const { service, opened } = yield* fixture
-    expect(yield* createHistoryObserver({ enabled: false, configPath: "unused", report: () => undefined }).pipe(Effect.provideService(HistoryWorkers, service))).toBeUndefined()
+    expect(yield* createHistoryObserver({ enabled: false, lifetime, configPath: "unused", report: () => undefined }).pipe(Effect.provideService(HistoryWorkers, service))).toBeUndefined()
     expect(yield* Queue.size(opened)).toBe(0)
   }))
 
-  it.effect("deferred storage without observations never acquires a worker, including shutdown", () => Effect.gen(function*() {
+  it.effect("host storage without observations never acquires a worker, including shutdown", () => Effect.gen(function*() {
     const { service, opened } = yield* fixture
-    yield* Effect.scoped(createHistoryObserver({ enabled: true, deferUntilObservation: true, configPath: "unused", report: () => undefined })).pipe(Effect.provideService(HistoryWorkers, service))
+    yield* Effect.scoped(createHistoryObserver({ enabled: true, lifetime: "host", configPath: "unused", report: () => undefined })).pipe(Effect.provideService(HistoryWorkers, service))
     expect(yield* Queue.size(opened)).toBe(0)
+  }))
+
+  it.effect.each(["invocation", "host"] as const)("%s acquisition and observation do not wait for readiness", (lifetime) => Effect.gen(function*() {
+    const { service, opened } = yield* fixture
+    const draining = yield* Deferred.make<void>()
+    const current = yield* Deferred.make<Ref.Ref<boolean>>()
+
+    const running = yield* Effect.scoped(Effect.gen(function*() {
+      const observer = yield* createHistoryObserver({ enabled: true, lifetime, configPath: "unused", report: () => undefined }).pipe(Effect.provideService(HistoryWorkers, service))
+
+      if (observer === undefined) throw new Error("missing observer")
+      expect(Object.keys(observer)).toEqual(["observe"])
+
+      if (lifetime === "host") {
+        expect(yield* Queue.size(opened)).toBe(0)
+        yield* observer.observe(observation())
+      }
+
+      const worker = yield* Queue.take(opened)
+
+      if (lifetime === "invocation") yield* observer.observe(observation())
+      expect(yield* Queue.size(worker.sent)).toBe(0)
+      yield* Deferred.succeed(current, worker.disposed)
+      yield* Deferred.succeed(draining, undefined)
+    })).pipe(Effect.forkChild)
+
+    yield* Deferred.await(draining)
+    yield* TestClock.adjust("499 millis")
+    const disposed = yield* Deferred.await(current)
+    expect(yield* Ref.get(disposed)).toBe(false)
+    yield* TestClock.adjust("1 millis")
+    yield* Fiber.join(running)
+    expect(yield* Ref.get(disposed)).toBe(true)
+  }))
+
+  it.effect.each(["invocation", "host"] as const)("interruption of a preparing %s worker retains bounded cleanup", (lifetime) => Effect.gen(function*() {
+    const { service, opened } = yield* fixture
+
+    const running = yield* Effect.scoped(Effect.gen(function*() {
+      const observer = yield* createHistoryObserver({ enabled: true, lifetime, configPath: "unused", report: () => undefined }).pipe(Effect.provideService(HistoryWorkers, service))
+
+      if (observer === undefined) throw new Error("missing observer")
+      yield* observer.observe(observation())
+
+      return yield* Effect.never
+    })).pipe(Effect.forkChild)
+
+    const worker = yield* Queue.take(opened)
+    const interrupting = yield* Fiber.interrupt(running).pipe(Effect.forkChild)
+    yield* TestClock.adjust("499 millis")
+    expect(yield* Ref.get(worker.disposed)).toBe(false)
+    yield* TestClock.adjust("1 millis")
+    yield* Fiber.join(interrupting)
+    const exit = yield* Fiber.await(running)
+    expect(Exit.isFailure(exit) && Cause.hasInterrupts(exit.cause)).toBe(true)
+    expect(yield* Ref.get(worker.disposed)).toBe(true)
+    expect(yield* Queue.size(worker.sent)).toBe(0)
+  }))
+
+  it.effect("invocation readiness and commit share the final drain deadline", () => Effect.gen(function*() {
+    const { service, opened } = yield* fixture
+    const draining = yield* Deferred.make<void>()
+    const close = yield* Deferred.make<void>()
+
+    const running = yield* Effect.scoped(Effect.gen(function*() {
+      const observer = yield* createHistoryObserver({ enabled: true, lifetime: "invocation", configPath: "unused", report: () => undefined }).pipe(Effect.provideService(HistoryWorkers, service))
+
+      if (observer === undefined) throw new Error("missing observer")
+      yield* observer.observe(observation())
+      yield* Deferred.succeed(draining, undefined)
+      yield* Deferred.await(close)
+    })).pipe(Effect.forkChild)
+
+    const worker = yield* Queue.take(opened)
+    yield* Deferred.await(draining)
+    yield* Deferred.succeed(close, undefined)
+    yield* TestClock.adjust("499 millis")
+    yield* Deferred.succeed(worker.ready, undefined)
+    const append = yield* Queue.take(worker.sent)
+    expect(HistoryCommand.guards.Append(append)).toBe(true)
+    yield* TestClock.adjust("1 millis")
+    yield* Fiber.join(running)
+    expect(yield* Ref.get(worker.disposed)).toBe(true)
+    expect(yield* Queue.size(worker.sent)).toBe(0)
+  }))
+
+  it.effect.each(["constructor", "initialize", "lost-ack"] as const)("invocation %s failure never restarts, even after the host recovery interval", (kind) => Effect.gen(function*() {
+    const { service, opened, constructorFailure, attempts } = yield* fixture
+    const problems: Array<string | undefined> = []
+    yield* Ref.set(constructorFailure, kind === "constructor")
+
+    yield* Effect.scoped(Effect.gen(function*() {
+      const observer = yield* createHistoryObserver({ enabled: true, lifetime: "invocation", configPath: "unused", report: (message) => { problems.push(message) } }).pipe(Effect.provideService(HistoryWorkers, service))
+
+      if (observer === undefined) throw new Error("missing observer")
+      yield* observer.observe(observation())
+
+      if (kind !== "constructor") {
+        const worker = yield* Queue.take(opened)
+
+        if (kind === "initialize") yield* Queue.offer(worker.replies, HistoryReply.cases.Failed.make({ kind: "unsupported-schema" }))
+        else {
+          yield* Deferred.succeed(worker.ready, undefined)
+          yield* Queue.take(worker.sent)
+        }
+      }
+
+      yield* TestClock.adjust("6 seconds")
+      expect(problems.at(-1)).toContain(kind === "initialize" ? "unsupported-schema" : "worker")
+      yield* Ref.set(constructorFailure, false)
+      yield* observer.observe(observation("later"))
+      yield* TestClock.adjust("31 seconds")
+      expect(yield* Ref.get(attempts)).toBe(1)
+      expect(yield* Queue.size(opened)).toBe(0)
+    }))
   }))
 
   it.effect("bounds delayed intake, sends one batch at a time, drops newest and retains the diagnostic", () => Effect.gen(function*() {
@@ -76,7 +194,7 @@ describe.skipIf(process.platform === "win32")("bounded Effect history worker", (
     const done = yield* Deferred.make<void>()
 
     const test = yield* Effect.scoped(Effect.gen(function*() {
-      const observer = yield* createHistoryObserver({ enabled: true, configPath: "unused", report: (message) => { problems.push(message) } }).pipe(Effect.provideService(HistoryWorkers, service))
+      const observer = yield* createHistoryObserver({ enabled: true, lifetime: "invocation", configPath: "unused", report: (message) => { problems.push(message) } }).pipe(Effect.provideService(HistoryWorkers, service))
 
       if (observer === undefined) throw new Error("missing observer")
       const current = yield* Queue.take(opened)
@@ -117,7 +235,7 @@ describe.skipIf(process.platform === "win32")("bounded Effect history worker", (
     const done = yield* Deferred.make<void>()
 
     const test = yield* Effect.scoped(Effect.gen(function*() {
-      const observer = yield* createHistoryObserver({ enabled: true, configPath: "unused", report: (message) => { problems.push(message) } }).pipe(Effect.provideService(HistoryWorkers, service))
+      const observer = yield* createHistoryObserver({ enabled: true, lifetime: "invocation", configPath: "unused", report: (message) => { problems.push(message) } }).pipe(Effect.provideService(HistoryWorkers, service))
 
       if (observer === undefined) throw new Error("missing observer")
       const current = yield* Queue.take(opened)
@@ -145,15 +263,15 @@ describe.skipIf(process.platform === "win32")("bounded Effect history worker", (
     const done = yield* Deferred.make<void>()
 
     const test = yield* Effect.scoped(Effect.gen(function*() {
-      const observer = yield* createHistoryObserver({ enabled: true, configPath: "unused", report: (message) => { problems.push(message) } }).pipe(Effect.provideService(HistoryWorkers, service))
+      const observer = yield* createHistoryObserver({ enabled: true, lifetime: "host", configPath: "unused", report: (message) => { problems.push(message) } }).pipe(Effect.provideService(HistoryWorkers, service))
 
       if (observer === undefined) throw new Error("missing observer")
+      yield* observer.observe(observation())
       const current = yield* Queue.take(opened)
 
       if (kind !== "startup-timeout") yield* Deferred.succeed(current.ready, undefined)
 
       if (kind === "send") yield* Ref.set(current.sendFailure, true)
-      yield* observer.observe(observation())
       yield* TestClock.adjust("250 millis")
 
       if (kind === "crash" || kind === "receive") yield* Queue.fail(current.replies, new WorkerError.WorkerError({ reason: new WorkerError.WorkerReceiveError({ message: "secret-never-forwarded" }) }))
@@ -191,7 +309,10 @@ describe.skipIf(process.platform === "win32")("bounded Effect history worker", (
     const done = yield* Deferred.make<void>()
 
     const test = yield* Effect.scoped(Effect.gen(function*() {
-      yield* createHistoryObserver({ enabled: true, configPath: "unused", report: (message) => { if (message) problems.push(message) } }).pipe(Effect.provideService(HistoryWorkers, service))
+      const observer = yield* createHistoryObserver({ enabled: true, lifetime: "host", configPath: "unused", report: (message) => { if (message) problems.push(message) } }).pipe(Effect.provideService(HistoryWorkers, service))
+
+      if (observer === undefined) throw new Error("missing observer")
+      yield* observer.observe(observation())
       yield* TestClock.adjust("1 millis")
       expect(problems.at(-1)).toContain("worker")
       yield* Ref.set(constructorFailure, false)
@@ -213,7 +334,7 @@ describe.skipIf(process.platform === "win32")("bounded Effect history worker", (
     const disposed = yield* Deferred.make<Ref.Ref<boolean>>()
 
     const test = yield* Effect.scoped(Effect.gen(function*() {
-      const observer = yield* createHistoryObserver({ enabled: true, configPath: "unused", report: () => undefined }).pipe(Effect.provideService(HistoryWorkers, service))
+      const observer = yield* createHistoryObserver({ enabled: true, lifetime: "invocation", configPath: "unused", report: () => undefined }).pipe(Effect.provideService(HistoryWorkers, service))
 
       if (observer === undefined) throw new Error("missing observer")
       const current = yield* Queue.take(opened)

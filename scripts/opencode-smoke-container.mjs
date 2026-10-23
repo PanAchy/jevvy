@@ -24,7 +24,7 @@ writeFileSync(join(root, "package.json"), JSON.stringify({ private: true, type: 
 
 const install = spawnSync(
   "npm",
-  ["install", "--no-audit", "--no-fund", "--ignore-scripts=false", "/tmp/jevvy.tgz", `@opencode/cli@${opencodeVersion}`],
+  ["install", "--no-audit", "--no-fund", "--ignore-scripts=false", "/tmp/jevvy.tgz", `@opencode/cli@${opencodeVersion}`, "bun@1.3.13"],
   {
     cwd: root,
     env: {
@@ -287,9 +287,20 @@ try {
 
   const claudeRows = rows.filter((row) => String(row.command).startsWith("echo jevvy-claude-concurrent-"))
 
-  if (claudeRows.length !== historyPasses * 4 || new Set(claudeRows.map((row) => row.command)).size !== historyPasses * 4 || claudeRows.some((row) => row.reason !== "explicit-ask" || row.effect !== "ask" || row.model !== null || row.latency_ms !== null)) throw new Error("concurrent Node Claude and real Bun OpenCode writers lost or corrupted committed rows")
+  const expected = Array.from({ length: historyPasses * 4 }, (_, index) => `echo jevvy-claude-concurrent-${index}`)
+  const observed = claudeRows.map((row) => row.command)
+  const missing = expected.filter((command) => !observed.includes(command))
+  const invalid = claudeRows.filter((row) => !expected.includes(row.command) || row.reason !== "explicit-ask" || row.effect !== "ask" || row.model !== null || row.latency_ms !== null)
+
+  if (claudeRows.length !== expected.length || new Set(observed).size !== expected.length || missing.length > 0 || invalid.length > 0) throw new Error(`best-effort host history did not match the normal-envelope fixture: ${JSON.stringify({ expected: expected.length, observed: claudeRows.length, unique: new Set(observed).size, missing, invalid })}`)
 
   if (rows.some((row) => String(row.command).startsWith("echo jevvy-allowed") || String(row.command).startsWith("echo jevvy-denied"))) throw new Error("native finalized outcomes entered history")
 } finally { history.close() }
+
+const writers = spawnSync(process.execPath, ["/tmp/history-writer-smoke.mjs", join(root, "node_modules", "@jevvy", "permissions")], {
+  env: { ...environment, BUN_BIN: join(root, "node_modules", ".bin", "bun") }, stdio: "inherit", timeout: 60_000,
+})
+
+if (writers.status !== 0) throw new Error(`acknowledged mixed-runtime writer smoke failed: ${writers.status}`)
 
 console.log(`OpenCode ${opencodeVersion} host smoke passed: setup diagnostics, activation, real shell permission review, packed worker history OFF/ON, concurrent Node Claude and Bun OpenCode SQLite writers, disposal`)

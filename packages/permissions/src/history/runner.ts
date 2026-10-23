@@ -56,9 +56,9 @@ const program = Effect.fn("ReviewHistory.worker")(function*(sqlite: (filename: s
           if (command.sequence !== current) return yield* new HistoryStorageError({ kind: "worker" })
 
           if (HistoryCommand.guards.Close(command)) return false
-          yield* verifyHistoryPath(path)
+          yield* verifyHistoryPath(path).pipe(Effect.retry(retryBusy))
           yield* appendHistory(command.events)
-          yield* verifyHistoryPath(path)
+          yield* verifyHistoryPath(path).pipe(Effect.retry(retryBusy))
           yield* runner.send(0, HistoryReply.cases.Stored.make({ sequence: current }))
           yield* Ref.update(sequence, (value) => value + 1)
 

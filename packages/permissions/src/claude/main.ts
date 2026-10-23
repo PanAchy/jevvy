@@ -28,7 +28,7 @@ const run = async (): Promise<void> => {
       const control = yield* createReviewControl(globalJevvyConfigPath())
 
       const handle = createClaudeHookHandler(loadClaudeConfiguration, acquireClaudeReviewer, loadAskRules, control,
-        (configuration) => createHistoryObserver({ ...configuration, report: () => {} }).pipe(Effect.provide(claudeHistoryWorkersLayer)), checkClaudeHistorySetup)
+        (configuration) => createHistoryObserver({ ...configuration, lifetime: "invocation", report: () => {} }).pipe(Effect.provide(claudeHistoryWorkersLayer)), checkClaudeHistorySetup)
 
       return yield* handle(raw)
     }).pipe(Effect.provide(NodeServices.layer)))

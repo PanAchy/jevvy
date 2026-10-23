@@ -16,7 +16,7 @@ const sqliteCode = (error: SqlError.SqlError): number => {
   return Option.isSome(parsed) ? parsed.value.errno & 255 : 0
 }
 
-const isBusy = (error: SqlError.SqlError): boolean => Predicate.isTagged(error.reason, "LockTimeoutError")
+const isBusy = (error: SqlError.SqlError | HistoryStorageError): boolean => !(error instanceof HistoryStorageError) && Predicate.isTagged(error.reason, "LockTimeoutError")
 
 const classify = (error: SqlError.SqlError): HistoryStorageError =>
   new HistoryStorageError({ kind: isBusy(error) ? "busy" : "storage" })
@@ -28,6 +28,12 @@ const decodeBoundary = <S extends Schema.Top & { readonly DecodingServices: neve
 
 const pruneCapacity = Effect.fn("ReviewHistory.pruneCapacity")(function*() {
   const sql = yield* SqlClient.SqlClient
+
+  const totals = yield* sql`SELECT COUNT(*) AS rows, COALESCE(SUM(event_bytes), 0) AS bytes FROM events`.pipe(
+    Effect.flatMap(decodeBoundary(singleRow(Schema.Struct({ rows: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)), bytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) })))),
+  )
+
+  if (totals[0] !== undefined && totals[0].rows <= HISTORY_ROWS && totals[0].bytes <= HISTORY_LOGICAL_BYTES) return
   yield* sql`DELETE FROM events WHERE id IN (
     SELECT id FROM (
       SELECT id, ROW_NUMBER() OVER (ORDER BY ts DESC, id DESC) AS position,
@@ -116,6 +122,6 @@ export const appendHistory = Effect.fn("ReviewHistory.append")(function*(events:
     return Effect.gen(function*() {
       yield* sql.withTransaction(sql`DELETE FROM events WHERE id IN (SELECT id FROM events ORDER BY ts, id LIMIT 256)`)
       yield* write
-    }).pipe(Effect.mapError(classify))
+    }).pipe(Effect.mapError((error) => error instanceof HistoryStorageError ? error : classify(error)))
   }))
 })

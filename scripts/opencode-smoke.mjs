@@ -42,6 +42,8 @@ try {
       `${join(root, "scripts", "opencode-permission-smoke.mjs")}:/tmp/opencode-permission-smoke.mjs:ro`,
       "--volume",
       `${join(root, "scripts", "opencode-control-smoke.mjs")}:/tmp/opencode-control-smoke.mjs:ro`,
+      "--volume",
+      `${join(root, "scripts", "history-writer-smoke.mjs")}:/tmp/history-writer-smoke.mjs:ro`,
       "node:24-bookworm-slim",
       "node",
       "/tmp/smoke.mjs",

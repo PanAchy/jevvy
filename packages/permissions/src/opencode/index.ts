@@ -106,7 +106,7 @@ export default Plugin.define({
 
     const history = yield* createHistoryObserver({
       enabled: permissionConfig.historyEnabled,
-      deferUntilObservation: true,
+      lifetime: "host",
       configPath,
       report: (message) => {
         if (message === problem) return
