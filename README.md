@@ -86,7 +86,7 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 | `providers.<provider>.apiKey` | Unset | API key; takes precedence over its environment variable. |
 | `providers.<provider>.opencodeCredential` | Unset | OpenCode integration ID for API-key reuse. File and environment keys take priority. OpenCode only. |
 | `permissions.timeoutMs` | `5000` | Timeout for model provider in ms. |
-| `permissions.reviewAskPatterns` | `[]` | OpenCode ask rules delegated by exact resource-pattern string. Reload to apply. [Examples](https://github.com/PanAchy/jevvy/blob/main/guides/opencode-review-asks.md). |
+| `permissions.reviewAskPatterns` | `{ "opencode": [], "claude": [] }` | Host-scoped ask-rule nominations by exact string. [Examples and limits](https://github.com/PanAchy/jevvy/blob/main/guides/review-asks.md). |
 
 ### API formats and presets
 

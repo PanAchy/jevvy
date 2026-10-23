@@ -127,7 +127,7 @@ export default Plugin.define({
           explicitAsk: hasExplicitAsk(event.action, event.resources, [
             ...agent.data.permissions,
             ...session.permissions ?? [],
-          ], permissionConfig.reviewAskPatterns),
+          ], permissionConfig.reviewAskPatterns.opencode),
         }
       }).pipe(Effect.orElseSucceed(() => undefined)),
       report: (entry) => {

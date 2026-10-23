@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "@effect/vitest"
-import { Deferred, Effect, Fiber } from "effect"
+import * as Deferred from "effect/Deferred"
+import * as Effect from "effect/Effect"
+import * as Fiber from "effect/Fiber"
 import { createPermissionReviewer } from "../src/engine.ts"
 import type { PermissionRequest, PermissionReview, PermissionReviewer } from "../src/engine.ts"
 import { permissionAllowOutput, setupUnavailableOutput } from "../src/claude/evaluate.ts"
@@ -41,9 +43,10 @@ const reviewer = (review: PermissionReview, calls: PermissionRequest[]): Permiss
   }),
 })
 
-const ready = (permissionReviewer: PermissionReviewer) => ({
+const ready = (permissionReviewer: PermissionReviewer, reviewAskPatterns: readonly string[] = []) => ({
   kind: "ready" as const,
   reviewer: permissionReviewer,
+  reviewAskPatterns,
 })
 
 const unavailable = (message = "Jevvy setup is incomplete") => ({
@@ -126,7 +129,7 @@ describe("Claude Code hook process mapping", () => {
     const handler = makeClaudeHookHandler(setup, () => Effect.succeed(rules))
 
     expect(yield* handler(JSON.stringify(permissionEvent("echo hello && git push origin main")))).toBeUndefined()
-    expect(setup).not.toHaveBeenCalled()
+    expect(setup).toHaveBeenCalledOnce()
   }))
 
   it.effect("leaves the host's remaining flow unchanged when a review ask does not allow", () => Effect.gen(function*() {
@@ -138,12 +141,12 @@ describe("Claude Code hook process mapping", () => {
     expect(calls).toEqual([{ action: "shell", resources: ["pwd"] }])
   }))
 
-  it.effect("leaves a specific Bash ask to the host without loading Jevvy", () => Effect.gen(function*() {
+  it.effect("leaves a specific Bash ask to the host without reviewing it", () => Effect.gen(function*() {
     const setup = vi.fn(() => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, []))))
     const handler = makeClaudeHookHandler(setup, () => Effect.succeed(["Bash(pnpm build)"]))
 
     expect(yield* handler(JSON.stringify(permissionEvent("pnpm build")))).toBeUndefined()
-    expect(setup).not.toHaveBeenCalled()
+    expect(setup).toHaveBeenCalledOnce()
   }))
 
   it.effect("leaves a host ask inside shell control flow untouched", () => Effect.gen(function*() {
@@ -152,7 +155,7 @@ describe("Claude Code hook process mapping", () => {
 
     expect(yield* handler(JSON.stringify(permissionEvent("if true; then git push origin main; fi")))).toBeUndefined()
     expect(yield* handler(JSON.stringify(permissionEvent("! git push origin main")))).toBeUndefined()
-    expect(setup).not.toHaveBeenCalled()
+    expect(setup).toHaveBeenCalledTimes(2)
   }))
 
   it.effect("reviews the complete command when visible ask rules do not match", () => Effect.gen(function*() {

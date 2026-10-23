@@ -23,6 +23,7 @@ describe("OpenCode nominated ask rules", () => {
   it.effect.each([
     { name: "absent list", expectedEffect: "ask", calls: 0 },
     { name: "empty list", patterns: [], expectedEffect: "ask", calls: 0 },
+    { name: "Claude-only nominations", claudePatterns: ["*", "npm run *"], expectedEffect: "ask", calls: 0 },
     { name: "generic delegation", patterns: ["*"], expectedEffect: "allow", calls: 1 },
     { name: "unlisted agent ask", patterns: ["*"], agentRules: [catchAll, specific], expectedEffect: "ask", calls: 0 },
     { name: "specific delegation", patterns: ["*", "npm run *"], agentRules: [catchAll, specific], expectedEffect: "allow", calls: 1 },
@@ -45,7 +46,7 @@ describe("OpenCode nominated ask rules", () => {
       yield* Effect.promise(() => writeFile(path, JSON.stringify({
         provider: "custom",
         providers: { custom: { endpoint: "http://127.0.0.1:1/systemone", model: "fixture-model" } },
-        permissions: { reviewAskPatterns: scenario.patterns, opencode: { enabled: scenario.enabled ?? true } },
+        permissions: { reviewAskPatterns: { opencode: scenario.patterns, claude: scenario.claudePatterns }, opencode: { enabled: scenario.enabled ?? true } },
       }), { mode: 0o600 }))
 
       vi.stubEnv("JEVVY_CONFIG", path)

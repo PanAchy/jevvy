@@ -46,6 +46,16 @@ const LayaProviderSchema = Schema.Struct({
   policy: Schema.optionalKey(LayaPolicy),
 })
 
+const ReviewAskPatternSettings = Schema.Struct({
+  opencode: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
+  claude: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
+})
+
+interface ReviewAskPatterns {
+  readonly opencode: readonly string[]
+  readonly claude: readonly string[]
+}
+
 const JevvyConfigSchema = Schema.Struct({
   $schema: Schema.optionalKey(Schema.String),
   provider: JevProvider,
@@ -61,7 +71,7 @@ const JevvyConfigSchema = Schema.Struct({
   })),
   permissions: Schema.optionalKey(Schema.Struct({
     timeoutMs: Schema.optionalKey(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
-    reviewAskPatterns: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
+    reviewAskPatterns: Schema.optionalKey(ReviewAskPatternSettings),
     questions: Schema.optionalKey(ApprovalQuestions),
     opencode: Schema.optionalKey(HarnessReviewConfig),
     claude: Schema.optionalKey(HarnessReviewConfig),
@@ -72,13 +82,13 @@ interface ConfigDocument extends Schema.Schema.Type<typeof JevvyConfigSchema> {}
 
 export type JevvyConfig =
   | { readonly kind: "unconfigured" }
-  | { readonly kind: "shipped-policy"; readonly selection: ProviderSelection; readonly timeoutMs: number; readonly reviewAskPatterns: readonly string[] }
+  | { readonly kind: "shipped-policy"; readonly selection: ProviderSelection; readonly timeoutMs: number; readonly reviewAskPatterns: ReviewAskPatterns }
   | {
       readonly kind: "custom-policy"
       readonly selection: ProviderSelection
       readonly questions: ApprovalQuestions
       readonly timeoutMs: number
-      readonly reviewAskPatterns: readonly string[]
+      readonly reviewAskPatterns: ReviewAskPatterns
     }
   | { readonly kind: "invalid"; readonly message: string }
 
@@ -233,7 +243,11 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
 
   const selection = yield* providerSelection(document.value, environmentKeys)
   const timeoutMs = document.value.permissions?.timeoutMs ?? 5_000
-  const reviewAskPatterns = document.value.permissions?.reviewAskPatterns ?? []
+
+  const reviewAskPatterns = {
+    opencode: document.value.permissions?.reviewAskPatterns?.opencode ?? [],
+    claude: document.value.permissions?.reviewAskPatterns?.claude ?? [],
+  }
 
   if (selection.provider === "laya") {
     const policy = document.value.providers?.laya?.policy

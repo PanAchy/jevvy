@@ -63,7 +63,7 @@ describe("harness review controls", () => {
   })))
 
   it.effect("preserves ask nominations while changing either harness toggle", () => withConfig((path) => Effect.gen(function*() {
-    const reviewAskPatterns = ["*", "npm run *"]
+    const reviewAskPatterns = { opencode: ["*", "npm run *"], claude: ["Bash(git *)"] }
 
     yield* Effect.promise(() => writeFile(path, JSON.stringify({ provider: "typesafe", permissions: { reviewAskPatterns } })))
 

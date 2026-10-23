@@ -12,7 +12,7 @@ import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
 import * as TestClock from "effect/testing/TestClock"
-import { NodeServices } from "@effect/platform-node"
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { hasHostAsk, loadAskRules as inspectAskRules } from "../src/claude/ask-rules.ts"
 
 const loadAskRules = (cwd: string, configDir: string) => inspectAskRules(cwd, configDir).pipe(Effect.provide(NodeServices.layer))
@@ -27,6 +27,39 @@ const makeScratch = (prefix: string) => Effect.gen(function*() {
 })
 
 describe("Claude Code configured asks", () => {
+  it.each(["Bash(git *)", "Bash(git:*)", "Bash(git status)", "*", "B*", "B*(git *)", "Bash(**)"])("delegates the exact supported nomination %s", (rule) => {
+    expect(hasHostAsk("git status", [rule], [rule])).toBe(false)
+    expect(hasHostAsk("echo hello && git status", [rule], [rule])).toBe(false)
+    expect(hasHostAsk("git status", [rule], [])).toBe(true)
+  })
+
+  it.each(["Bash(git *)", "Bash(git:*)"])("does not normalize nomination %s", (rule) => {
+    for (const nomination of ["git *", "Bash(git*)", "bash(git *)", "Bash(git *) ", " Bash(git *)", rule === "Bash(git *)" ? "Bash(git:*)" : "Bash(git *)", "*"]) {
+      expect(hasHostAsk("git status", [rule], [nomination])).toBe(true)
+    }
+  })
+
+  it.each(["Bash(git push *)", "Bash(git:*)", "*", "B*", "Bash(timeout:1000)", "Bash("])("preserves overlapping non-nominated ask %s regardless of order", (host) => {
+    for (const rules of [["Bash(git *)", host], [host, "Bash(git *)"]]) {
+      expect(hasHostAsk("git push origin main", rules, ["Bash(git *)"])).toBe(true)
+      expect(hasHostAsk("echo hello && git push origin main", rules, ["Bash(git *)"])).toBe(true)
+    }
+  })
+
+  it.each(["Bash(", "Bash()", "Bash( )", "Bash(run_in_background:true)", "Bash(timeout :1000)", "Bash(timeout:*)", "Bash( timeout:*)", "Bash(run_in_background:*)", "Bash(description:*)", "Bash(command:*)", "Bash(unknown :*)", "Bash( unknown:value)", "Bash(command:git *)", "Bash (git *)", "Bash(("])("does not delegate uncertain selector %s even when nominated", (rule) => {
+    expect(hasHostAsk("git status", [rule], [rule])).toBe(true)
+  })
+
+  it.each(["timeout 30 git status", "MODE=test git status", "if true; then git status; fi", "echo $(git status)", "echo 'git status'", "git status &&"])("does not skip matching uncertainty for nominated command ask: %s", (command) => {
+    expect(hasHostAsk(command, ["Bash(git *)"], ["Bash(git *)"])).toBe(true)
+    expect(hasHostAsk(command, ["*"], ["*"])).toBe(false)
+  })
+
+  it("keeps unrelated tool nominations outside Bash matching", () => {
+    expect(hasHostAsk("git status", ["Read(*)"], ["Read(*)"])).toBe(false)
+    expect(hasHostAsk("git status", ["Bash(git *)"], ["Read(*)"])).toBe(true)
+  })
+
   it("matches host asks and conservatively preserves compound requests", () => {
     expect(hasHostAsk("pnpm build", ["Bash(pnpm build)"])).toBe(true)
     expect(hasHostAsk("git push", ["Bash(git push *)"])).toBe(true)

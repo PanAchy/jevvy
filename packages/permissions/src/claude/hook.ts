@@ -15,7 +15,7 @@ import { withReviewEnabled } from "../review-control.ts"
 import type { ReviewControl } from "../review-control.ts"
 
 export type ClaudeReviewerSetup =
-  | { readonly kind: "ready"; readonly reviewer: PermissionReviewer }
+  | { readonly kind: "ready"; readonly reviewer: PermissionReviewer; readonly reviewAskPatterns: readonly string[] }
   | { readonly kind: "unavailable"; readonly message: string }
 
 export type ClaudeSetupLoader<E, R = never> = () => Effect.Effect<ClaudeReviewerSetup, E, R>
@@ -86,7 +86,7 @@ export const loadClaudeSetup = Effect.fn("ClaudeCode.loadSetup")(function*() {
     timeoutMs: config.timeoutMs,
   })
 
-  return { kind: "ready", reviewer } as const
+  return { kind: "ready", reviewer, reviewAskPatterns: config.reviewAskPatterns.claude } as const
 })
 
 export const createClaudeHookHandler = <E, R, AsksR>(
@@ -100,11 +100,9 @@ export const createClaudeHookHandler = <E, R, AsksR>(
     if (event === undefined) return undefined
 
     const review = Effect.gen(function*() {
-      if (event.hook_event_name === "PermissionRequest") {
-        const asks = yield* loadAsks(event.cwd)
+      const asks = event.hook_event_name === "PermissionRequest" ? yield* loadAsks(event.cwd) : []
 
-        if (asks === undefined || hasHostAsk(event.tool_input.command, asks)) return undefined
-      }
+      if (asks === undefined) return undefined
 
       const setup = yield* loadSetup().pipe(
         Effect.match({
@@ -120,6 +118,8 @@ export const createClaudeHookHandler = <E, R, AsksR>(
       }
 
       if (setup.kind === "unavailable") return undefined
+
+      if (hasHostAsk(event.tool_input.command, asks, setup.reviewAskPatterns)) return undefined
 
       return yield* createClaudeEvaluate(setup.reviewer)(event)
     })

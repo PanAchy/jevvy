@@ -141,34 +141,45 @@ describe("Jevvy configuration", () => {
     const schema = JSON.parse(raw)
 
     expect(schema.properties.permissions.properties.reviewAskPatterns).toMatchObject({
-      type: "array",
-      items: { type: "string", minLength: 1 },
-      default: [],
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        opencode: { type: "array", items: { type: "string", minLength: 1 }, default: [] },
+        claude: { type: "array", items: { type: "string", minLength: 1 }, default: [] },
+      },
     })
   }))
 
-  it.effect.each([undefined, [], ["*"], ["npm run *", "git *"], ["*", "*"]])("loads review ask nominations %j for shipped and custom policies", (reviewAskPatterns) => Effect.gen(function*() {
+  it.effect.each([undefined, {}, { opencode: [] }, { claude: [] }, { opencode: ["*"] }, { claude: ["Bash(git *)"] }, { opencode: ["npm run *", "git *"], claude: ["*", "*"] }])("loads review ask nominations %j for shipped and custom policies", (reviewAskPatterns) => Effect.gen(function*() {
     for (const questions of [undefined, customQuestions]) {
       const raw = JSON.stringify({ provider: "typesafe", permissions: { reviewAskPatterns, questions } })
 
       expect(yield* withConfigFile(raw, load)).toMatchObject({
         kind: questions === undefined ? "shipped-policy" : "custom-policy",
-        reviewAskPatterns: reviewAskPatterns ?? [],
+        reviewAskPatterns: { opencode: reviewAskPatterns?.opencode ?? [], claude: reviewAskPatterns?.claude ?? [] },
       })
     }
   }))
 
-  it.effect.each([null, "*", {}, [""], [true], [1]])("rejects malformed review ask nominations %j", (reviewAskPatterns) => Effect.gen(function*() {
+  it.effect.each([null, "*", [], ["*"], { opencode: null }, { claude: "*" }, { opencode: [""] }, { claude: [true] }, { opencode: [1] }, { other: [] }])("rejects malformed review ask nominations %j", (reviewAskPatterns) => Effect.gen(function*() {
     const raw = JSON.stringify({ provider: "typesafe", permissions: { reviewAskPatterns } })
 
     expect(yield* withConfigFile(raw, load)).toMatchObject({ kind: "invalid" })
   }))
 
   it.effect("preserves nomination spelling without normalization", () => Effect.gen(function*() {
-    const reviewAskPatterns = ["**", "GIT *", "tools\\*", "git * "]
+    const reviewAskPatterns = { opencode: ["**", "GIT *", "tools\\*", "git * "], claude: ["Bash(git *)", "Bash(git:*)", " Bash(git *) "] }
     const raw = JSON.stringify({ provider: "typesafe", permissions: { reviewAskPatterns } })
 
     expect(yield* withConfigFile(raw, load)).toMatchObject({ kind: "shipped-policy", reviewAskPatterns })
+  }))
+
+  it.effect.each([
+    { gateAskPatterns: ["*"] },
+    { opencode: { reviewAskPatterns: ["*"] } },
+    { claude: { reviewAskPatterns: ["Bash(git *)"] } },
+  ])("rejects alternate nomination configuration %j", (permissions) => Effect.gen(function*() {
+    expect(yield* withConfigFile(JSON.stringify({ provider: "typesafe", permissions }), load)).toMatchObject({ kind: "invalid" })
   }))
 
   it.effect.each(presets)("sends the exact configured %s model through the real client", ([provider, variable, defaultModel, endpoint]) => Effect.gen(function*() {
@@ -332,7 +343,7 @@ describe("Jevvy configuration", () => {
 
     expect(config).toEqual({
       kind: "custom-policy",
-      reviewAskPatterns: [],
+      reviewAskPatterns: { opencode: [], claude: [] },
       timeoutMs: 5_000,
       selection: { provider: "typesafe", apiKey: undefined },
       questions: customQuestions,
@@ -443,7 +454,7 @@ describe("Jevvy configuration", () => {
 
       expect(yield* withConfigFile(raw, load)).toEqual({
         kind: "custom-policy",
-        reviewAskPatterns: [],
+        reviewAskPatterns: { opencode: [], claude: [] },
         timeoutMs: 5_000,
         selection: {
           provider: "custom",
@@ -468,12 +479,12 @@ describe("Jevvy configuration", () => {
     const raw = JSON.stringify({
       provider: "laya",
       providers: { laya: { policy: { checkpoint: "english", questions: customQuestions } } },
-      permissions: { timeoutMs: 12_000, reviewAskPatterns: ["*"] },
+      permissions: { timeoutMs: 12_000, reviewAskPatterns: { opencode: ["*"], claude: ["Bash(git *)"] } },
     })
 
     expect(yield* withConfigFile(raw, load)).toEqual({
       kind: "custom-policy",
-      reviewAskPatterns: ["*"],
+      reviewAskPatterns: { opencode: ["*"], claude: ["Bash(git *)"] },
       timeoutMs: 12_000,
       selection: { provider: "laya", endpoint: undefined, model: undefined, apiKey: undefined },
       questions: customQuestions,
@@ -569,7 +580,7 @@ describe("Jevvy configuration", () => {
 
       expect(yield* withConfigFile(raw, load)).toEqual({
         kind: "shipped-policy",
-        reviewAskPatterns: [],
+        reviewAskPatterns: { opencode: [], claude: [] },
         timeoutMs: 5_000,
         selection: {
           provider: "custom",
@@ -588,7 +599,7 @@ describe("Jevvy configuration", () => {
 
     expect(yield* withConfigFile(raw, load)).toEqual({
       kind: "shipped-policy",
-      reviewAskPatterns: [],
+      reviewAskPatterns: { opencode: [], claude: [] },
       timeoutMs: 5_000,
       selection: { provider: "typesafe", apiKey: undefined },
     })
