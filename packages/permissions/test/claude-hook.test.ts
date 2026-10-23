@@ -1,18 +1,25 @@
 import { describe, expect, it, vi } from "@effect/vitest"
-import { Deferred, Effect, Fiber } from "effect"
+import * as Deferred from "effect/Deferred"
+import * as Cause from "effect/Cause"
+import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Fiber from "effect/Fiber"
+import * as Schema from "effect/Schema"
 import { createPermissionReviewer } from "../src/engine.ts"
 import type { PermissionRequest, PermissionReview, PermissionReviewer } from "../src/engine.ts"
 import { permissionAllowOutput, setupUnavailableOutput } from "../src/claude/evaluate.ts"
 import {
-  createClaudeHookHandler as makeClaudeHookHandler,
+  createClaudeHookHandler as createHandler,
   invalidClaudeConfigurationMessage,
   missingClaudeConfigurationMessage,
   missingClaudeCredentialMessage,
 } from "../src/claude/hook.ts"
-import type { ClaudeSetupLoader } from "../src/claude/hook.ts"
+import type { ClaudeConfigurationLoader } from "../src/claude/hook.ts"
 
-const createClaudeHookHandler = <E>(load: ClaudeSetupLoader<E>) =>
-  makeClaudeHookHandler(load, () => Effect.succeed([]))
+const acquireReviewer = (reviewer: PermissionReviewer) => Effect.succeed({ kind: "ready" as const, reviewer })
+
+const createClaudeHookHandler = <E>(load: ClaudeConfigurationLoader<PermissionReviewer, E>) =>
+  createHandler(load, acquireReviewer, () => Effect.succeed([]))
 
 const permissionEvent = (command = "pwd") => ({
   session_id: "ses_test",
@@ -41,9 +48,10 @@ const reviewer = (review: PermissionReview, calls: PermissionRequest[]): Permiss
   }),
 })
 
-const ready = (permissionReviewer: PermissionReviewer) => ({
-  kind: "ready" as const,
-  reviewer: permissionReviewer,
+const ready = (permissionReviewer: PermissionReviewer, reviewAskPatterns: readonly string[] = []) => ({
+  kind: "configured" as const,
+  configuration: permissionReviewer,
+  reviewAskPatterns,
 })
 
 const unavailable = (message = "Jevvy setup is incomplete") => ({
@@ -51,7 +59,79 @@ const unavailable = (message = "Jevvy setup is incomplete") => ({
   message,
 })
 
+class SetupFailure extends Schema.TaggedError<SetupFailure>()("SetupFailure", {}) {}
+
 describe("Claude Code hook process mapping", () => {
+  it.effect("classifies host-owned asks after one configuration load without acquiring a reviewer", () => Effect.gen(function*() {
+    const order: string[] = []
+
+    const load = vi.fn(() => Effect.sync(() => {
+      order.push("configuration")
+
+      return ready(reviewer({ effect: "allow", judgments: [] }, []))
+    }))
+
+    const acquire = vi.fn(acquireReviewer)
+
+    const handler = createHandler(load, acquire, () => Effect.sync(() => {
+      order.push("asks")
+
+      return ["Bash(echo *)"]
+    }), { read: () => Effect.sync(() => {
+      order.push("toggle")
+
+      return { enabled: true }
+    }) })
+
+    expect(yield* handler(JSON.stringify(permissionEvent("echo jevvy-host")))).toBeUndefined()
+    expect(order).toEqual(["toggle", "asks", "configuration"])
+    expect(load).toHaveBeenCalledOnce()
+    expect(acquire).not.toHaveBeenCalled()
+  }))
+
+  it.effect.each(["asks", "configuration", "reviewer"] as const)("preserves interruption during %s acquisition", (stage) => Effect.gen(function*() {
+    const entered = yield* Deferred.make<void>()
+    const block = Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
+    const review = vi.fn(() => Effect.succeed({ effect: "allow" as const, judgments: [] }))
+    const load = vi.fn(() => stage === "configuration" ? block : Effect.succeed(ready({ review })))
+    const acquire = vi.fn((value: PermissionReviewer) => stage === "reviewer" ? block : acquireReviewer(value))
+    const handler = createHandler(load, acquire, () => stage === "asks" ? block : Effect.succeed(["Bash"]))
+    const running = yield* handler(JSON.stringify(permissionEvent())).pipe(Effect.forkChild)
+
+    yield* Deferred.await(entered)
+    yield* Fiber.interrupt(running)
+    const exit = yield* Fiber.await(running)
+    expect(exit._tag).toBe("Failure")
+
+    if (Exit.isFailure(exit)) expect(Cause.hasInterrupts(exit.cause)).toBe(true)
+    expect(review).not.toHaveBeenCalled()
+
+    if (stage !== "reviewer") expect(acquire).not.toHaveBeenCalled()
+
+    if (stage === "asks") expect(load).not.toHaveBeenCalled()
+  }))
+
+  it.effect("validates reviewer setup at SessionStart without inspecting host asks", () => Effect.gen(function*() {
+    const acquire = vi.fn(() => Effect.succeed(unavailable("Set TYPESAFE_API_KEY")))
+    const asks = vi.fn(() => Effect.succeed([]))
+    const handler = createHandler(() => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, []))), acquire, asks)
+
+    expect(yield* handler(JSON.stringify(sessionStartEvent()))).toEqual(setupUnavailableOutput("Set TYPESAFE_API_KEY"))
+    expect(acquire).toHaveBeenCalledOnce()
+    expect(asks).not.toHaveBeenCalled()
+  }))
+
+  it.effect.each([permissionEvent(), sessionStartEvent()])("abstains at the hook boundary when reviewer acquisition fails: %j", (event) => Effect.gen(function*() {
+    const review = vi.fn(() => Effect.succeed({ effect: "allow" as const, judgments: [] }))
+    const load = vi.fn(() => Effect.succeed(ready({ review })))
+    const acquire = vi.fn(() => new SetupFailure())
+    const handler = createHandler(load, acquire, () => Effect.succeed(["Bash"]))
+
+    expect(yield* handler(JSON.stringify(event))).toBeUndefined()
+    expect(load).toHaveBeenCalledOnce()
+    expect(acquire).toHaveBeenCalledOnce()
+    expect(review).not.toHaveBeenCalled()
+  }))
   it.effect("OFF skips setup and cached approvals, and ON reuses the owning process cache", () => Effect.gen(function*() {
     let enabled = true
 
@@ -66,7 +146,7 @@ describe("Claude Code hook process mapping", () => {
     const review = vi.fn(cachedReviewer.review)
     const setup = vi.fn(() => Effect.succeed(ready({ review })))
     const asks = vi.fn(() => Effect.succeed(["Bash"]))
-    const handler = makeClaudeHookHandler(setup, asks, { read: () => Effect.succeed({ enabled }) })
+    const handler = createHandler(setup, acquireReviewer, asks, { read: () => Effect.succeed({ enabled }) })
     const raw = JSON.stringify(permissionEvent())
     expect(yield* handler(raw)).toEqual(permissionAllowOutput)
     enabled = false
@@ -92,7 +172,7 @@ describe("Claude Code hook process mapping", () => {
       return { effect: "allow" as const, judgments: [] }
     }))
 
-    const handler = makeClaudeHookHandler(() => Effect.succeed(ready({ review })), () => Effect.succeed(["Bash"]), {
+    const handler = createHandler(() => Effect.succeed(ready({ review })), acquireReviewer, () => Effect.succeed(["Bash"]), {
       read: () => Effect.succeed({ enabled }),
     })
 
@@ -109,7 +189,7 @@ describe("Claude Code hook process mapping", () => {
   it.effect.each(["Bash", "Bash(*)"])("reviews a %s review ask as one complete command", (rule) => Effect.gen(function*() {
     const calls: PermissionRequest[] = []
     const load = () => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, calls)))
-    const handler = makeClaudeHookHandler(load, () => Effect.succeed([rule]))
+    const handler = createHandler(load, acquireReviewer, () => Effect.succeed([rule]))
     const command = "cd src && echo hello > output.txt"
 
     expect(yield* handler(JSON.stringify(permissionEvent(command)))).toEqual(permissionAllowOutput)
@@ -123,42 +203,42 @@ describe("Claude Code hook process mapping", () => {
     { rules: ["Bash(git push *)", "Bash(*)"] },
   ])("preserves a host ask alongside review asks %j", ({ rules }) => Effect.gen(function*() {
     const setup = vi.fn(() => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, []))))
-    const handler = makeClaudeHookHandler(setup, () => Effect.succeed(rules))
+    const handler = createHandler(setup, acquireReviewer, () => Effect.succeed(rules))
 
     expect(yield* handler(JSON.stringify(permissionEvent("echo hello && git push origin main")))).toBeUndefined()
-    expect(setup).not.toHaveBeenCalled()
+    expect(setup).toHaveBeenCalledOnce()
   }))
 
   it.effect("leaves the host's remaining flow unchanged when a review ask does not allow", () => Effect.gen(function*() {
     const calls: PermissionRequest[] = []
     const load = () => Effect.succeed(ready(reviewer({ effect: "ask", reason: "judged", judgments: [] }, calls)))
-    const handler = makeClaudeHookHandler(load, () => Effect.succeed(["Bash"]))
+    const handler = createHandler(load, acquireReviewer, () => Effect.succeed(["Bash"]))
 
     expect(yield* handler(JSON.stringify(permissionEvent()))).toBeUndefined()
     expect(calls).toEqual([{ action: "shell", resources: ["pwd"] }])
   }))
 
-  it.effect("leaves a specific Bash ask to the host without loading Jevvy", () => Effect.gen(function*() {
+  it.effect("leaves a specific Bash ask to the host without reviewing it", () => Effect.gen(function*() {
     const setup = vi.fn(() => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, []))))
-    const handler = makeClaudeHookHandler(setup, () => Effect.succeed(["Bash(pnpm build)"]))
+    const handler = createHandler(setup, acquireReviewer, () => Effect.succeed(["Bash(pnpm build)"]))
 
     expect(yield* handler(JSON.stringify(permissionEvent("pnpm build")))).toBeUndefined()
-    expect(setup).not.toHaveBeenCalled()
+    expect(setup).toHaveBeenCalledOnce()
   }))
 
   it.effect("leaves a host ask inside shell control flow untouched", () => Effect.gen(function*() {
     const setup = vi.fn(() => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, []))))
-    const handler = makeClaudeHookHandler(setup, () => Effect.succeed(["Bash(git push *)"]))
+    const handler = createHandler(setup, acquireReviewer, () => Effect.succeed(["Bash(git push *)"]))
 
     expect(yield* handler(JSON.stringify(permissionEvent("if true; then git push origin main; fi")))).toBeUndefined()
     expect(yield* handler(JSON.stringify(permissionEvent("! git push origin main")))).toBeUndefined()
-    expect(setup).not.toHaveBeenCalled()
+    expect(setup).toHaveBeenCalledTimes(2)
   }))
 
   it.effect("reviews the complete command when visible ask rules do not match", () => Effect.gen(function*() {
     const calls: PermissionRequest[] = []
     const load = () => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, calls)))
-    const handler = makeClaudeHookHandler(load, () => Effect.succeed(["Bash(git push *)"]))
+    const handler = createHandler(load, acquireReviewer, () => Effect.succeed(["Bash(git push *)"]))
 
     expect(yield* handler(JSON.stringify(permissionEvent("echo hello && pnpm build")))).toEqual(permissionAllowOutput)
     expect(calls).toEqual([{ action: "shell", resources: ["echo hello && pnpm build"] }])
@@ -173,7 +253,7 @@ describe("Claude Code hook process mapping", () => {
   it.effect("abstains when settings cannot be read", () => Effect.gen(function*() {
     const calls: PermissionRequest[] = []
     const load = () => Effect.succeed(ready(reviewer({ effect: "allow", judgments: [] }, calls)))
-    const handler = makeClaudeHookHandler(load, () => Effect.succeed(undefined))
+    const handler = createHandler(load, acquireReviewer, () => Effect.succeed(undefined))
 
     expect(yield* handler(JSON.stringify(permissionEvent()))).toBeUndefined()
     expect(calls).toHaveLength(0)
@@ -271,8 +351,8 @@ Claude Code permissions are unchanged.`,
     expect(output).toBeUndefined()
   }))
 
-  it.effect("keeps stdout empty when reviewer setup fails", () => Effect.gen(function*() {
-    const output = yield* createClaudeHookHandler(() => Effect.fail(new Error("unavailable")))(
+  it.effect("keeps stdout empty when configuration acquisition fails", () => Effect.gen(function*() {
+    const output = yield* createClaudeHookHandler(() => new SetupFailure())(
       JSON.stringify(permissionEvent()),
     )
 
@@ -280,7 +360,7 @@ Claude Code permissions are unchanged.`,
   }))
 
   it.effect("keeps stdout empty when setup inspection fails at session start", () => Effect.gen(function*() {
-    const output = yield* createClaudeHookHandler(() => Effect.fail(new Error("unavailable")))(
+    const output = yield* createClaudeHookHandler(() => new SetupFailure())(
       JSON.stringify(sessionStartEvent()),
     )
 

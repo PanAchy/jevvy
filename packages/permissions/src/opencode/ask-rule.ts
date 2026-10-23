@@ -18,19 +18,20 @@ const matches = (input: string, pattern: string): boolean => {
   return new RegExp(`^${escaped}$`, process.platform === "win32" ? "si" : "s").test(normalized)
 }
 
-const isReviewAsk = (rule: Rule): boolean =>
-  rule.effect === "ask" && rule.action === "shell" && rule.resource === "*"
+const isReviewAsk = (action: string, rule: Rule, reviewAskPatterns: readonly string[]): boolean =>
+  action === "shell" && ((rule.action === "shell" && rule.resource === "*") || reviewAskPatterns.includes(rule.resource))
 
 export const hasExplicitAsk = (
   action: string,
   resources: readonly string[],
   rules: readonly Rule[],
+  reviewAskPatterns: readonly string[] = [],
 ): boolean => resources.some((resource) => {
   for (let index = rules.length - 1; index >= 0; index--) {
     const rule = rules[index]
 
     if (matches(action, rule.action) && matches(resource, rule.resource)) {
-      return rule.effect === "ask" && !isReviewAsk(rule)
+      return rule.effect === "ask" && !isReviewAsk(action, rule, reviewAskPatterns)
     }
   }
 

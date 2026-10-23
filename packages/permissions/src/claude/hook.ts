@@ -18,7 +18,9 @@ export type ClaudeReviewerSetup =
   | { readonly kind: "ready"; readonly reviewer: PermissionReviewer }
   | { readonly kind: "unavailable"; readonly message: string }
 
-export type ClaudeSetupLoader<E, R = never> = () => Effect.Effect<ClaudeReviewerSetup, E, R>
+export type ClaudeConfigurationLoader<C, E, R = never> = () => Effect.Effect<
+  { readonly kind: "configured"; readonly reviewAskPatterns: readonly string[]; readonly configuration: C }
+  | { readonly kind: "unavailable"; readonly message: string }, E, R>
 
 export type ClaudeAskLoader<R = never> = (cwd: string) => Effect.Effect<readonly string[] | undefined, never, R>
 
@@ -48,7 +50,7 @@ export const missingClaudeCredentialMessage = (provider: BuiltInProvider, config
     "Or run: npx @jevvy/permissions init",
   ])
 
-export const loadClaudeSetup = Effect.fn("ClaudeCode.loadSetup")(function*() {
+export const loadClaudeConfiguration = Effect.fn("ClaudeCode.loadConfiguration")(function*() {
   const configPath = globalJevvyConfigPath()
   const config = yield* loadJevvyConfig(configPath)
 
@@ -63,6 +65,12 @@ export const loadClaudeSetup = Effect.fn("ClaudeCode.loadSetup")(function*() {
     return { kind: "unavailable", message: missingClaudeConfigurationMessage(configPath) } as const
   }
 
+  return { kind: "configured", reviewAskPatterns: config.reviewAskPatterns.claude, configuration: { config, configPath } } as const
+})
+
+export const acquireClaudeReviewer = Effect.fn("ClaudeCode.acquireReviewer")(function*(
+  { config, configPath }: Extract<Effect.Success<ReturnType<typeof loadClaudeConfiguration>>, { kind: "configured" }>["configuration"],
+) {
   const selected = createConfiguredProvider(config.selection)
 
   if (selected === undefined) {
@@ -89,28 +97,36 @@ export const loadClaudeSetup = Effect.fn("ClaudeCode.loadSetup")(function*() {
   return { kind: "ready", reviewer } as const
 })
 
-export const createClaudeHookHandler = <E, R, AsksR>(
-  loadSetup: ClaudeSetupLoader<E, R>,
+export const createClaudeHookHandler = <C, E, R, ReviewerE, ReviewerR, AsksR>(
+  loadConfiguration: ClaudeConfigurationLoader<C, E, R>,
+  acquireReviewer: (configuration: C) => Effect.Effect<ClaudeReviewerSetup, ReviewerE, ReviewerR>,
   loadAsks: ClaudeAskLoader<AsksR>,
   control?: Pick<ReviewControl, "read">,
-): ((raw: string) => Effect.Effect<ClaudeHookOutput | undefined, never, R | AsksR>) =>
+): ((raw: string) => Effect.Effect<ClaudeHookOutput | undefined, never, R | ReviewerR | AsksR>) =>
   Effect.fn("ClaudeCode.handleHookEvent")(function*(raw) {
     const event = decodeClaudeHookEvent(raw)
 
     if (event === undefined) return undefined
 
     const review = Effect.gen(function*() {
-      if (event.hook_event_name === "PermissionRequest") {
-        const asks = yield* loadAsks(event.cwd)
+      const asks = event.hook_event_name === "PermissionRequest" ? yield* loadAsks(event.cwd) : []
 
-        if (asks === undefined || hasHostAsk(event.tool_input.command, asks)) return undefined
-      }
+      if (asks === undefined) return undefined
 
-      const setup = yield* loadSetup().pipe(
+      const loaded = yield* loadConfiguration().pipe(
         Effect.match({
           onFailure: () => undefined,
           onSuccess: (loaded) => loaded,
         }),
+      )
+
+      if (loaded === undefined) return undefined
+
+      if (loaded.kind === "configured" && event.hook_event_name === "PermissionRequest" &&
+        hasHostAsk(event.tool_input.command, asks, loaded.reviewAskPatterns)) return undefined
+
+      const setup = loaded.kind === "unavailable" ? loaded : yield* acquireReviewer(loaded.configuration).pipe(
+        Effect.match({ onFailure: () => undefined, onSuccess: (ready) => ready }),
       )
 
       if (setup === undefined) return undefined

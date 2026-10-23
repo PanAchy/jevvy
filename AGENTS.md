@@ -40,7 +40,7 @@ Providers and harnesses are independent dimensions inside the product. OpenRoute
 - Preserve every host `allow` or `deny` finalized before Jevvy without a Jev call. When a harness exposes the finalized effect, review only `ask`.
 - Document where each adapter runs and which native reviewers, prompts, or automatic outcomes remain after abstention.
 - Review the complete shell command as one resource so operators, redirects, and working-directory changes remain visible to Jev. Every inquiry must allow.
-- A review ask invites Jevvy review: OpenCode's exact `shell / * / ask`, or Claude Code's exact `Bash` or `Bash(*)` entry in `permissions.ask`. Other matching configured asks are host asks and remain untouched by Jevvy. The host may prompt or automatically accept after abstention.
+- A review ask invites Jevvy review: OpenCode's exact `shell / * / ask`, or Claude Code's exact `Bash` or `Bash(*)` entry in `permissions.ask`. Global `permissions.reviewAskPatterns.opencode` additionally nominates winning ask resource-pattern strings for shell requests across effective rule sources; `.claude` nominates complete visible ask entries for Bash requests. Nomination uses exact membership, identifies rules rather than commands, and preserves uncertainty checks. Matching non-nominated Claude asks remain host-owned regardless of ordering. The host may prompt or automatically accept after abstention.
 - OpenCode supplies effective agent and session rules. Claude Code's command hook does not expose matched rules, so inspect visible settings files and preserve matching host asks regardless of review-ask ordering; document uncovered sources. Abstain if the complete command or inspected configuration cannot be identified reliably.
 - Map Jev allow to one-action host approval without creating a durable rule.
 - Map Jev ask, timeout, malformed output, missing credentials, and provider failure to abstention. Abstention leaves the host's remaining permission flow unchanged.
@@ -81,11 +81,11 @@ Write public changelog entries and GitHub release notes for users rather than ar
 
 Run `npm run smoke:opencode` to verify the packed plugin reports an actionable setup failure without configuration and activates for a configured credential-free custom endpoint. Local dogfood configuration stays untracked. Confirm `jevvy.permissions` is `active` through OpenCode's plugin status endpoint before treating any live session behavior as evidence.
 
-Run `npm run smoke:package` and `npm run smoke:opencode` as background jobs because they can take several minutes. Do not overlap them with `npm run check` or other builds because the build scripts clean `dist`.
+Run `npm run smoke:package`, `npm run smoke:opencode`, and `npm run smoke:claude:permissions` as background jobs because they can take several minutes. Do not overlap them with `npm run check` or other builds because the build scripts clean `dist`.
 
 Add the `full-package-smoke` label to a PR for one Linux, Windows, and macOS x64/arm64 package matrix when it changes package files, exports, bins, bundled artifacts, dependencies, build tooling, installers, or platform-specific filesystem or process behavior. Remove the label after the matrix completes so later pushes use normal PR CI.
 
-Run `npm run build:permissions && npm run smoke:claude` after changing the Claude Code plugin manifest, hook registration, or bundle path. The smoke validates both manifests and loads the plugin into an isolated Claude Code host. Run `npm run smoke:package` to verify the packed hook remains dependency-free and silent on abstention. A real permission-flow smoke still requires an authenticated Claude Code host.
+Run `npm run build:permissions && npm run smoke:claude` after changing the Claude Code plugin manifest, hook registration, or bundle path. The smoke validates both manifests and loads the plugin into an isolated Claude Code host. Run `npm run smoke:package` to verify the packed hook remains dependency-free and silent on abstention. `npm run smoke:claude:permissions` drives real native permission flows through an isolated interactive host with localhost fake providers; it requires a POSIX Python PTY and the CI-pinned Claude executable, not an authenticated account.
 
 ## Commit discipline
 

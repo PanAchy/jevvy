@@ -3,8 +3,6 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { createServer } from "node:http"
 import { join } from "node:path"
 
-// Only the two remote providers are fakes. OpenCode's shell, scanner, rules,
-// permission hooks, prompts, and Jevvy's HTTP adapter remain real.
 export const withPermissionSmoke = async (project, runHost) => {
   const judgments = []
   let nextCommand
@@ -34,7 +32,7 @@ export const withPermissionSmoke = async (project, runHost) => {
       response.end(JSON.stringify({
         model: body.model,
         answers: answer === "malformed" ? {} : Object.fromEntries(
-          Object.keys(body.questions).map((key) => [key, { type: "noul", noul: answer === "ask" ? 1 : 0 }]),
+          Object.keys(body.questions).map((key) => [key, { type: "noul", noul: answer === "ask" || answer === `inquiry:${key}` ? 1 : 0 }]),
         ),
       }))
 
@@ -126,7 +124,25 @@ export const withPermissionSmoke = async (project, runHost) => {
   mkdirSync(defaultProject, { recursive: true })
   writeFileSync(join(defaultProject, "opencode.jsonc"), `${JSON.stringify({ ...config, permissions: [] }, null, 2)}\n`)
 
-  const exercise = async (api) => {
+  const nominationProject = join(project, "..", "nomination-policy")
+
+  mkdirSync(nominationProject, { recursive: true })
+  writeFileSync(join(nominationProject, "opencode.jsonc"), `${JSON.stringify({
+    ...config,
+    permissions: [
+      { action: "*", resource: "*", effect: "ask" },
+      { action: "shell", resource: "echo jevvy-nominated *", effect: "ask" },
+      { action: "shell", resource: "echo jevvy-unlisted *", effect: "ask" },
+      { action: "shell", resource: "echo jevvy-native-allow *", effect: "allow" },
+      { action: "shell", resource: "echo jevvy-native-deny *", effect: "deny" },
+    ],
+    agents: { build: { permissions: [
+      { action: "shell", resource: "echo jevvy-agent-nominated *", effect: "ask" },
+      { action: "shell", resource: "echo jevvy-agent-unlisted *", effect: "ask" },
+    ] } },
+  }, null, 2)}\n`)
+
+  const exercise = async (api, nominations) => {
     const createSession = async (directory = project, permissions = []) => {
       const session = await api("POST", "/api/session", {
         title: "Shell review smoke",
@@ -147,7 +163,10 @@ export const withPermissionSmoke = async (project, runHost) => {
         const plugin = plugins.data.find((entry) => entry.id === "jevvy.permissions")
         const modelReady = models.data.some((model) => model.providerID === "smoke" && model.id === "smoke")
 
-        if (plugin?.state.status === "active" && modelReady) break
+        if (plugin?.state.status === "active" && modelReady) {
+          console.log(`jevvy.permissions active: ${nominations?.name ?? "baseline"} at ${directory}`)
+          break
+        }
 
         assert.notEqual(plugin?.state.status, "failed", JSON.stringify(plugin))
 
@@ -195,6 +214,70 @@ export const withPermissionSmoke = async (project, runHost) => {
       assert.deepEqual(outcome.pending, [], "Jev approval must not leave a manual prompt")
       assert.equal(outcome.shell?.state.status, "completed", JSON.stringify(outcome))
       assert.ok(outcome.shell.state.content.some((part) => part.type === "text" && part.text.includes(output)), "the real shell must execute")
+    }
+
+    if (nominations !== undefined) {
+      const delegatedCatchAll = nominations.name === "catchall" || nominations.name === "specific"
+      const delegatedSpecific = nominations.name === "specific"
+      const inquiryNames = ["harmful", "obscured", "sensitive", "untrusted"]
+
+      const scenarios = [
+        { name: "project wildcard-action catchall", command: "echo jevvy-wildcard nominated", delegated: delegatedCatchAll },
+        { name: "project specific ask", command: "echo jevvy-nominated project", delegated: delegatedSpecific },
+        { name: "agent specific ask", command: "echo jevvy-agent-nominated agent", delegated: delegatedSpecific },
+        { name: "session specific ask", command: "echo jevvy-session-nominated session", rules: [{ action: "shell", resource: "echo jevvy-session-nominated *", effect: "ask" }], delegated: delegatedSpecific },
+        { name: "unlisted winning project ask", command: "echo jevvy-unlisted project", delegated: false },
+        { name: "unlisted winning agent ask", command: "echo jevvy-agent-unlisted agent", delegated: false },
+        { name: "unlisted winning session ask", command: "echo jevvy-session-unlisted session", rules: [{ action: "shell", resource: "echo jevvy-session-unlisted *", effect: "ask" }], delegated: false },
+        { name: "later session catchall overrides agent ask", command: "echo jevvy-agent-unlisted overridden", rules: [{ action: "*", resource: "*", effect: "ask" }], delegated: delegatedCatchAll },
+        { name: "compound nominated resources", command: "echo jevvy-nominated compound && echo jevvy-agent-nominated complete", delegated: delegatedSpecific },
+        { name: "compound unlisted resource", command: "echo jevvy-nominated mixed && echo jevvy-unlisted retained", delegated: false },
+        { name: "native final allow", command: "echo jevvy-native-allow finalized", native: "allow", delegated: false },
+        { name: "native final deny", command: "echo jevvy-native-deny finalized", native: "deny", delegated: false },
+      ]
+
+      if (delegatedSpecific) {
+        for (const inquiry of inquiryNames) {
+          scenarios.push({ name: `compound inquiry ${inquiry} abstains`, command: `echo jevvy-nominated ${inquiry} && echo jevvy-agent-nominated ${inquiry}`, delegated: true, inquiry })
+        }
+      }
+
+      for (const scenario of scenarios) {
+        answer = scenario.inquiry === undefined ? "allow" : `inquiry:${scenario.inquiry}`
+        const before = judgments.length
+        const sessionID = await createSession(nominationProject, scenario.rules ?? [])
+        const outcome = await run(sessionID, scenario.command)
+
+        assert.equal(judgments.length, before + Number(scenario.delegated), `${nominations.name}: ${scenario.name}: provider call count`)
+
+        if (scenario.delegated) {
+          assert.deepEqual(judgments.at(-1).state, { action: "shell", resource: scenario.command }, "every inquiry must see the complete command in the shared state")
+          assert.deepEqual(Object.keys(judgments.at(-1).questions).sort(), inquiryNames, "all shipped inquiries must participate")
+        }
+
+        if (scenario.native === "deny") {
+          assert.deepEqual(outcome.pending, [])
+          assert.equal(outcome.shell?.state.status, "error", "native deny must prevent actual execution")
+        } else if (scenario.native === "allow" || (scenario.delegated && scenario.inquiry === undefined)) {
+          assertExecuted(outcome, scenario.command.split(" && ").at(-1).slice("echo ".length))
+        } else {
+          assert.equal(outcome.pending.length, 1, `${nominations.name}: ${scenario.name} must retain a native prompt`)
+          assert.equal(outcome.pending[0].action, "shell")
+          assert.equal(outcome.shell?.state.status, "running", "the real shell must not execute before host approval")
+          await api("POST", `/api/session/${sessionID}/permission/${outcome.pending[0].id}/reply`, { decision: "reject" })
+          const rejected = await waitForOutcome(sessionID, outcome.callID)
+          assert.deepEqual(rejected.pending, [])
+          assert.equal(rejected.shell?.state.status, "error", "rejecting a pending native prompt must prevent execution")
+        }
+
+        await api("POST", `/api/experimental/session/${sessionID}/wait`)
+        assert.deepEqual((await api("GET", "/api/permission/saved")).data, [], "nomination must never save a durable rule")
+        console.log(`nomination ${nominations.name}: ${scenario.name}: passed (${judgments.length - before} Jev HTTP requests)`)
+      }
+
+      answer = "allow"
+
+      return
     }
 
     const sessionID = await createSession()
@@ -293,6 +376,16 @@ export const withPermissionSmoke = async (project, runHost) => {
 
   try {
     await runHost(`${endpoint}/decisions`, exercise)
+
+    for (const nominations of [
+      { name: "absent" },
+      { name: "empty", patterns: { opencode: [], claude: [] } },
+      { name: "claude-only", patterns: { claude: ["*", "echo jevvy-nominated *", "echo jevvy-agent-nominated *", "echo jevvy-session-nominated *"] } },
+      { name: "catchall", patterns: { opencode: ["*"] } },
+      { name: "specific", patterns: { opencode: ["*", "echo jevvy-nominated *", "echo jevvy-agent-nominated *", "echo jevvy-session-nominated *"] } },
+    ]) {
+      await runHost(`${endpoint}/decisions`, (api) => exercise(api, nominations), nominations.patterns)
+    }
   } finally {
     provider.closeAllConnections()
     await new Promise((resolve, reject) => provider.close((error) => error ? reject(error) : resolve()))

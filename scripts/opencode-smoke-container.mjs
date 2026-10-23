@@ -8,7 +8,7 @@ import { verifyControlCommand } from "./opencode-control-smoke.mjs"
 
 const root = "/tmp/jevvy-opencode-smoke"
 
-const opencodeVersion = process.env.JEVVY_OPENCODE_VERSION ?? "2.0.27"
+const opencodeVersion = process.env.JEVVY_OPENCODE_VERSION ?? "2.1.3"
 
 const project = join(root, "project")
 
@@ -204,13 +204,16 @@ writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
 
 await inspectPlugin(4099)
 
-await withPermissionSmoke(project, async (endpoint, exercise) => {
+let permissionPort = 4100
+
+await withPermissionSmoke(project, async (endpoint, exercise, reviewAskPatterns) => {
   writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
     provider: "custom",
     providers: { custom: { endpoint, model: "smoke-model" } },
+    permissions: { reviewAskPatterns },
   }, null, 2)}\n`, { mode: 0o600 })
 
-  await inspectPlugin(4100, undefined, exercise)
+  await inspectPlugin(permissionPort++, undefined, exercise)
 })
 
 console.log(`OpenCode ${opencodeVersion} host smoke passed: setup diagnostics, activation, and real shell permission review`)
