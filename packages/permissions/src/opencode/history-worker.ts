@@ -1,107 +1,91 @@
 import { parentPort, workerData } from "node:worker_threads"
+import * as NodeWorkerRunner from "@effect/platform-node/NodeWorkerRunner"
+import * as Cause from "effect/Cause"
+import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
-import * as ManagedRuntime from "effect/ManagedRuntime"
+import * as Fiber from "effect/Fiber"
+import * as Queue from "effect/Queue"
+import * as Ref from "effect/Ref"
+import * as Result from "effect/Result"
 import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
-import * as Option from "effect/Option"
-import { HistoryRequest, HistoryStorageError } from "../history.ts"
-import type { HistoryResponse } from "../history.ts"
+import * as WorkerRunner from "effect/workers/WorkerRunner"
+import { HistoryStorageError } from "../history.ts"
+import { HistoryCommand, HistoryReply } from "./history-protocol.ts"
 import { prepareHistoryStore, verifyHistoryPath } from "./history-files.ts"
 import { appendHistory, initializeHistory } from "./history-store.ts"
 
-const port = parentPort
+const retryBusy = { times: 2, schedule: Schedule.spaced("25 millis"), while: (error: HistoryStorageError) => error.kind === "busy" }
 
-if (port === null) throw new HistoryStorageError({ kind: "worker" })
+const program = Effect.fn("ReviewHistory.worker")(function*() {
+  const runner = yield* (yield* WorkerRunner.WorkerRunnerPlatform).start<HistoryReply, unknown>()
+  const commands = yield* Queue.dropping<HistoryCommand, HistoryStorageError>(1)
+  const failed = yield* Deferred.make<never, HistoryStorageError>()
 
-const send = (message: Schema.Schema.Type<typeof HistoryResponse>) => port.postMessage(message)
-
-const start = async () => {
-  const input = Schema.decodeUnknownSync(Schema.Struct({ configPath: Schema.String }), { onExcessProperty: "error" })(workerData)
-
-  const prepared = await Effect.runPromise(prepareHistoryStore(input.configPath).pipe(
-    Effect.retry({ times: 2, schedule: Schedule.spaced("25 millis"), while: (error) => error.kind === "busy" }),
-    Effect.match({ onFailure: (error) => ({ error }), onSuccess: (path) => ({ path }) }),
-  ))
-
-  if ("error" in prepared) {
-    send({ type: "problem", kind: prepared.error.kind })
-    port.close()
-
-    return
-  }
-
-  const path = prepared.path
-
-  const adapter = process.versions.bun
-    ? await import("@effect/sql-sqlite-bun/SqliteClient")
-    : await import("@effect/sql-sqlite-node/SqliteClient")
-
-  const runtime = ManagedRuntime.make(adapter.layer({ filename: path.filename, disableWAL: true, busyTimeout: 25 }))
-  let sequence = 0
-  let processing = false
-
-  try {
-    const problem = await runtime.runPromise(initializeHistory().pipe(
-      Effect.andThen(verifyHistoryPath(path)),
-      Effect.retry({ times: 2, schedule: Schedule.spaced("25 millis"), while: (error) => error.kind === "busy" }),
-      Effect.match({ onFailure: (error) => error.kind, onSuccess: () => undefined }),
-    ))
-
-    if (problem !== undefined) {
-      await runtime.dispose()
-      send({ type: "problem", kind: problem })
-      port.close()
-
-      return
-    }
-
-    send({ type: "ready" })
-  } catch {
-    await runtime.dispose()
-    send({ type: "problem", kind: "storage" })
-    port.close()
-
-    return
-  }
-
-  port.on("message", async (raw) => {
-    const decoded = Schema.decodeUnknownOption(HistoryRequest, { onExcessProperty: "error" })(raw)
-
-    if (processing || Option.isNone(decoded) || decoded.value.sequence !== sequence + 1) {
-      send({ type: "problem", kind: "worker" })
-
-      return
-    }
-
-    const message = decoded.value
-    sequence = message.sequence
-    processing = true
-
-    try {
-      if (message.type === "close") {
-        await runtime.dispose()
-        send({ type: "closed" })
-        port.close()
-
-        return
-      }
-
-      const result = await runtime.runPromise(Effect.gen(function*() {
-        yield* verifyHistoryPath(path)
-        yield* appendHistory(message.events)
-        yield* verifyHistoryPath(path)
-      }).pipe(Effect.match({
-        onFailure: (error) => ({ type: "problem" as const, kind: error.kind }),
-        onSuccess: () => ({ type: "ack" as const, sequence }),
-      })))
-
-      send(result)
-    } catch {
-      send({ type: "problem", kind: "worker" })
-    } finally {
-      processing = false
-    }
+  const receive = Effect.fn("ReviewHistory.receive")(function*(command: HistoryCommand) {
+    if (!(yield* Queue.offer(commands, command))) return yield* new HistoryStorageError({ kind: "worker" })
   })
-}
 
-start().catch(() => { send({ type: "problem", kind: "storage" }); port.close() })
+  const work = Effect.gen(function*() {
+    const sequence = yield* Effect.scoped(Effect.gen(function*() {
+      const input = yield* Schema.decodeUnknownEffect(Schema.Struct({ configPath: Schema.String }), { onExcessProperty: "error" })(workerData).pipe(Effect.mapError(() => new HistoryStorageError({ kind: "worker" })))
+      const path = yield* prepareHistoryStore(input.configPath).pipe(Effect.retry(retryBusy))
+
+      const adapter = yield* Effect.tryPromise({
+        try: async () => process.versions.bun ? await import("@effect/sql-sqlite-bun/SqliteClient") : await import("@effect/sql-sqlite-node/SqliteClient"),
+        catch: () => new HistoryStorageError({ kind: "storage" }),
+      })
+
+      return yield* Effect.gen(function*() {
+        yield* initializeHistory().pipe(Effect.andThen(verifyHistoryPath(path)), Effect.retry(retryBusy))
+
+        const receiver = yield* runner.run((_port, raw) => Schema.decodeUnknownEffect(HistoryCommand, { onExcessProperty: "error" })(raw).pipe(
+          Effect.mapError(() => new HistoryStorageError({ kind: "worker" })),
+          Effect.flatMap(receive),
+          Effect.catch((error) => Deferred.fail(failed, error)),
+        )).pipe(
+          Effect.andThen(Effect.fail(new HistoryStorageError({ kind: "worker" }))),
+          Effect.mapError(() => new HistoryStorageError({ kind: "worker" })),
+          Effect.forkScoped,
+        )
+
+        const sequence = yield* Ref.make(1)
+
+        const processCommand = Effect.fn("ReviewHistory.processCommand")(function*() {
+          const command = yield* Queue.take(commands)
+          const current = yield* Ref.get(sequence)
+
+          if (command.sequence !== current) return yield* new HistoryStorageError({ kind: "worker" })
+
+          if (HistoryCommand.guards.Close(command)) return false
+          yield* verifyHistoryPath(path)
+          yield* appendHistory(command.events)
+          yield* verifyHistoryPath(path)
+          yield* runner.send(0, HistoryReply.cases.Stored.make({ sequence: current }))
+          yield* Ref.update(sequence, (value) => value + 1)
+
+          return true
+        })
+
+        yield* Effect.raceFirst(processCommand().pipe(Effect.repeat({ while: (more) => more })), Effect.raceFirst(Deferred.await(failed), Fiber.join(receiver)))
+
+        return yield* Ref.get(sequence)
+      }).pipe(Effect.provide(adapter.layer({ filename: path.filename, disableWAL: true, busyTimeout: 25 })), Effect.mapError((error) => error instanceof HistoryStorageError ? error : new HistoryStorageError({ kind: "storage" })))
+    }))
+
+    yield* runner.send(0, HistoryReply.cases.Closed.make({ sequence }))
+  })
+
+  yield* work.pipe(
+    Effect.catchCauseIf((cause) => !Cause.hasInterrupts(cause), (cause) => {
+      const error = Cause.findError(cause)
+
+      return runner.send(0, HistoryReply.cases.Failed.make({ kind: Result.isSuccess(error) && error.success instanceof HistoryStorageError ? error.success.kind : "worker" }))
+    }),
+  )
+})
+
+Effect.runFork(Effect.scoped(program()).pipe(
+  Effect.provide(NodeWorkerRunner.layer),
+  Effect.ensuring(Effect.sync(() => parentPort?.close())),
+))

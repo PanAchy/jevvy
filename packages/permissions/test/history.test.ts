@@ -7,7 +7,8 @@ import * as Deferred from "effect/Deferred"
 import * as Schema from "effect/Schema"
 import * as TestClock from "effect/testing/TestClock"
 import { Session } from "@opencode/schema/session"
-import { HISTORY_EVENT_BYTES, HistoryEvent, HistoryRequest, HistoryResponse, eventBytes, projectHistory } from "../src/history.ts"
+import { HISTORY_EVENT_BYTES, HistoryEvent, eventBytes, projectHistory } from "../src/history.ts"
+import { HistoryCommand, HistoryReply } from "../src/opencode/history-protocol.ts"
 import type { HistoryObservation } from "../src/history.ts"
 import { createPermissionReviewer } from "../src/engine.ts"
 import type { PermissionReview } from "../src/engine.ts"
@@ -72,11 +73,13 @@ describe("review history projection", () => {
 
   it("strictly decodes event and worker protocol boundaries", () => {
     const event = projectHistory(input(), id)
+
+    if (event === undefined) throw new Error("missing event")
     const decode = Schema.decodeUnknownOption(HistoryEvent, { onExcessProperty: "error" })
     expect(decode({ ...event, effect: "allow", reason: "explicit-ask" })._tag).toBe("None")
     expect(decode({ ...event, endpoint: "secret-url" })._tag).toBe("None")
-    expect(Schema.decodeUnknownOption(HistoryRequest)({ type: "batch", sequence: 1, events: Array.from({ length: 17 }, () => event) })._tag).toBe("None")
-    expect(Schema.decodeUnknownOption(HistoryResponse, { onExcessProperty: "error" })({ type: "problem", kind: "worker", message: "secret" })._tag).toBe("None")
+    expect(Schema.decodeUnknownOption(HistoryCommand)({ ...HistoryCommand.cases.Append.make({ sequence: 1, events: [event] }), events: Array.from({ length: 17 }, () => event) })._tag).toBe("None")
+    expect(Schema.decodeUnknownOption(HistoryReply, { onExcessProperty: "error" })({ ...HistoryReply.cases.Failed.make({ kind: "worker" }), message: "secret" })._tag).toBe("None")
   })
 })
 

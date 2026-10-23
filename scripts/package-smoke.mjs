@@ -230,6 +230,7 @@ try {
   ensure(review.effect === "allow", `installed permission engine returned ${String(review.effect)}`)
 
   const history = await import(pathToFileURL(join(permissionsRoot, "dist", "opencode", "history.js")).href)
+  const historyTransport = await import(pathToFileURL(join(permissionsRoot, "dist", "opencode", "history-transport.js")).href)
   const historyFiles = await import(pathToFileURL(join(permissionsRoot, "dist", "opencode", "history-files.js")).href)
 
   ensure(historyFiles.historyAgentInstructions.startsWith("# Jevvy Permissions review history v1"), "packed history instructions are missing")
@@ -242,7 +243,7 @@ try {
 
     mkdirSync(fixture, { mode: 0o700 })
     await effect.Effect.runPromise(effect.Effect.scoped(effect.Effect.gen(function*() {
-      const observer = yield* history.createHistoryObserver({ enabled: true, configPath: join(fixture, "jevvy.jsonc"), report: () => undefined })
+      const observer = yield* history.createHistoryObserver({ enabled: true, configPath: join(fixture, "jevvy.jsonc"), report: () => undefined }).pipe(effect.Effect.provide(historyTransport.historyWorkersLayer))
 
       ensure(observer !== undefined, "packed history observer did not start")
       yield* observer.observe({ command: "packed-fixture-command", result: "explicit-ask", provider: "custom", tsMs: 0, latencyMs: null })

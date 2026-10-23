@@ -9,7 +9,8 @@ import { randomUUID } from "node:crypto"
 import { DatabaseSync } from "node:sqlite"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { HistoryResponse, projectHistory } from "../src/history.ts"
+import { projectHistory } from "../src/history.ts"
+import { HistoryCommand, HistoryReply } from "../src/opencode/history-protocol.ts"
 
 const fixture = <A, E, R>(use: (root: string) => Effect.Effect<A, E, R>) => Effect.acquireUseRelease(
   Effect.promise(async () => {
@@ -22,10 +23,12 @@ const fixture = <A, E, R>(use: (root: string) => Effect.Effect<A, E, R>) => Effe
   (root) => Effect.promise(() => rm(root, { recursive: true })),
 )
 
-const receive = (worker: Worker) => Effect.promise(async () => {
-  const [raw] = await once(worker, "message")
+const receive = (worker: Worker) => Effect.gen(function*() {
+  const [raw] = yield* Effect.promise(() => once(worker, "message"))
 
-  return Schema.decodeUnknownSync(HistoryResponse, { onExcessProperty: "error" })(raw)
+  const frame = yield* Schema.decodeUnknownEffect(Schema.Union([Schema.Tuple([Schema.Literal(0)]), Schema.Tuple([Schema.Literal(1), HistoryReply])]), { onExcessProperty: "error" })(raw)
+
+  return frame[0] === 0 ? "ready" : frame[1]
 })
 
 const start = (root: string) => Effect.acquireRelease(
@@ -46,31 +49,31 @@ describe.skipIf(process.platform === "win32")("native history workers", () => {
     const first = yield* start(root)
     const second = yield* start(root)
     const ready = yield* Effect.all([receive(first), receive(second)], { concurrency: "unbounded" })
-    expect(ready).toEqual([{ type: "ready" }, { type: "ready" }])
+    expect(ready).toEqual(["ready", "ready"])
     const event = entry()
-    first.postMessage({ type: "batch", sequence: 1, events: [event] })
-    second.postMessage({ type: "batch", sequence: 1, events: [event] })
-    expect(yield* Effect.all([receive(first), receive(second)], { concurrency: "unbounded" })).toEqual([{ type: "ack", sequence: 1 }, { type: "ack", sequence: 1 }])
+    first.postMessage([0, HistoryCommand.cases.Append.make({ sequence: 1, events: [event] })])
+    second.postMessage([0, HistoryCommand.cases.Append.make({ sequence: 1, events: [event] })])
+    expect(yield* Effect.all([receive(first), receive(second)], { concurrency: "unbounded" })).toEqual([HistoryReply.cases.Stored.make({ sequence: 1 }), HistoryReply.cases.Stored.make({ sequence: 1 })])
     const db = new DatabaseSync(join(root, "metrics", "history.sqlite"), { readOnly: true })
 
     try {
       expect(db.prepare("SELECT count(*) AS count, command FROM events").get()).toMatchObject({ count: 1, command: event.command })
     } finally { db.close() }
 
-    first.postMessage({ type: "close", sequence: 2 })
-    second.postMessage({ type: "close", sequence: 2 })
-    expect(yield* Effect.all([receive(first), receive(second)], { concurrency: "unbounded" })).toEqual([{ type: "closed" }, { type: "closed" }])
+    first.postMessage([0, HistoryCommand.cases.Close.make({ sequence: 2 })])
+    second.postMessage([0, HistoryCommand.cases.Close.make({ sequence: 2 })])
+    expect(yield* Effect.all([receive(first), receive(second)], { concurrency: "unbounded" })).toEqual([HistoryReply.cases.Closed.make({ sequence: 2 }), HistoryReply.cases.Closed.make({ sequence: 2 })])
   }))))
 
   it.effect("recovers a genuine private hot rollback journal after a killed writer", () => fixture((root) => Effect.gen(function*() {
     const event = entry()
     yield* Effect.scoped(Effect.gen(function*() {
       const worker = yield* start(root)
-      expect(yield* receive(worker)).toEqual({ type: "ready" })
-      worker.postMessage({ type: "batch", sequence: 1, events: [event] })
-      expect(yield* receive(worker)).toEqual({ type: "ack", sequence: 1 })
-      worker.postMessage({ type: "close", sequence: 2 })
-      expect(yield* receive(worker)).toEqual({ type: "closed" })
+      expect(yield* receive(worker)).toBe("ready")
+      worker.postMessage([0, HistoryCommand.cases.Append.make({ sequence: 1, events: [event] })])
+      expect(yield* receive(worker)).toEqual(HistoryReply.cases.Stored.make({ sequence: 1 }))
+      worker.postMessage([0, HistoryCommand.cases.Close.make({ sequence: 2 })])
+      expect(yield* receive(worker)).toEqual(HistoryReply.cases.Closed.make({ sequence: 2 }))
     }))
     const filename = join(root, "metrics", "history.sqlite")
     yield* Effect.acquireUseRelease(
@@ -86,9 +89,9 @@ describe.skipIf(process.platform === "win32")("native history workers", () => {
     )
     yield* Effect.scoped(Effect.gen(function*() {
       const worker = yield* start(root)
-      expect(yield* receive(worker)).toEqual({ type: "ready" })
-      worker.postMessage({ type: "close", sequence: 1 })
-      expect(yield* receive(worker)).toEqual({ type: "closed" })
+      expect(yield* receive(worker)).toBe("ready")
+      worker.postMessage([0, HistoryCommand.cases.Close.make({ sequence: 1 })])
+      expect(yield* receive(worker)).toEqual(HistoryReply.cases.Closed.make({ sequence: 1 }))
     }))
     const db = new DatabaseSync(filename, { readOnly: true })
 

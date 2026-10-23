@@ -22,8 +22,6 @@ export const HISTORY_BATCH_BYTES = 256 * 1024
 
 const Nonnegative = Schema.Finite.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }))
 
-const SafeInteger = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: Number.MAX_SAFE_INTEGER }))
-
 const Status = Schema.Int.check(Schema.isBetween({ minimum: 100, maximum: 599 }))
 
 const Failure = Schema.Struct({
@@ -162,15 +160,3 @@ export const HistoryProblem = Schema.Literals(["unsupported-platform", "unsafe-p
 export type HistoryProblem = typeof HistoryProblem.Type
 
 export class HistoryStorageError extends Schema.TaggedError<HistoryStorageError>()("HistoryStorageError", { kind: HistoryProblem }) {}
-
-export const HistoryRequest = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("batch"), sequence: SafeInteger, events: Schema.Array(HistoryEvent).check(Schema.isMinLength(1), Schema.isMaxLength(HISTORY_BATCH_ROWS)) }),
-  Schema.Struct({ type: Schema.Literal("close"), sequence: SafeInteger }),
-])
-
-export const HistoryResponse = Schema.Union([
-  Schema.Struct({ type: Schema.Literal("ready") }),
-  Schema.Struct({ type: Schema.Literal("ack"), sequence: SafeInteger }),
-  Schema.Struct({ type: Schema.Literal("closed") }),
-  Schema.Struct({ type: Schema.Literal("problem"), kind: HistoryProblem }),
-])

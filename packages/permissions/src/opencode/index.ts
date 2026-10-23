@@ -10,6 +10,7 @@ import { createConfiguredProvider, shippedPolicyProvenance } from "../providers.
 import { apiKeyFromCredential, withOpenCodeCredential } from "./credential.ts"
 import { createEvaluate } from "./evaluate.ts"
 import { createHistoryObserver, legacyHistoryProblem } from "./history.ts"
+import { historyWorkersLayer } from "./history-transport.ts"
 import { createCommandCapture } from "./command-capture.ts"
 import { hasExplicitAsk } from "./ask-rule.ts"
 import { createReviewControl } from "../review-control.ts"
@@ -118,7 +119,7 @@ export default Plugin.define({
 
         if (message !== undefined) console.warn(message)
       },
-    })
+    }).pipe(Effect.provide(historyWorkersLayer))
 
     const capture = createCommandCapture()
 
