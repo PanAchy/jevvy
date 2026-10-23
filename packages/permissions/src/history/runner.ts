@@ -4,6 +4,9 @@ import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
+import type * as Layer from "effect/Layer"
+import type * as SqlClient from "effect/sql/SqlClient"
+import type * as SqlError from "effect/sql/SqlError"
 import * as Queue from "effect/Queue"
 import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
@@ -17,7 +20,7 @@ import { appendHistory, initializeHistory } from "./history-store.ts"
 
 const retryBusy = { times: 2, schedule: Schedule.spaced("25 millis"), while: (error: HistoryStorageError) => error.kind === "busy" }
 
-const program = Effect.fn("ReviewHistory.worker")(function*() {
+const program = Effect.fn("ReviewHistory.worker")(function*(sqlite: (filename: string) => Layer.Layer<SqlClient.SqlClient, SqlError.SqlError | HistoryStorageError>) {
   const runner = yield* (yield* WorkerRunner.WorkerRunnerPlatform).start<HistoryReply, unknown>()
   const commands = yield* Queue.dropping<HistoryCommand, HistoryStorageError>(1)
   const failed = yield* Deferred.make<never, HistoryStorageError>()
@@ -30,11 +33,6 @@ const program = Effect.fn("ReviewHistory.worker")(function*() {
     const sequence = yield* Effect.scoped(Effect.gen(function*() {
       const input = yield* Schema.decodeUnknownEffect(Schema.Struct({ configPath: Schema.String }), { onExcessProperty: "error" })(workerData).pipe(Effect.mapError(() => new HistoryStorageError({ kind: "worker" })))
       const path = yield* prepareHistoryStore(input.configPath).pipe(Effect.retry(retryBusy))
-
-      const adapter = yield* Effect.tryPromise({
-        try: async () => process.versions.bun ? await import("@effect/sql-sqlite-bun/SqliteClient") : await import("@effect/sql-sqlite-node/SqliteClient"),
-        catch: () => new HistoryStorageError({ kind: "storage" }),
-      })
 
       return yield* Effect.gen(function*() {
         yield* initializeHistory().pipe(Effect.andThen(verifyHistoryPath(path)), Effect.retry(retryBusy))
@@ -70,7 +68,7 @@ const program = Effect.fn("ReviewHistory.worker")(function*() {
         yield* Effect.raceFirst(processCommand().pipe(Effect.repeat({ while: (more) => more })), Effect.raceFirst(Deferred.await(failed), Fiber.join(receiver)))
 
         return yield* Ref.get(sequence)
-      }).pipe(Effect.provide(adapter.layer({ filename: path.filename, disableWAL: true, busyTimeout: 25 })), Effect.mapError((error) => error instanceof HistoryStorageError ? error : new HistoryStorageError({ kind: "storage" })))
+      }).pipe(Effect.provide(sqlite(path.filename)), Effect.mapError((error) => error instanceof HistoryStorageError ? error : new HistoryStorageError({ kind: "storage" })))
     }))
 
     yield* runner.send(0, HistoryReply.cases.Closed.make({ sequence }))
@@ -85,7 +83,7 @@ const program = Effect.fn("ReviewHistory.worker")(function*() {
   )
 })
 
-Effect.runFork(Effect.scoped(program()).pipe(
+export const runHistoryWorker = (sqlite: (filename: string) => Layer.Layer<SqlClient.SqlClient, SqlError.SqlError | HistoryStorageError>) => Effect.runFork(Effect.scoped(program(sqlite)).pipe(
   Effect.provide(NodeWorkerRunner.layer),
   Effect.ensuring(Effect.sync(() => parentPort?.close())),
 ))

@@ -50,19 +50,7 @@
         "enabled": {
           "type": "boolean",
           "default": false,
-          "deprecated": true,
-          "description": "Legacy aggregate setting. Never enables history; true produces a migration diagnostic."
-        },
-        "history": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "enabled": {
-              "type": "boolean",
-              "default": false,
-              "description": "Opt in to bounded local Jevvy Permissions OpenCode review history. Verbatim commands and raw answers may contain secrets. POSIX-only; reload to apply. Capacity eviction and drops make coverage incomplete. No age expiry; disabling does not erase records."
-            }
-          }
+          "description": "Opt in to bounded local Jevvy Permissions OpenCode and Claude Code review history. Verbatim commands and raw answers may contain secrets. POSIX-only. OpenCode reads this at startup, Claude Code per hook invocation. Capacity eviction and drops make coverage incomplete. No age expiry; disabling does not erase records."
         }
       }
     },
@@ -70,6 +58,25 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "reviewAskPatterns": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "opencode": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "default": [],
+              "description": "Exact resource-pattern strings of winning ask rules delegated to Jevvy Permissions for shell requests across effective agent and session rules. Reload OpenCode after changes."
+            },
+            "claude": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "default": [],
+              "description": "Exact complete visible permissions.ask entries delegated to Jevvy Permissions for Bash PermissionRequest hooks. Matching non-nominated asks and uncertain rule semantics still cause abstention. Managed, CLI and session rules are not visible."
+            }
+          },
+          "description": "Host-scoped ask-rule nominations, not commands to approve. Both lists default empty. Existing shell and Bash review invitations remain enabled."
+        },
         "timeoutMs": {
           "type": "number",
           "exclusiveMinimum": 0,

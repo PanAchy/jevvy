@@ -1,4 +1,6 @@
 import * as Effect from "effect/Effect"
+import * as Cause from "effect/Cause"
+import * as Clock from "effect/Clock"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { JevProvider, JevProviderErrorKind, NoulAnswer } from "./core.ts"
@@ -74,6 +76,31 @@ export interface HistoryObservation {
 export interface HistoryObserver {
   readonly observe: (observation: HistoryObservation) => Effect.Effect<void>
 }
+
+export interface ReviewHistory {
+  readonly observer: HistoryObserver
+  readonly provider: JevProvider
+}
+
+export const observeReview = Effect.fn("ReviewHistory.observeReview")(function*<A extends PermissionReview | "explicit-ask">(
+  command: string,
+  review: Effect.Effect<A>,
+  history?: ReviewHistory,
+) {
+  const started = yield* Clock.monotonicTimeNanos
+  const result = yield* review
+  const completed = yield* Clock.monotonicTimeNanos
+
+  if (history !== undefined) {
+    const tsMs = yield* Clock.currentTimeMillis
+    yield* Effect.suspend(() => history.observer.observe({
+      command, result, provider: history.provider, tsMs,
+      latencyMs: result === "explicit-ask" ? null : Number(completed - started) / 1_000_000,
+    })).pipe(Effect.catchCauseIf((cause) => !Cause.hasInterrupts(cause), () => Effect.void))
+  }
+
+  return result
+})
 
 export const eventBytes = (event: HistoryEvent): number => new TextEncoder().encode(JSON.stringify(event)).length
 

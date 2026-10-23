@@ -62,6 +62,21 @@ describe("harness review controls", () => {
     expect(call).toHaveBeenCalledOnce()
   })))
 
+  it.effect("preserves ask nominations while changing either harness toggle", () => withConfig((path) => Effect.gen(function*() {
+    const reviewAskPatterns = { opencode: ["*", "npm run *"], claude: ["Bash(git *)"] }
+
+    yield* Effect.promise(() => writeFile(path, JSON.stringify({ provider: "typesafe", permissions: { reviewAskPatterns } })))
+
+    const control = yield* createReviewControl(path)
+
+    yield* control.change("opencode", false)
+    yield* control.change("claude", false)
+
+    const raw = yield* Effect.promise(() => readFile(path, "utf8"))
+
+    expect(parse(raw).permissions).toEqual({ reviewAskPatterns, opencode: { enabled: false }, claude: { enabled: false } })
+  })))
+
   it.effect.each(["opencode", "claude"] as const)("lets started %s reviews finish while OFF, but skips new reviews", (harness) => withConfig((path) => Effect.gen(function*() {
     const control = yield* createReviewControl(path)
     const entered = yield* Deferred.make<void>()

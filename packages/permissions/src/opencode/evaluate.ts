@@ -1,10 +1,9 @@
 import type { PermissionEvaluation } from "@opencode/plugin/effect/permission"
-import * as Clock from "effect/Clock"
-import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
-import type { PermissionReviewer } from "../engine.ts"
+import type { PermissionReview, PermissionReviewer } from "../engine.ts"
 import type { JevProviderFailure } from "../core.ts"
 import type { JevProvider } from "../core.ts"
+import { observeReview } from "../history.ts"
 import type { HistoryObserver } from "../history.ts"
 import { withReviewEnabled } from "../review-control.ts"
 import type { ReviewControl } from "../review-control.ts"
@@ -50,24 +49,9 @@ export const createEvaluate = (
         return undefined
       }
 
-      const started = yield* Clock.monotonicTimeNanos
-
-      const review = inspection.explicitAsk
-        ? "explicit-ask" as const
-        : yield* reviewer.review({ action: event.action, resources: [inspection.command] })
-
-      const completed = yield* Clock.monotonicTimeNanos
-
-      if (options.history !== undefined) {
-        const tsMs = yield* Clock.currentTimeMillis
-        yield* Effect.suspend(() => options.history?.observer.observe({
-          command: inspection.command,
-          result: review,
-          provider: options.history.provider,
-          tsMs,
-          latencyMs: review === "explicit-ask" ? null : Number(completed - started) / 1_000_000,
-        }) ?? Effect.void).pipe(Effect.catchCause((cause) => Cause.hasInterrupts(cause) ? Effect.failCause(cause) : Effect.void))
-      }
+      const review = yield* observeReview<PermissionReview | "explicit-ask">(inspection.command, inspection.explicitAsk
+        ? Effect.succeed("explicit-ask" as const)
+        : reviewer.review({ action: event.action, resources: [inspection.command] }), options.history)
 
       return review === "explicit-ask" ? undefined : review
     })

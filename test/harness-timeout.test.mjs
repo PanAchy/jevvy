@@ -12,7 +12,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as TestClock from "effect/testing/TestClock"
 import { loadJevvyConfig } from "../packages/permissions/src/config.ts"
 import plugin from "../packages/permissions/src/opencode/index.ts"
-import { createClaudeHookHandler, loadClaudeSetup } from "../packages/permissions/src/claude/hook.ts"
+import { acquireClaudeReviewer, createClaudeHookHandler, loadClaudeConfiguration } from "../packages/permissions/src/claude/hook.ts"
 import { permissionAllowOutput } from "../packages/permissions/src/claude/evaluate.ts"
 
 afterEach(() => {
@@ -54,7 +54,7 @@ const openCodeReview = Effect.fn("Test.openCodeReview")(function*() {
 })
 
 const claudeReview = Effect.fn("Test.claudeReview")(function*() {
-  const handler = createClaudeHookHandler(loadClaudeSetup, () => Effect.succeed(["Bash"]))
+  const handler = createClaudeHookHandler(loadClaudeConfiguration, acquireClaudeReviewer, () => Effect.succeed(["Bash"]))
 
   const output = yield* handler(JSON.stringify({
     session_id: "ses_test", prompt_id: "prompt_test", transcript_path: "/unused/transcript", cwd: "/workspace",

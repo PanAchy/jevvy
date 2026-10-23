@@ -133,7 +133,7 @@ const globMatch = (input: string, pattern: string): boolean => {
 }
 
 type AskRule =
-  | { readonly kind: "review" | "other-tool" | "host" }
+  | { readonly kind: "review" | "other-tool" | "host" | "host-tool" }
   | { readonly kind: "host-command"; readonly pattern: string }
 
 const classifyAskRule = (rule: string): AskRule => {
@@ -141,17 +141,20 @@ const classifyAskRule = (rule: string): AskRule => {
 
   const parsed = /^([^()]+)(?:\((.*)\))?$/.exec(rule)
 
-  if (parsed === null) {
+  if (parsed === null || !/^[A-Za-z0-9_*]+$/.test(parsed[1])) {
     return { kind: rule.includes("Bash") || rule.includes("*") ? "host" : "other-tool" }
   }
 
   if (!globMatch("Bash", parsed[1])) return { kind: "other-tool" }
 
-  if (parsed[2] === undefined) return { kind: "host" }
+  if (parsed[2] === undefined) return { kind: "host-tool" }
+
+  if (/^\s*(?:command|description|timeout|run_in_background)\s*:/.test(parsed[2]) ||
+    /^\s*[A-Za-z_][A-Za-z0-9_]*\s+:/.test(parsed[2])) return { kind: "host" }
 
   const pattern = parsed[2].endsWith(":*") ? `${parsed[2].slice(0, -2)} *` : parsed[2]
 
-  return /^[A-Za-z_][A-Za-z0-9_]*:/.test(pattern)
+  return pattern.trim().length === 0 || /^\s*[A-Za-z_][A-Za-z0-9_]*\s*:/.test(pattern)
     ? { kind: "host" }
     : { kind: "host-command", pattern }
 }
@@ -170,21 +173,32 @@ const literalCommandParts = (command: string): readonly string[] | undefined => 
   return parts.every((part) => part.length > 0 && !isIndirectCommand(part)) ? parts : undefined
 }
 
-export const hasHostAsk = (command: string, rules: readonly string[]): boolean => {
+export const inspectAskEligibility = (command: string, rules: readonly string[], reviewAskPatterns: readonly string[] = []): "review" | "host-ask" | "unreliable" => {
   const parts = literalCommandParts(command)
+  let unreliable = false
 
-  return rules.some((rule) => {
+  for (const rule of rules) {
     const ask = classifyAskRule(rule)
 
     switch (ask.kind) {
       case "review":
       case "other-tool":
-        return false
+        break
       case "host":
-        return true
+        unreliable = true
+        break
+      case "host-tool":
+        if (!reviewAskPatterns.includes(rule)) return "host-ask"
+        break
       case "host-command":
-        return parts === undefined || globMatch(command, ask.pattern) ||
-          parts.some((part) => globMatch(part, ask.pattern))
+        if (parts === undefined) unreliable = true
+        else if (!reviewAskPatterns.includes(rule) &&
+          (globMatch(command, ask.pattern) || parts.some((part) => globMatch(part, ask.pattern)))) return "host-ask"
     }
-  })
+  }
+
+  return unreliable ? "unreliable" : "review"
 }
+
+export const hasHostAsk = (command: string, rules: readonly string[], reviewAskPatterns: readonly string[] = []): boolean =>
+  inspectAskEligibility(command, rules, reviewAskPatterns) !== "review"

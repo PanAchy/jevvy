@@ -155,6 +155,7 @@ try {
   const standaloneHook = join(temporary, "claude-hook.mjs")
 
   writeFileSync(standaloneHook, readFileSync(claudeBundle))
+  writeFileSync(join(temporary, "claude-history-worker.js"), readFileSync(join(permissionsRoot, "dist", "claude-history-worker.js")))
 
   const hookEnvironment = { ...npmEnvironment, JEVVY_CONFIG: join(temporary, "missing-jevvy.jsonc") }
 
@@ -209,6 +210,12 @@ try {
   )
   ensure(setupNotification.hookSpecificOutput === undefined, "Claude Code setup notification made a permission decision")
 
+  if (process.platform !== "win32") {
+    const historySmoke = spawnSync(process.execPath, [join(repo, "scripts", "claude-history-smoke.mjs"), permissionsRoot], { encoding: "utf8", timeout: 30000 })
+    ensure(historySmoke.status === 0, `Standalone Claude history failed: ${historySmoke.stdout}\n${historySmoke.stderr}`)
+    console.log(historySmoke.stdout.trim())
+  }
+
   const effect = await import(pathToFileURL(join(consumer, "node_modules", "effect", "dist", "index.js")).href)
 
   const engine = await import(pathToFileURL(join(permissionsRoot, "dist", "engine.js")).href)
@@ -229,9 +236,9 @@ try {
 
   ensure(review.effect === "allow", `installed permission engine returned ${String(review.effect)}`)
 
-  const history = await import(pathToFileURL(join(permissionsRoot, "dist", "opencode", "history.js")).href)
-  const historyTransport = await import(pathToFileURL(join(permissionsRoot, "dist", "opencode", "history-transport.js")).href)
-  const historyFiles = await import(pathToFileURL(join(permissionsRoot, "dist", "opencode", "history-files.js")).href)
+  const history = await import(pathToFileURL(join(permissionsRoot, "dist", "history", "observer.js")).href)
+  const historyTransport = await import(pathToFileURL(join(permissionsRoot, "dist", "history", "history-transport.js")).href)
+  const historyFiles = await import(pathToFileURL(join(permissionsRoot, "dist", "history", "history-files.js")).href)
 
   ensure(historyFiles.historyAgentInstructions.startsWith("# Jevvy Permissions review history v1"), "packed history instructions are missing")
 

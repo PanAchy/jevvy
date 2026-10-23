@@ -8,9 +8,9 @@ import * as TestClock from "effect/testing/TestClock"
 import * as WorkerError from "effect/workers/WorkerError"
 import type * as Worker from "effect/workers/Worker"
 import type { HistoryObservation } from "../src/history.ts"
-import { HistoryCommand, HistoryReply } from "../src/opencode/history-protocol.ts"
-import { createHistoryObserver } from "../src/opencode/history.ts"
-import { HistoryWorkers } from "../src/opencode/history-transport.ts"
+import { HistoryCommand, HistoryReply } from "../src/history/history-protocol.ts"
+import { createHistoryObserver } from "../src/history/observer.ts"
+import { HistoryWorkers } from "../src/history/history-transport.ts"
 
 const observation = (command = "synthetic"): HistoryObservation => ({ command, result: "explicit-ask", provider: "custom", tsMs: 0, latencyMs: null })
 
@@ -61,6 +61,12 @@ describe.skipIf(process.platform === "win32")("bounded Effect history worker", (
   it.effect("OFF never acquires a worker", () => Effect.gen(function*() {
     const { service, opened } = yield* fixture
     expect(yield* createHistoryObserver({ enabled: false, configPath: "unused", report: () => undefined }).pipe(Effect.provideService(HistoryWorkers, service))).toBeUndefined()
+    expect(yield* Queue.size(opened)).toBe(0)
+  }))
+
+  it.effect("deferred storage without observations never acquires a worker, including shutdown", () => Effect.gen(function*() {
+    const { service, opened } = yield* fixture
+    yield* Effect.scoped(createHistoryObserver({ enabled: true, deferUntilObservation: true, configPath: "unused", report: () => undefined })).pipe(Effect.provideService(HistoryWorkers, service))
     expect(yield* Queue.size(opened)).toBe(0)
   }))
 

@@ -20,10 +20,10 @@ import * as Statement from "effect/sql/Statement"
 import type * as SqlConnection from "effect/sql/SqlConnection"
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient"
 import { HistoryEvent, decodeHistoryRow, projectHistory } from "../src/history.ts"
-import { createHistoryFiles, prepareHistoryStore, verifyHistoryPath } from "../src/opencode/history-files.ts"
-import { HistoryNativeError, historyNative } from "../src/opencode/history-native.ts"
-import { appendHistory, initializeHistory } from "../src/opencode/history-store.ts"
-import type { VerifiedHistoryPath } from "../src/opencode/history-files.ts"
+import { createHistoryFiles, prepareHistoryStore, verifyHistoryPath } from "../src/history/history-files.ts"
+import { HistoryNativeError, historyNative } from "../src/history/history-native.ts"
+import { appendHistory, initializeHistory } from "../src/history/history-store.ts"
+import type { VerifiedHistoryPath } from "../src/history/history-files.ts"
 
 const fixture = <A, E, R>(use: (root: string) => Effect.Effect<A, E, R>) => Effect.acquireUseRelease(
   Effect.promise(async () => {

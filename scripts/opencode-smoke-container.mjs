@@ -210,27 +210,66 @@ writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
 
 await inspectPlugin(4099)
 
-await withPermissionSmoke(project, async (endpoint, exercise) => {
+let permissionPort = 4100
+
+await withPermissionSmoke(project, async (endpoint, exercise, reviewAskPatterns) => {
   writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
     provider: "custom",
     providers: { custom: { endpoint, model: "smoke-model" } },
+    permissions: { reviewAskPatterns },
   }, null, 2)}\n`, { mode: 0o600 })
 
-  await inspectPlugin(4100, undefined, exercise)
+  await inspectPlugin(permissionPort++, undefined, exercise)
 })
 
 const historyPath = join(root, "metrics", "history.sqlite")
 
 if (existsSync(historyPath)) throw new Error("default-off history created a database")
 
-await withPermissionSmoke(project, async (endpoint, exercise) => {
+const claudeSettings = join(root, "claude-history")
+
+mkdirSync(claudeSettings, { mode: 0o700 })
+
+writeFileSync(join(claudeSettings, "settings.json"), JSON.stringify({ permissions: { ask: ["Bash(echo jevvy-claude-concurrent-*)"] } }), { mode: 0o600 })
+
+const invokeClaudeWriter = (index) => new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, [join(root, "node_modules", "@jevvy", "permissions", "dist", "claude-hook.js")], {
+    env: { ...environment, CLAUDE_CONFIG_DIR: claudeSettings }, stdio: ["pipe", "pipe", "pipe"],
+  })
+
+  let stdout = ""
+  let stderr = ""
+  child.stdout.on("data", (chunk) => { stdout += chunk })
+  child.stderr.on("data", (chunk) => { stderr += chunk })
+  child.on("error", reject)
+  const timeout = setTimeout(() => child.kill("SIGKILL"), 5000)
+  child.on("exit", (code) => {
+    clearTimeout(timeout)
+
+    if (code !== 0 || stdout !== "" || stderr !== "") reject(new Error(`Concurrent Claude writer violated silent abstention: ${code} ${stdout} ${stderr}`))
+    else resolve()
+  })
+  child.stdin.end(JSON.stringify({ session_id: "not-stored", prompt_id: "not-stored", transcript_path: "/not-stored", cwd: project,
+    permission_mode: "default", hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command: `echo jevvy-claude-concurrent-${index}` } }))
+})
+
+let historyPasses = 0
+
+await withPermissionSmoke(project, async (endpoint, exercise, reviewAskPatterns) => {
   writeFileSync(join(root, "jevvy.jsonc"), `${JSON.stringify({
     provider: "custom",
     providers: { custom: { endpoint, model: "smoke-model" } },
-    metrics: { history: { enabled: true } },
+    metrics: { enabled: true },
+    permissions: { reviewAskPatterns },
   }, null, 2)}\n`, { mode: 0o600 })
 
-  await inspectPlugin(4101, undefined, exercise)
+  const pass = historyPasses++
+
+  await invokeClaudeWriter(pass * 4)
+  await inspectPlugin(4101, undefined, (api) => Promise.all([
+    exercise(api),
+    Promise.all([1, 2, 3].map((index) => invokeClaudeWriter(pass * 4 + index))),
+  ]))
 })
 
 const { DatabaseSync } = await import("node:sqlite")
@@ -246,7 +285,11 @@ try {
 
   if (!rows.some((row) => row.reason === "unavailable")) throw new Error("packed worker did not retain an unavailable review")
 
+  const claudeRows = rows.filter((row) => String(row.command).startsWith("echo jevvy-claude-concurrent-"))
+
+  if (claudeRows.length !== historyPasses * 4 || new Set(claudeRows.map((row) => row.command)).size !== historyPasses * 4 || claudeRows.some((row) => row.reason !== "explicit-ask" || row.effect !== "ask" || row.model !== null || row.latency_ms !== null)) throw new Error("concurrent Node Claude and real Bun OpenCode writers lost or corrupted committed rows")
+
   if (rows.some((row) => String(row.command).startsWith("echo jevvy-allowed") || String(row.command).startsWith("echo jevvy-denied"))) throw new Error("native finalized outcomes entered history")
 } finally { history.close() }
 
-console.log(`OpenCode ${opencodeVersion} host smoke passed: setup diagnostics, activation, real shell permission review, packed worker history OFF/ON and disposal`)
+console.log(`OpenCode ${opencodeVersion} host smoke passed: setup diagnostics, activation, real shell permission review, packed worker history OFF/ON, concurrent Node Claude and Bun OpenCode SQLite writers, disposal`)

@@ -10,7 +10,7 @@ import { DatabaseSync } from "node:sqlite"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { projectHistory } from "../src/history.ts"
-import { HistoryCommand, HistoryReply } from "../src/opencode/history-protocol.ts"
+import { HistoryCommand, HistoryReply } from "../src/history/history-protocol.ts"
 
 const fixture = <A, E, R>(use: (root: string) => Effect.Effect<A, E, R>) => Effect.acquireUseRelease(
   Effect.promise(async () => {
@@ -32,7 +32,7 @@ const receive = (worker: Worker) => Effect.gen(function*() {
 })
 
 const start = (root: string) => Effect.acquireRelease(
-  Effect.sync(() => new Worker(new URL("../src/opencode/history-worker.ts", import.meta.url), { workerData: { configPath: join(root, "jevvy.jsonc") } })),
+  Effect.sync(() => new Worker(new URL("../src/history/history-worker.ts", import.meta.url), { workerData: { configPath: join(root, "jevvy.jsonc") } })),
   (worker) => Effect.promise(() => worker.terminate()),
 )
 

@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import * as Path from "effect/Path"
 import * as Schema from "effect/Schema"
 import { HISTORY_DATABASE_BYTES, HistoryDetail, StoredHistoryRow, HistoryStorageError } from "../history.ts"
-import { historySchema } from "./history-store.ts"
+import { historySchema } from "./schema.ts"
 import { historyNative } from "./history-native.ts"
 import type { HistoryNative, HistoryNativeError } from "./history-native.ts"
 
@@ -20,7 +20,18 @@ export const historyAgentInstructions = `# Jevvy Permissions review history v1
 const privateFile = (info: Stats, maximum: number): boolean =>
   info.isFile() && info.uid === process.getuid?.() && info.nlink === 1 && (info.mode & 0o777) === 0o600 && info.size <= maximum
 
-export const createHistoryFiles = (files: HistoryNative) => {
+const privateDirectory = (info: Stats): boolean =>
+  info.isDirectory() && info.uid === process.getuid?.() && (info.mode & 0o777) === 0o700
+
+const historyFileLimits = {
+  "history.sqlite": HISTORY_DATABASE_BYTES,
+  "history.sqlite-journal": 40 * 1024 * 1024,
+  "AGENTS.md": 65_536,
+  "schema.sql": 65_536,
+  "event.schema.json": 65_536,
+}
+
+export const createHistoryFiles = (files: HistoryNative, platform = process.platform) => {
   const inspect = Effect.fn("ReviewHistory.inspectFile")(function*(path: string, maximum: number) {
     const info = yield* files.lstat(path).pipe(Effect.catchIf((error) => error.kind === "missing", () => Effect.succeed(undefined)))
 
@@ -89,8 +100,8 @@ export const createHistoryFiles = (files: HistoryNative) => {
     yield* inspectJournal(path.filename)
   }, storageError)
 
-  const prepareHistoryStore = Effect.fn("ReviewHistory.preparePath")(function*(configPath: string) {
-    if (process.platform === "win32") return yield* new HistoryStorageError({ kind: "unsupported-platform" })
+  const resolveHistoryRoot = Effect.fn("ReviewHistory.resolveRoot")(function*(configPath: string) {
+    if (platform === "win32") return yield* new HistoryStorageError({ kind: "unsupported-platform" })
     const { dirname, join, resolve } = yield* Path.Path
 
     const parent = resolve(dirname(configPath))
@@ -108,29 +119,14 @@ export const createHistoryFiles = (files: HistoryNative) => {
 
     const parentInfo = yield* files.lstat(parent)
 
-    if (parentInfo.uid !== process.getuid?.() || (parentInfo.mode & 0o777) !== 0o700) return yield* new HistoryStorageError({ kind: "unsafe-path" })
-    const root = join(parent, "metrics")
+    if (!privateDirectory(parentInfo)) return yield* new HistoryStorageError({ kind: "unsafe-path" })
 
-    yield* files.mkdir(root).pipe(Effect.catchIf((error) => error.kind === "exists", () => Effect.void))
+    return join(parent, "metrics")
+  })
 
-    const rootInfo = yield* files.lstat(root)
-
-    if (!rootInfo.isDirectory() || rootInfo.uid !== process.getuid?.() || (rootInfo.mode & 0o777) !== 0o700) return yield* new HistoryStorageError({ kind: "unsafe-path" })
-
-    const rowSchema = Schema.toJsonSchemaDocument(StoredHistoryRow, { onExcessProperty: "error" })
-    const detailSchema = Schema.toJsonSchemaDocument(HistoryDetail, { onExcessProperty: "error" })
-    const properties = Object.fromEntries(Object.entries(StoredHistoryRow.fields).map(([key, field]) => [key, Schema.toJsonSchemaDocument(field, { onExcessProperty: "error" }).schema]))
-    properties.detail_json = { ...properties.detail_json, contentSchema: detailSchema.schema }
-    const schema = { ...rowSchema.schema, $schema: "https://json-schema.org/draft/2020-12/schema", properties, $defs: { ...rowSchema.definitions, ...detailSchema.definitions } }
-
-    const metadata = {
-      "AGENTS.md": historyAgentInstructions,
-      "schema.sql": `${historySchema.table};\n${historySchema.index};\n`,
-      "event.schema.json": `${JSON.stringify(schema, null, 2)}\n`,
-    }
-
-    if (Object.values(metadata).reduce((sum, text) => sum + Buffer.byteLength(text), 0) > 65_536) return yield* new HistoryStorageError({ kind: "storage" })
-    const allowed = new Set(["history.sqlite", "history.sqlite-journal", ...Object.keys(metadata)])
+  const inspectEntries = Effect.fn("ReviewHistory.inspectEntries")(function*(root: string) {
+    const { join } = yield* Path.Path
+    const allowed = new Set(Object.keys(historyFileLimits))
 
     const entries = yield* Effect.acquireUseRelease(files.opendir(root), (directory) => Effect.gen(function*() {
       const entries: string[] = []
@@ -147,17 +143,55 @@ export const createHistoryFiles = (files: HistoryNative) => {
     }), (directory) => directory.close)
 
     if (entries.length > allowed.size || entries.some((name) => !allowed.has(name))) return yield* new HistoryStorageError({ kind: "unsupported-schema" })
-
-    if (entries.includes("history.sqlite-journal") && !entries.includes("history.sqlite")) return yield* new HistoryStorageError({ kind: "unsupported-schema" })
     let total = 0
 
-    for (const name of entries) {
-      const maximum = name === "history.sqlite" ? HISTORY_DATABASE_BYTES : 65_536
-      const info = yield* inspect(join(root, name), name === "history.sqlite-journal" ? 40 * 1024 * 1024 : maximum)
+    for (const [name, maximum] of Object.entries(historyFileLimits)) {
+      if (!entries.includes(name)) continue
+      const info = yield* inspect(join(root, name), maximum)
       total += info?.size ?? 0
     }
 
     if (total > 80 * 1024 * 1024) return yield* new HistoryStorageError({ kind: "storage" })
+
+    return entries
+  })
+
+  const preflightHistoryStore = Effect.fn("ReviewHistory.preflightPath")(function*(configPath: string) {
+    const root = yield* resolveHistoryRoot(configPath)
+    const info = yield* files.lstat(root).pipe(Effect.catchIf((error) => error.kind === "missing", () => Effect.succeed(undefined)))
+
+    if (info === undefined) return
+
+    if (!privateDirectory(info)) return yield* new HistoryStorageError({ kind: "unsafe-path" })
+    yield* inspectEntries(root)
+  }, storageError, Effect.provide(Path.layer))
+
+  const prepareHistoryStore = Effect.fn("ReviewHistory.preparePath")(function*(configPath: string) {
+    const { join } = yield* Path.Path
+    const root = yield* resolveHistoryRoot(configPath)
+
+    yield* files.mkdir(root).pipe(Effect.catchIf((error) => error.kind === "exists", () => Effect.void))
+
+    const rootInfo = yield* files.lstat(root)
+
+    if (!privateDirectory(rootInfo)) return yield* new HistoryStorageError({ kind: "unsafe-path" })
+
+    const rowSchema = Schema.toJsonSchemaDocument(StoredHistoryRow, { onExcessProperty: "error" })
+    const detailSchema = Schema.toJsonSchemaDocument(HistoryDetail, { onExcessProperty: "error" })
+    const properties = Object.fromEntries(Object.entries(StoredHistoryRow.fields).map(([key, field]) => [key, Schema.toJsonSchemaDocument(field, { onExcessProperty: "error" }).schema]))
+    properties.detail_json = { ...properties.detail_json, contentSchema: detailSchema.schema }
+    const schema = { ...rowSchema.schema, $schema: "https://json-schema.org/draft/2020-12/schema", properties, $defs: { ...rowSchema.definitions, ...detailSchema.definitions } }
+
+    const metadata = {
+      "AGENTS.md": historyAgentInstructions,
+      "schema.sql": `${historySchema.table};\n${historySchema.index};\n`,
+      "event.schema.json": `${JSON.stringify(schema, null, 2)}\n`,
+    }
+
+    if (Object.values(metadata).reduce((sum, text) => sum + Buffer.byteLength(text), 0) > 65_536) return yield* new HistoryStorageError({ kind: "storage" })
+    const entries = yield* inspectEntries(root)
+
+    if (entries.includes("history.sqlite-journal") && !entries.includes("history.sqlite")) return yield* new HistoryStorageError({ kind: "unsupported-schema" })
     const filename = join(root, "history.sqlite")
 
     const create = files.open(filename, true).pipe(Effect.catchIf((error) => error.kind === "exists", () => Effect.succeed(undefined)))
@@ -190,7 +224,7 @@ export const createHistoryFiles = (files: HistoryNative) => {
     return { filename, dev: info.dev, ino: info.ino }
   }, storageError, Effect.provide(Path.layer))
 
-  return { prepareHistoryStore, verifyHistoryPath }
+  return { prepareHistoryStore, verifyHistoryPath, preflightHistoryStore }
 }
 
 export interface VerifiedHistoryPath {
@@ -199,4 +233,4 @@ export interface VerifiedHistoryPath {
   readonly ino: number
 }
 
-export const { prepareHistoryStore, verifyHistoryPath } = createHistoryFiles(historyNative)
+export const { prepareHistoryStore, verifyHistoryPath, preflightHistoryStore } = createHistoryFiles(historyNative)

@@ -17,10 +17,8 @@ import { HistoryCommand, HistoryReply } from "./history-protocol.ts"
 import { HistoryWorkers } from "./history-transport.ts"
 
 export const historyProblemMessage = (kind: HistoryProblem): string => kind === "unsupported-platform"
-  ? "Jevvy Permissions history is unavailable on Windows because user-only ACLs cannot be verified. Set metrics.history.enabled to false to dismiss this diagnostic. Permission reviews are unchanged."
-  : `Jevvy Permissions history is incomplete (${kind}). Check the private global metrics directory ownership, permissions, free space and schema. Reload after correcting setup; storage failures retry after 30 seconds. Set metrics.history.enabled to false to disable history. Permission reviews are unchanged.`
-
-export const legacyHistoryProblem = "Jevvy Permissions no longer writes aggregate metrics. Legacy metrics.enabled does not enable history. Verbatim commands and raw answers may contain secrets; opt in separately with metrics.history.enabled."
+  ? "Jevvy Permissions history is unavailable on Windows because user-only ACLs cannot be verified. Set metrics.enabled to false to dismiss this diagnostic. Permission reviews are unchanged."
+  : `Jevvy Permissions history is incomplete (${kind}). Check the private global metrics directory ownership, permissions, free space and schema. Reload after correcting setup; storage failures retry after 30 seconds. Set metrics.enabled to false to disable history. Permission reviews are unchanged.`
 
 class HistoryDiagnosticError extends Schema.TaggedError<HistoryDiagnosticError>()("HistoryDiagnosticError", {}) {}
 
@@ -52,6 +50,7 @@ export const createHistoryObserver = Effect.fn("ReviewHistory.createObserver")(f
   readonly enabled: boolean
   readonly configPath: string
   readonly report: (problem: string | undefined) => void
+  readonly deferUntilObservation?: boolean
 }) {
   if (!options.enabled) return undefined
   const problem = yield* Ref.make<HistoryProblem | undefined>(undefined)
@@ -146,10 +145,17 @@ export const createHistoryObserver = Effect.fn("ReviewHistory.createObserver")(f
     )
   })
 
-  const background = yield* Effect.scoped(session()).pipe(
-    Effect.catch((error) => drop(error instanceof HistoryStorageError ? error.kind : "worker")),
-    Effect.catchCauseIf((cause) => !Cause.hasInterrupts(cause), () => drop("worker")),
-    Effect.repeat({ schedule: Schedule.spaced("30 seconds"), while: () => Ref.get(stopping).pipe(Effect.map((value) => !value)) }),
+  const background = yield* Effect.gen(function*() {
+    if (options.deferUntilObservation === true) yield* Queue.take(wake)
+
+    if ((yield* Ref.get(stopping)) && (yield* Ref.get(pending)).events.length === 0) return
+
+    yield* Effect.scoped(session()).pipe(
+      Effect.catch((error) => drop(error instanceof HistoryStorageError ? error.kind : "worker")),
+      Effect.catchCauseIf((cause) => !Cause.hasInterrupts(cause), () => drop("worker")),
+      Effect.repeat({ schedule: Schedule.spaced("30 seconds"), while: () => Ref.get(stopping).pipe(Effect.map((value) => !value)) }),
+    )
+  }).pipe(
     Effect.ensuring(Deferred.succeed(stopped, undefined)),
     Effect.forkScoped,
   )

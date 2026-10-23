@@ -16,7 +16,7 @@ export class HistoryTerminationError extends Schema.TaggedError<HistoryTerminati
 export const terminateHistoryWorker = Effect.fn("ReviewHistory.terminateWorker")((worker: Pick<NativeWorker, "terminate">) => Effect.tryPromise({
   try: () => worker.terminate(),
   catch: () => new HistoryTerminationError(),
-}))
+}).pipe(Effect.interruptible, Effect.timeoutOrElse({ duration: "500 millis", orElse: () => new HistoryTerminationError() })))
 
 export class HistoryWorkers extends Context.Service<HistoryWorkers, {
   readonly open: (configPath: string, terminationFailed: Effect.Effect<void>) => Effect.Effect<Worker.Worker<unknown, HistoryCommand>, WorkerError.WorkerError>
@@ -77,3 +77,11 @@ export const makeHistoryWorkersLayer = (spawn: (configPath: string) => NativeWor
 }))
 
 export const historyWorkersLayer = makeHistoryWorkersLayer((configPath) => new NativeWorker(new URL("./history-worker.js", import.meta.url), { workerData: { configPath } }))
+
+export const claudeHistoryWorkersLayer = makeHistoryWorkersLayer((configPath) => {
+  const worker = new NativeWorker(new URL("./claude-history-worker.js", import.meta.url), { workerData: { configPath }, stderr: true, stdout: true })
+  worker.stderr.resume()
+  worker.stdout.resume()
+
+  return worker
+})

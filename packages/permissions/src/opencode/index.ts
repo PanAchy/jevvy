@@ -9,8 +9,8 @@ import { createPermissionReviewer } from "../engine.ts"
 import { createConfiguredProvider, shippedPolicyProvenance } from "../providers.ts"
 import { apiKeyFromCredential, withOpenCodeCredential } from "./credential.ts"
 import { createEvaluate } from "./evaluate.ts"
-import { createHistoryObserver, legacyHistoryProblem } from "./history.ts"
-import { historyWorkersLayer } from "./history-transport.ts"
+import { createHistoryObserver } from "../history/observer.ts"
+import { historyWorkersLayer } from "../history/history-transport.ts"
 import { createCommandCapture } from "./command-capture.ts"
 import { hasExplicitAsk } from "./ask-rule.ts"
 import { createReviewControl } from "../review-control.ts"
@@ -104,13 +104,9 @@ export default Plugin.define({
       timeoutMs: permissionConfig.timeoutMs,
     }).pipe(Effect.orDie)
 
-    if (permissionConfig.historyMigrationNeeded) {
-      problem = legacyHistoryProblem
-      console.warn(problem)
-    }
-
     const history = yield* createHistoryObserver({
       enabled: permissionConfig.historyEnabled,
+      deferUntilObservation: true,
       configPath,
       report: (message) => {
         if (message === problem) return
@@ -147,7 +143,7 @@ export default Plugin.define({
           explicitAsk: hasExplicitAsk(event.action, event.resources, [
             ...agent.data.permissions,
             ...session.permissions ?? [],
-          ]),
+          ], permissionConfig.reviewAskPatterns.opencode),
         }
       }).pipe(Effect.orElseSucceed(() => undefined)),
       report: (entry) => {

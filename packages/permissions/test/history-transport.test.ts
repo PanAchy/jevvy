@@ -2,11 +2,13 @@ import { expect, it } from "@effect/vitest"
 import { Worker } from "node:worker_threads"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Ref from "effect/Ref"
 import * as Result from "effect/Result"
-import { HistoryTerminationError, HistoryWorkers, makeHistoryWorkersLayer, terminateHistoryWorker } from "../src/opencode/history-transport.ts"
-import { HistoryCommand } from "../src/opencode/history-protocol.ts"
+import * as TestClock from "effect/testing/TestClock"
+import { HistoryTerminationError, HistoryWorkers, makeHistoryWorkersLayer, terminateHistoryWorker } from "../src/history/history-transport.ts"
+import { HistoryCommand } from "../src/history/history-protocol.ts"
 
 class RejectingTerminationWorker extends Worker {
   override terminate() {
@@ -16,6 +18,21 @@ class RejectingTerminationWorker extends Worker {
 
 it.effect("termination rejection stays a named typed failure rather than a defect", () => Effect.gen(function*() {
   const result = yield* terminateHistoryWorker({ terminate: () => Promise.reject(new Error("synthetic")) }).pipe(Effect.result)
+  expect(Result.isFailure(result) && result.failure instanceof HistoryTerminationError).toBe(true)
+}))
+
+it.effect("bounds an unresolved native termination promise", () => Effect.gen(function*() {
+  const terminating = yield* Deferred.make<void>()
+
+  const running = yield* terminateHistoryWorker({ terminate: () => {
+    Deferred.doneUnsafe(terminating, Exit.succeed(undefined))
+
+    return new Promise<number>(() => {})
+  } }).pipe(Effect.result, Effect.forkChild)
+
+  yield* Deferred.await(terminating)
+  yield* TestClock.adjust("500 millis")
+  const result = yield* Fiber.join(running)
   expect(Result.isFailure(result) && result.failure instanceof HistoryTerminationError).toBe(true)
 }))
 

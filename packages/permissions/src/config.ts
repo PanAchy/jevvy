@@ -46,12 +46,18 @@ const LayaProviderSchema = Schema.Struct({
   policy: Schema.optionalKey(LayaPolicy),
 })
 
+const ReviewAskPatternSettings = Schema.Struct({
+  opencode: Schema.Array(Schema.NonEmptyString).pipe(Schema.withDecodingDefaultKey(Effect.sync(() => []))),
+  claude: Schema.Array(Schema.NonEmptyString).pipe(Schema.withDecodingDefaultKey(Effect.sync(() => []))),
+})
+
+interface ReviewAskPatterns extends Schema.Schema.Type<typeof ReviewAskPatternSettings> {}
+
 const JevvyConfigSchema = Schema.Struct({
   $schema: Schema.optionalKey(Schema.String),
   provider: JevProvider,
   metrics: Schema.optionalKey(Schema.Struct({
     enabled: Schema.optionalKey(Schema.Boolean),
-    history: Schema.optionalKey(Schema.Struct({ enabled: Schema.optionalKey(Schema.Boolean) })),
   })),
   providers: Schema.optionalKey(Schema.Struct({
     zen: Schema.optionalKey(SystemOnePresetSettings),
@@ -63,26 +69,27 @@ const JevvyConfigSchema = Schema.Struct({
     laya: Schema.optionalKey(LayaProviderSchema),
     custom: Schema.optionalKey(EndpointProviderSchema),
   })),
-  permissions: Schema.optionalKey(Schema.Struct({
+  permissions: Schema.Struct({
     timeoutMs: Schema.optionalKey(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
+    reviewAskPatterns: ReviewAskPatternSettings.pipe(Schema.withDecodingDefaultKey(Effect.sync(() => ({})))),
     questions: Schema.optionalKey(ApprovalQuestions),
     opencode: Schema.optionalKey(HarnessReviewConfig),
     claude: Schema.optionalKey(HarnessReviewConfig),
-  })),
+  }).pipe(Schema.withDecodingDefaultKey(Effect.sync(() => ({})))),
 })
 
 interface ConfigDocument extends Schema.Schema.Type<typeof JevvyConfigSchema> {}
 
 export type JevvyConfig =
   | { readonly kind: "unconfigured" }
-  | { readonly kind: "shipped-policy"; readonly selection: ProviderSelection; readonly timeoutMs: number; readonly historyEnabled: boolean; readonly historyMigrationNeeded: boolean }
+  | { readonly kind: "shipped-policy"; readonly selection: ProviderSelection; readonly timeoutMs: number; readonly historyEnabled: boolean; readonly reviewAskPatterns: ReviewAskPatterns }
   | {
       readonly kind: "custom-policy"
       readonly selection: ProviderSelection
       readonly questions: ApprovalQuestions
       readonly timeoutMs: number
       readonly historyEnabled: boolean
-      readonly historyMigrationNeeded: boolean
+      readonly reviewAskPatterns: ReviewAskPatterns
     }
   | { readonly kind: "invalid"; readonly message: string }
 
@@ -237,8 +244,9 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
 
   const selection = yield* providerSelection(document.value, environmentKeys)
   const timeoutMs = document.value.permissions?.timeoutMs ?? 5_000
-  const historyEnabled = document.value.metrics?.history?.enabled ?? false
-  const historyMigrationNeeded = document.value.metrics?.enabled === true
+  const historyEnabled = document.value.metrics?.enabled ?? false
+
+  const reviewAskPatterns = document.value.permissions.reviewAskPatterns
 
   if (selection.provider === "laya") {
     const policy = document.value.providers?.laya?.policy
@@ -248,14 +256,14 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
       return yield* new ConfigFileError({ reason: "policy" })
     }
 
-    return { kind: "custom-policy" as const, selection, questions: policy.questions, timeoutMs, historyEnabled, historyMigrationNeeded }
+    return { kind: "custom-policy" as const, selection, questions: policy.questions, timeoutMs, historyEnabled, reviewAskPatterns }
   }
 
   const questions = document.value.permissions?.questions
 
-  if (questions === undefined) return { kind: "shipped-policy" as const, selection, timeoutMs, historyEnabled, historyMigrationNeeded }
+  if (questions === undefined) return { kind: "shipped-policy" as const, selection, timeoutMs, historyEnabled, reviewAskPatterns }
 
-  return { kind: "custom-policy" as const, selection, questions, timeoutMs, historyEnabled, historyMigrationNeeded }
+  return { kind: "custom-policy" as const, selection, questions, timeoutMs, historyEnabled, reviewAskPatterns }
 }, Effect.catchTag("ConfigFileError", (error) =>
   Effect.succeed({ kind: "invalid" as const, message: invalidMessage(error.reason) })))
 
