@@ -4,10 +4,17 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSy
 import { createServer } from "node:http"
 import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
+import { captureHistoryFailure, prepareHistoryTrace } from "./history-smoke-evidence.mjs"
 
 const packed = resolve(process.argv[2])
 
 const temporary = mkdtempSync(join(realpathSync("/tmp"), "jevvy-standalone-history-"))
+
+const trace = prepareHistoryTrace(temporary)
+
+const invocations = []
+
+const pending = new Set()
 
 const hook = join(temporary, "claude-hook.mjs")
 
@@ -55,12 +62,17 @@ const filename = join(root, "metrics", "history.sqlite")
 
 const sessionStart = () => {
   const before = calls
+  const startMs = Number(process.hrtime.bigint()) / 1e6
 
-  const result = spawnSync(process.execPath, [hook], {
-    env: { PATH: process.env.PATH, HOME: home, CLAUDE_CONFIG_DIR: join(home, ".claude"), JEVVY_CONFIG: configPath },
+  const result = spawnSync(process.execPath, [...trace.args, hook], {
+    env: { ...trace.env, PATH: process.env.PATH, HOME: home, CLAUDE_CONFIG_DIR: join(home, ".claude"), JEVVY_CONFIG: configPath },
     encoding: "utf8", timeout: 5000,
     input: JSON.stringify({ session_id: "not-stored", transcript_path: "/not-stored", cwd: home, hook_event_name: "SessionStart", source: "startup" }),
   })
+
+  const endMs = Number(process.hrtime.bigint()) / 1e6
+
+  invocations.push({ pid: result.pid, event: "SessionStart", expected: "setup-diagnostic-only", startMs, endMs, durationMs: endMs - startMs, code: result.status, signal: result.signal, stdoutBytes: Buffer.byteLength(result.stdout ?? ""), stderrBytes: Buffer.byteLength(result.stderr ?? "") })
 
   assert.equal(result.status, 0)
   assert.equal(result.stderr, "", "Read-only SessionStart must not load SQLite or emit warnings")
@@ -69,29 +81,45 @@ const sessionStart = () => {
   return result.stdout === "" ? undefined : JSON.parse(result.stdout).systemMessage
 }
 
-const invoke = (command, allowed = false) => new Promise((done, reject) => {
-  const started = performance.now()
-  const child = spawn(process.execPath, [hook], { env: { PATH: process.env.PATH, HOME: home, CLAUDE_CONFIG_DIR: join(home, ".claude"), JEVVY_CONFIG: configPath }, stdio: ["pipe", "pipe", "pipe"] })
-  let stdout = ""
-  let stderr = ""
-  child.stdout.on("data", (data) => { stdout += data })
-  child.stderr.on("data", (data) => { stderr += data })
-  child.on("error", reject)
-  const timeout = setTimeout(() => child.kill("SIGKILL"), 10000)
-  child.on("exit", (code) => {
-    clearTimeout(timeout)
+const invoke = (command, allowed = false) => {
+  const running = new Promise((done, reject) => {
+    const started = performance.now()
+    const startMs = Number(process.hrtime.bigint()) / 1e6
+    const expected = allowed ? "allow" : "silent-abstention"
+    const providerOutcome = answer
+    const child = spawn(process.execPath, [...trace.args, hook], { env: { ...trace.env, PATH: process.env.PATH, HOME: home, CLAUDE_CONFIG_DIR: join(home, ".claude"), JEVVY_CONFIG: configPath }, stdio: ["pipe", "pipe", "pipe"] })
+    let stdout = ""
+    let stderr = ""
+    let stdoutBytes = 0
+    let stderrBytes = 0
+    let processError
+    child.stdout.on("data", (data) => { stdout += data; stdoutBytes += data.length })
+    child.stderr.on("data", (data) => { stderr += data; stderrBytes += data.length })
+    child.on("error", (error) => { processError = error })
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 10000)
+    child.on("close", (code, signal) => {
+      clearTimeout(timeout)
+      const endMs = Number(process.hrtime.bigint()) / 1e6
+      invocations.push({ pid: child.pid, event: "PermissionRequest", command, providerOutcome, expected, startMs, endMs, durationMs: endMs - startMs, code, signal, stdoutBytes, stderrBytes })
 
-    try {
-      assert.equal(code, 0)
-      assert.equal(stderr, "", "Bundled SQLite worker warnings must not reach hook stderr")
-      assert.equal(stdout, allowed ? '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}' : "")
-      timings.push(Math.round(performance.now() - started))
-      done()
-    } catch (error) { reject(error) }
+      try {
+        if (processError) throw processError
+        assert.equal(code, 0)
+        assert.equal(stderr, "", "Bundled SQLite worker warnings must not reach hook stderr")
+        assert.equal(stdout, allowed ? '{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}' : "")
+        timings.push(Math.round(performance.now() - started))
+        done()
+      } catch (error) { reject(error) }
+    })
+    child.stdin.end(JSON.stringify({ session_id: "not-stored", prompt_id: "not-stored", transcript_path: "/not-stored", cwd: home,
+      permission_mode: "default", hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command } }))
   })
-  child.stdin.end(JSON.stringify({ session_id: "not-stored", prompt_id: "not-stored", transcript_path: "/not-stored", cwd: home,
-    permission_mode: "default", hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command } }))
-})
+
+  pending.add(running)
+  running.then(() => pending.delete(running), () => pending.delete(running))
+
+  return running
+}
 
 const rows = () => {
   const database = new DatabaseSync(filename, { readOnly: true })
@@ -173,7 +201,24 @@ try {
   await invokeStorageFault("echo unsupported-store")
   assert.equal(readFileSync(join(root, "metrics", "unknown"), "utf8"), "preserve")
   assert.equal(rows().length, 7)
+
+  if (trace.file) {
+    const events = readFileSync(trace.file, "utf8").trim().split("\n").map((line) => JSON.parse(line))
+    const closed = events.find((entry) => entry.tag === "Closed")
+    assert.ok(closed, "Trace must observe a real scoped worker close")
+    const stages = ["platform-ready", "Append", "Stored", "Close", "Closed"].map((stage) => events.find((entry) => entry.pid === closed.pid && entry.worker === closed.worker && (entry.event === stage || entry.tag === stage)))
+    assert.ok(stages.every(Boolean), "Trace must include ready, Append, Stored, Close and Closed")
+    assert.deepEqual(stages.map((entry) => entry.timeMs), stages.map((entry) => entry.timeMs).sort((left, right) => left - right))
+
+    for (const invocation of invocations.filter((entry) => ["echo metrics-off", "echo review-off"].includes(entry.command))) assert.equal(events.some((entry) => entry.pid === invocation.pid && entry.event === "spawn"), false)
+  }
+
   console.log(`Standalone Claude history passed on Node ${process.versions.node}: read-only SessionStart setup diagnostics, 7 persisted rows, disabled/OFF/busy/unsafe/unsupported-store silent; invocation milliseconds=${JSON.stringify(timings)}`)
+} catch (error) {
+  await Promise.allSettled(pending)
+  await captureHistoryFailure({ metricsPath: join(root, "metrics"), tracePath: trace.file, invocations }, error)
+
+  throw error
 } finally {
   server.closeAllConnections()
   await new Promise((done) => server.close(done))

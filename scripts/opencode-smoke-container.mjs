@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { withPermissionSmoke } from "./opencode-permission-smoke.mjs"
 import { verifyControlCommand } from "./opencode-control-smoke.mjs"
+import { captureHistoryFailure, prepareHistoryTrace } from "./history-smoke-evidence.mjs"
 
 const root = "/tmp/jevvy-opencode-smoke"
 
@@ -15,6 +16,22 @@ const project = join(root, "project")
 const home = join(root, "home")
 
 mkdirSync(root, { recursive: true, mode: 0o700 })
+
+const trace = prepareHistoryTrace(root)
+
+const invocations = []
+
+const pending = new Set()
+
+const preserveFailure = async (error) => {
+  await Promise.allSettled(pending)
+  const uid = process.env.JEVVY_SMOKE_ARTIFACT_UID
+  const gid = process.env.JEVVY_SMOKE_ARTIFACT_GID
+  const owner = /^\d+$/.test(uid ?? "") && /^\d+$/.test(gid ?? "") ? { uid: Number(uid), gid: Number(gid) } : undefined
+  await captureHistoryFailure({ metricsPath: join(root, "metrics"), tracePath: trace.file, invocations, outputRoot: "/tmp/jevvy-history-artifacts", owner }, error)
+
+  throw error
+}
 
 mkdirSync(project, { recursive: true })
 
@@ -224,7 +241,7 @@ await withPermissionSmoke(project, async (endpoint, exercise, reviewAskPatterns)
 
 const historyPath = join(root, "metrics", "history.sqlite")
 
-if (existsSync(historyPath)) throw new Error("default-off history created a database")
+if (existsSync(historyPath)) await preserveFailure(new Error("default-off history created a database"))
 
 const claudeSettings = join(root, "claude-history")
 
@@ -232,26 +249,41 @@ mkdirSync(claudeSettings, { mode: 0o700 })
 
 writeFileSync(join(claudeSettings, "settings.json"), JSON.stringify({ permissions: { ask: ["Bash(echo jevvy-claude-concurrent-*)"] } }), { mode: 0o600 })
 
-const invokeClaudeWriter = (index) => new Promise((resolve, reject) => {
-  const child = spawn(process.execPath, [join(root, "node_modules", "@jevvy", "permissions", "dist", "claude-hook.js")], {
-    env: { ...environment, CLAUDE_CONFIG_DIR: claudeSettings }, stdio: ["pipe", "pipe", "pipe"],
+const invokeClaudeWriter = (index) => {
+  const running = new Promise((resolve, reject) => {
+    const startMs = Number(process.hrtime.bigint()) / 1e6
+
+    const child = spawn(process.execPath, [...trace.args, join(root, "node_modules", "@jevvy", "permissions", "dist", "claude-hook.js")], {
+      env: { ...environment, ...trace.env, CLAUDE_CONFIG_DIR: claudeSettings }, stdio: ["pipe", "pipe", "pipe"],
+    })
+
+    let stdout = ""
+    let stderr = ""
+    let stdoutBytes = 0
+    let stderrBytes = 0
+    let processError
+    child.stdout.on("data", (chunk) => { stdout += chunk; stdoutBytes += chunk.length })
+    child.stderr.on("data", (chunk) => { stderr += chunk; stderrBytes += chunk.length })
+    child.on("error", (error) => { processError = error })
+    const timeout = setTimeout(() => child.kill("SIGKILL"), 5000)
+    child.on("close", (code, signal) => {
+      clearTimeout(timeout)
+      const endMs = Number(process.hrtime.bigint()) / 1e6
+      invocations.push({ pid: child.pid, event: "PermissionRequest", command: `echo jevvy-claude-concurrent-${index}`, expected: "silent-abstention", startMs, endMs, durationMs: endMs - startMs, code, signal, stdoutBytes, stderrBytes })
+
+      if (processError) reject(processError)
+      else if (code !== 0 || stdout !== "" || stderr !== "") reject(new Error(`Concurrent Claude writer violated silent abstention: ${code} ${stdout} ${stderr}`))
+      else resolve()
+    })
+    child.stdin.end(JSON.stringify({ session_id: "not-stored", prompt_id: "not-stored", transcript_path: "/not-stored", cwd: project,
+      permission_mode: "default", hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command: `echo jevvy-claude-concurrent-${index}` } }))
   })
 
-  let stdout = ""
-  let stderr = ""
-  child.stdout.on("data", (chunk) => { stdout += chunk })
-  child.stderr.on("data", (chunk) => { stderr += chunk })
-  child.on("error", reject)
-  const timeout = setTimeout(() => child.kill("SIGKILL"), 5000)
-  child.on("exit", (code) => {
-    clearTimeout(timeout)
+  pending.add(running)
+  running.then(() => pending.delete(running), () => pending.delete(running))
 
-    if (code !== 0 || stdout !== "" || stderr !== "") reject(new Error(`Concurrent Claude writer violated silent abstention: ${code} ${stdout} ${stderr}`))
-    else resolve()
-  })
-  child.stdin.end(JSON.stringify({ session_id: "not-stored", prompt_id: "not-stored", transcript_path: "/not-stored", cwd: project,
-    permission_mode: "default", hook_event_name: "PermissionRequest", tool_name: "Bash", tool_input: { command: `echo jevvy-claude-concurrent-${index}` } }))
-})
+  return running
+}
 
 let historyPasses = 0
 
@@ -270,37 +302,41 @@ await withPermissionSmoke(project, async (endpoint, exercise, reviewAskPatterns)
     exercise(api),
     Promise.all([1, 2, 3].map((index) => invokeClaudeWriter(pass * 4 + index))),
   ]))
-})
+}).catch(preserveFailure)
 
 const { DatabaseSync } = await import("node:sqlite")
 
-const history = new DatabaseSync(historyPath, { readOnly: true })
+const verifyHistory = async () => {
+  const history = new DatabaseSync(historyPath, { readOnly: true })
 
-try {
-  const rows = history.prepare("SELECT command, effect, reason, model, latency_ms FROM events").all()
+  try {
+    const rows = history.prepare("SELECT command, effect, reason, model, latency_ms FROM events").all()
 
-  if (!rows.some((row) => row.command === "echo jevvy-reviewed" && row.effect === "allow" && row.reason === "judged" && row.model === "smoke-model")) throw new Error("packed worker did not retain the real boundary judgment")
+    if (!rows.some((row) => row.command === "echo jevvy-reviewed" && row.effect === "allow" && row.reason === "judged" && row.model === "smoke-model")) throw new Error("packed worker did not retain the real boundary judgment")
 
-  if (!rows.some((row) => row.reason === "explicit-ask" && row.model === null && row.latency_ms === null)) throw new Error("packed worker did not retain a truthful explicit-ask skip")
+    if (!rows.some((row) => row.reason === "explicit-ask" && row.model === null && row.latency_ms === null)) throw new Error("packed worker did not retain a truthful explicit-ask skip")
 
-  if (!rows.some((row) => row.reason === "unavailable")) throw new Error("packed worker did not retain an unavailable review")
+    if (!rows.some((row) => row.reason === "unavailable")) throw new Error("packed worker did not retain an unavailable review")
 
-  const claudeRows = rows.filter((row) => String(row.command).startsWith("echo jevvy-claude-concurrent-"))
+    const claudeRows = rows.filter((row) => String(row.command).startsWith("echo jevvy-claude-concurrent-"))
 
-  const expected = Array.from({ length: historyPasses * 4 }, (_, index) => `echo jevvy-claude-concurrent-${index}`)
-  const observed = claudeRows.map((row) => row.command)
-  const missing = expected.filter((command) => !observed.includes(command))
-  const invalid = claudeRows.filter((row) => !expected.includes(row.command) || row.reason !== "explicit-ask" || row.effect !== "ask" || row.model !== null || row.latency_ms !== null)
+    const expected = Array.from({ length: historyPasses * 4 }, (_, index) => `echo jevvy-claude-concurrent-${index}`)
+    const observed = claudeRows.map((row) => row.command)
+    const missing = expected.filter((command) => !observed.includes(command))
+    const invalid = claudeRows.filter((row) => !expected.includes(row.command) || row.reason !== "explicit-ask" || row.effect !== "ask" || row.model !== null || row.latency_ms !== null)
 
-  if (claudeRows.length !== expected.length || new Set(observed).size !== expected.length || missing.length > 0 || invalid.length > 0) throw new Error(`best-effort host history did not match the normal-envelope fixture: ${JSON.stringify({ expected: expected.length, observed: claudeRows.length, unique: new Set(observed).size, missing, invalid })}`)
+    if (claudeRows.length !== expected.length || new Set(observed).size !== expected.length || missing.length > 0 || invalid.length > 0) throw new Error(`best-effort host history did not match the normal-envelope fixture: ${JSON.stringify({ expected: expected.length, observed: claudeRows.length, unique: new Set(observed).size, missing, invalid })}`)
 
-  if (rows.some((row) => String(row.command).startsWith("echo jevvy-allowed") || String(row.command).startsWith("echo jevvy-denied"))) throw new Error("native finalized outcomes entered history")
-} finally { history.close() }
+    if (rows.some((row) => String(row.command).startsWith("echo jevvy-allowed") || String(row.command).startsWith("echo jevvy-denied"))) throw new Error("native finalized outcomes entered history")
+  } finally { history.close() }
+}
+
+await verifyHistory().catch(preserveFailure)
 
 const writers = spawnSync(process.execPath, ["/tmp/history-writer-smoke.mjs", join(root, "node_modules", "@jevvy", "permissions")], {
   env: { ...environment, BUN_BIN: join(root, "node_modules", ".bin", "bun") }, stdio: "inherit", timeout: 60_000,
 })
 
-if (writers.status !== 0) throw new Error(`acknowledged mixed-runtime writer smoke failed: ${writers.status}`)
+if (writers.status !== 0) await preserveFailure(new Error(`acknowledged mixed-runtime writer smoke failed: ${writers.status}`))
 
 console.log(`OpenCode ${opencodeVersion} host smoke passed: setup diagnostics, activation, real shell permission review, packed worker history OFF/ON, concurrent Node Claude and Bun OpenCode SQLite writers, disposal`)

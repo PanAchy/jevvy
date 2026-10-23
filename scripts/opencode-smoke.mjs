@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process"
-import { mkdtempSync, readdirSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -9,6 +9,10 @@ import { fileURLToPath } from "node:url"
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 
 const temporary = mkdtempSync(join(tmpdir(), "jevvy-opencode-smoke-"))
+
+const artifacts = join(root, ".agents", "smoke-artifacts")
+
+mkdirSync(artifacts, { recursive: true, mode: 0o700 })
 
 try {
   const pack = spawnSync(
@@ -34,6 +38,14 @@ try {
       "host",
       "--env",
       `JEVVY_OPENCODE_VERSION=${process.env.JEVVY_OPENCODE_VERSION ?? "2.1.3"}`,
+      "--env",
+      `JEVVY_SMOKE_TRACE=${process.env.JEVVY_SMOKE_TRACE ?? "0"}`,
+      "--env",
+      `JEVVY_SMOKE_ARTIFACT_UID=${process.getuid?.() ?? ""}`,
+      "--env",
+      `JEVVY_SMOKE_ARTIFACT_GID=${process.getgid?.() ?? ""}`,
+      "--volume",
+      `${artifacts}:/tmp/jevvy-history-artifacts`,
       "--volume",
       `${join(temporary, tarball)}:/tmp/jevvy.tgz:ro`,
       "--volume",
@@ -44,6 +56,10 @@ try {
       `${join(root, "scripts", "opencode-control-smoke.mjs")}:/tmp/opencode-control-smoke.mjs:ro`,
       "--volume",
       `${join(root, "scripts", "history-writer-smoke.mjs")}:/tmp/history-writer-smoke.mjs:ro`,
+      "--volume",
+      `${join(root, "scripts", "history-smoke-evidence.mjs")}:/tmp/history-smoke-evidence.mjs:ro`,
+      "--volume",
+      `${join(root, "scripts", "history-worker-trace.mjs")}:/tmp/history-worker-trace.mjs:ro`,
       "node:24-bookworm-slim",
       "node",
       "/tmp/smoke.mjs",
