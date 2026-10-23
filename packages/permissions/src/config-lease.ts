@@ -1,6 +1,8 @@
 import * as fs from "node:fs"
 import type { BigIntStats, PathLike } from "node:fs"
-import { Clock, Effect, Schema } from "effect"
+import * as Clock from "effect/Clock"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
 import lockfile from "proper-lockfile"
 
 export class ConfigLeaseError extends Schema.TaggedError<ConfigLeaseError>()("ConfigLeaseError", {
@@ -10,7 +12,7 @@ export class ConfigLeaseError extends Schema.TaggedError<ConfigLeaseError>()("Co
 const sameOwner = (owner: BigIntStats, current: BigIntStats) =>
   owner.dev === current.dev && owner.ino === current.ino && owner.birthtimeNs === current.birthtimeNs
 
-export const acquireConfigLease = Effect.fn("ConfigLease.acquire")(function*(path: string) {
+export const acquireConfigLease = Effect.fn("ConfigLease.acquire")(function*(path: string, retries = 20) {
   const clock = yield* Clock.Clock
   const lockPath = `${path}.review-lock`
   let compromised = false
@@ -26,6 +28,7 @@ export const acquireConfigLease = Effect.fn("ConfigLease.acquire")(function*(pat
 
   const leaseFileSystem = {
     ...fs,
+    mkdir: (target: PathLike, callback: fs.NoParamCallback) => fs.mkdir(target, { mode: 0o700 }, callback),
     rmdirSync: releaseDirectory,
     rmdir: (target: PathLike, callback: (error?: NodeJS.ErrnoException | null) => void) => {
       try {
@@ -44,7 +47,7 @@ export const acquireConfigLease = Effect.fn("ConfigLease.acquire")(function*(pat
         lockfilePath: lockPath,
         stale: 10_000,
         update: 2000,
-        retries: { retries: 20, minTimeout: 50, maxTimeout: 100, factor: 1.2 },
+        retries: { retries, minTimeout: 50, maxTimeout: 100, factor: 1.2 },
         onCompromised: () => { compromised = true },
         fs: leaseFileSystem,
       }),
@@ -60,8 +63,8 @@ export const acquireConfigLease = Effect.fn("ConfigLease.acquire")(function*(pat
     catch: () => new ConfigLeaseError({ operation: "write" }),
   })
 
-  const replace = Effect.fn("ConfigLease.replace")(function*(temporary: string) {
-    yield* Effect.try({
+  const withOwnership = Effect.fn("ConfigLease.withOwnership")(function*<A>(operation: () => A) {
+    return yield* Effect.try({
       try: () => {
         const current = fs.statSync(lockPath, { bigint: true })
 
@@ -69,11 +72,13 @@ export const acquireConfigLease = Effect.fn("ConfigLease.acquire")(function*(pat
           throw new ConfigLeaseError({ operation: "write" })
         }
 
-        fs.renameSync(temporary, path)
+        return operation()
       },
       catch: () => new ConfigLeaseError({ operation: "write" }),
     })
   })
 
-  return { replace }
+  const replace = (temporary: string) => withOwnership(() => fs.renameSync(temporary, path))
+
+  return { replace, withOwnership }
 })

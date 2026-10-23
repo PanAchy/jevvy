@@ -6,6 +6,9 @@ import { acquireClaudeReviewer, createClaudeHookHandler, loadClaudeConfiguration
 import { globalJevvyConfigPath } from "../config.ts"
 import { createReviewControl } from "../review-control.ts"
 import { loadAskRules } from "./ask-rules.ts"
+import { createHistoryObserver } from "../history/observer.ts"
+import { claudeHistoryWorkersLayer } from "../history/history-transport.ts"
+import { checkClaudeHistorySetup } from "./history-setup.ts"
 
 const readStdin = async (): Promise<string> => {
   process.stdin.setEncoding("utf8")
@@ -23,7 +26,9 @@ const run = async (): Promise<void> => {
 
     const output = await Effect.runPromise(Effect.gen(function*() {
       const control = yield* createReviewControl(globalJevvyConfigPath())
-      const handle = createClaudeHookHandler(loadClaudeConfiguration, acquireClaudeReviewer, loadAskRules, control)
+
+      const handle = createClaudeHookHandler(loadClaudeConfiguration, acquireClaudeReviewer, loadAskRules, control,
+        (configuration) => createHistoryObserver({ ...configuration, lifetime: "invocation", report: () => {} }).pipe(Effect.provide(claudeHistoryWorkersLayer)), checkClaudeHistorySetup)
 
       return yield* handle(raw)
     }).pipe(Effect.provide(NodeServices.layer)))

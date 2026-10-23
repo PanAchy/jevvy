@@ -1,4 +1,6 @@
 import * as Effect from "effect/Effect"
+import * as Cause from "effect/Cause"
+import type * as Scope from "effect/Scope"
 import { globalJevvyConfigPath, loadJevvyConfig } from "../config.ts"
 import { createPermissionReviewer } from "../engine.ts"
 import type { PermissionReviewer } from "../engine.ts"
@@ -8,8 +10,11 @@ import {
   providerDisplayName,
 } from "../providers.ts"
 import type { BuiltInProvider } from "../providers.ts"
-import { hasHostAsk } from "./ask-rules.ts"
-import { createClaudeEvaluate, decodeClaudeHookEvent, sessionStartOutput } from "./evaluate.ts"
+import { inspectAskEligibility } from "./ask-rules.ts"
+import { decodeClaudeHookEvent, permissionAllowOutput, sessionStartOutput } from "./evaluate.ts"
+import type { HistoryObserver } from "../history.ts"
+import { observeReview } from "../history.ts"
+import type { JevProvider } from "../core.ts"
 import type { ClaudeHookOutput } from "./evaluate.ts"
 import { withReviewEnabled } from "../review-control.ts"
 import type { ReviewControl } from "../review-control.ts"
@@ -19,10 +24,18 @@ export type ClaudeReviewerSetup =
   | { readonly kind: "unavailable"; readonly message: string }
 
 export type ClaudeConfigurationLoader<C, E, R = never> = () => Effect.Effect<
-  { readonly kind: "configured"; readonly reviewAskPatterns: readonly string[]; readonly configuration: C }
+  { readonly kind: "configured"; readonly reviewAskPatterns: readonly string[]; readonly configuration: C; readonly history?: ClaudeHistoryConfiguration }
   | { readonly kind: "unavailable"; readonly message: string }, E, R>
 
 export type ClaudeAskLoader<R = never> = (cwd: string) => Effect.Effect<readonly string[] | undefined, never, R>
+
+export interface ClaudeHistoryConfiguration {
+  readonly enabled: boolean
+  readonly configPath: string
+  readonly provider: JevProvider
+}
+
+export type ClaudeHistoryLoader = (configuration: ClaudeHistoryConfiguration) => Effect.Effect<HistoryObserver | undefined, never, Scope.Scope>
 
 const setupWarning = (summary: string, actions: readonly string[]): string => [
   "\n⚠ Jevvy setup required!",
@@ -65,7 +78,12 @@ export const loadClaudeConfiguration = Effect.fn("ClaudeCode.loadConfiguration")
     return { kind: "unavailable", message: missingClaudeConfigurationMessage(configPath) } as const
   }
 
-  return { kind: "configured", reviewAskPatterns: config.reviewAskPatterns.claude, configuration: { config, configPath } } as const
+  return {
+    kind: "configured",
+    reviewAskPatterns: config.reviewAskPatterns.claude,
+    configuration: { config, configPath },
+    history: { enabled: config.historyEnabled, configPath, provider: config.selection.provider },
+  } as const
 })
 
 export const acquireClaudeReviewer = Effect.fn("ClaudeCode.acquireReviewer")(function*(
@@ -102,13 +120,15 @@ export const createClaudeHookHandler = <C, E, R, ReviewerE, ReviewerR, AsksR>(
   acquireReviewer: (configuration: C) => Effect.Effect<ClaudeReviewerSetup, ReviewerE, ReviewerR>,
   loadAsks: ClaudeAskLoader<AsksR>,
   control?: Pick<ReviewControl, "read">,
+  loadHistory?: ClaudeHistoryLoader,
+  checkHistory?: (configuration: ClaudeHistoryConfiguration) => Effect.Effect<string | undefined>,
 ): ((raw: string) => Effect.Effect<ClaudeHookOutput | undefined, never, R | ReviewerR | AsksR>) =>
   Effect.fn("ClaudeCode.handleHookEvent")(function*(raw) {
     const event = decodeClaudeHookEvent(raw)
 
     if (event === undefined) return undefined
 
-    const review = Effect.gen(function*() {
+    const review = Effect.scoped(Effect.gen(function*() {
       const asks = event.hook_event_name === "PermissionRequest" ? yield* loadAsks(event.cwd) : []
 
       if (asks === undefined) return undefined
@@ -122,8 +142,29 @@ export const createClaudeHookHandler = <C, E, R, ReviewerE, ReviewerR, AsksR>(
 
       if (loaded === undefined) return undefined
 
-      if (loaded.kind === "configured" && event.hook_event_name === "PermissionRequest" &&
-        hasHostAsk(event.tool_input.command, asks, loaded.reviewAskPatterns)) return undefined
+      const eligibility = loaded.kind === "configured" && event.hook_event_name === "PermissionRequest"
+        ? inspectAskEligibility(event.tool_input.command, asks, loaded.reviewAskPatterns)
+        : "review"
+
+      if (eligibility === "unreliable") return undefined
+
+      const historyConfig = loaded.kind === "configured" ? loaded.history : undefined
+
+      const observer = event.hook_event_name === "PermissionRequest" && historyConfig?.enabled === true && loadHistory !== undefined
+        ? yield* Effect.suspend(() => loadHistory(historyConfig)).pipe(
+          Effect.catchCauseIf((cause) => !Cause.hasInterrupts(cause), () => Effect.succeed(undefined)),
+        )
+        : undefined
+
+      const history = observer !== undefined && historyConfig !== undefined ? { observer, provider: historyConfig.provider } : undefined
+
+      if (eligibility === "host-ask") {
+        if (event.hook_event_name === "PermissionRequest") {
+          yield* observeReview(event.tool_input.command, Effect.succeed("explicit-ask" as const), history)
+        }
+
+        return undefined
+      }
 
       const setup = loaded.kind === "unavailable" ? loaded : yield* acquireReviewer(loaded.configuration).pipe(
         Effect.match({ onFailure: () => undefined, onSuccess: (ready) => ready }),
@@ -132,13 +173,19 @@ export const createClaudeHookHandler = <C, E, R, ReviewerE, ReviewerR, AsksR>(
       if (setup === undefined) return undefined
 
       if (event.hook_event_name === "SessionStart") {
-        return sessionStartOutput(setup.kind === "unavailable" ? setup.message : undefined)
+        const historyProblem = historyConfig?.enabled === true && checkHistory !== undefined ? yield* checkHistory(historyConfig) : undefined
+        const messages = [setup.kind === "unavailable" ? setup.message : undefined, historyProblem].filter((message) => message !== undefined)
+
+        return sessionStartOutput(messages.length === 0 ? undefined : messages.join("\n\n"))
       }
 
       if (setup.kind === "unavailable") return undefined
 
-      return yield* createClaudeEvaluate(setup.reviewer)(event)
-    })
+      const result = yield* observeReview(event.tool_input.command,
+        setup.reviewer.review({ action: "shell", resources: [event.tool_input.command] }), history)
+
+      return result.effect === "allow" ? permissionAllowOutput : undefined
+    }))
 
     if (event.hook_event_name === "PermissionRequest" && control !== undefined) {
       return yield* withReviewEnabled(control, "claude", review)

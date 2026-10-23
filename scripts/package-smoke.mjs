@@ -4,7 +4,7 @@
 // both internal workspaces remain implementation details.
 
 import { execFileSync, spawnSync } from "node:child_process"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
@@ -95,6 +95,18 @@ try {
   const readme = readFileSync(join(permissionsRoot, "README.md"), "utf8")
 
   ensure(existsSync(coreBundle), "permissions is missing its bundled core")
+  const core = await import(pathToFileURL(coreBundle))
+  const schemas = await import(pathToFileURL(join(permissionsRoot, "dist", "core-schemas.js")))
+
+  for (const name of ["JevProvider", "JevProviderErrorKind", "NoulAnswer"]) ensure(core[name] === schemas[name], `packed schema-only entry duplicated ${name}`)
+
+  const metadataPath = join(permissionsRoot, "dist", "history", "metadata-values.js")
+  const { historyMetadata } = await import(pathToFileURL(metadataPath))
+  const { createHistoryMetadata } = await import(pathToFileURL(join(permissionsRoot, "dist", "history", "metadata.js")))
+
+  ensure(Object.isFrozen(historyMetadata), "packed history metadata is mutable")
+  ensure(JSON.stringify(historyMetadata) === JSON.stringify(createHistoryMetadata()), "packed history metadata differs from the authoritative schemas")
+  ensure(!readFileSync(metadataPath, "utf8").includes("createHistoryMetadata"), "packed history metadata still generates schemas at runtime")
   ensure(
     readme.includes("https://raw.githubusercontent.com/PanAchy/jevvy/main/assets/jevvy-demo.gif"),
     "permissions README is missing its public OpenCode demo URL",
@@ -155,6 +167,7 @@ try {
   const standaloneHook = join(temporary, "claude-hook.mjs")
 
   writeFileSync(standaloneHook, readFileSync(claudeBundle))
+  writeFileSync(join(temporary, "claude-history-worker.js"), readFileSync(join(permissionsRoot, "dist", "claude-history-worker.js")))
 
   const hookEnvironment = { ...npmEnvironment, JEVVY_CONFIG: join(temporary, "missing-jevvy.jsonc") }
 
@@ -209,6 +222,15 @@ try {
   )
   ensure(setupNotification.hookSpecificOutput === undefined, "Claude Code setup notification made a permission decision")
 
+  if (process.platform !== "win32") {
+    const writerSmoke = spawnSync(process.execPath, [join(repo, "scripts", "history-writer-smoke.mjs"), permissionsRoot, "--node-only"], { encoding: "utf8", timeout: 30000 })
+    ensure(writerSmoke.status === 0, `Positive packed Node writer failed: ${writerSmoke.stdout}\n${writerSmoke.stderr}`)
+    console.log(writerSmoke.stdout.trim())
+    const historySmoke = spawnSync(process.execPath, [join(repo, "scripts", "claude-history-smoke.mjs"), permissionsRoot], { encoding: "utf8", timeout: 30000 })
+    ensure(historySmoke.status === 0, `Standalone Claude history failed: ${historySmoke.stdout}\n${historySmoke.stderr}`)
+    console.log(historySmoke.stdout.trim())
+  }
+
   const effect = await import(pathToFileURL(join(consumer, "node_modules", "effect", "dist", "index.js")).href)
 
   const engine = await import(pathToFileURL(join(permissionsRoot, "dist", "engine.js")).href)
@@ -228,6 +250,47 @@ try {
   const review = await effect.Effect.runPromise(reviewer.review({ action: "shell", resources: ["pwd"] }))
 
   ensure(review.effect === "allow", `installed permission engine returned ${String(review.effect)}`)
+
+  const history = await import(pathToFileURL(join(permissionsRoot, "dist", "history", "observer.js")).href)
+  const historyTransport = await import(pathToFileURL(join(permissionsRoot, "dist", "history", "history-transport.js")).href)
+
+  ensure(historyMetadata["AGENTS.md"].startsWith("# Jevvy Permissions review history v1"), "packed history instructions are missing")
+
+  if (process.platform !== "win32") {
+    const { DatabaseSync } = await import("node:sqlite")
+    const fixture = join(realpathSync(temporary), "history-fixture")
+    const root = join(fixture, "metrics")
+    const filename = join(root, "history.sqlite")
+
+    mkdirSync(fixture, { mode: 0o700 })
+    await effect.Effect.runPromise(effect.Effect.scoped(effect.Effect.gen(function*() {
+      const observer = yield* history.createHistoryObserver({ enabled: true, lifetime: "invocation", configPath: join(fixture, "jevvy.jsonc"), report: () => undefined }).pipe(effect.Effect.provide(historyTransport.historyWorkersLayer))
+
+      ensure(observer !== undefined, "packed history observer did not start")
+      yield* observer.observe({ command: "packed-fixture-command", result: "explicit-ask", provider: "custom", tsMs: 0, latencyMs: null })
+
+      for (let attempt = 0; attempt < 200; attempt++) {
+        try {
+          const db = new DatabaseSync(filename, { readOnly: true })
+
+          try {
+            if (db.prepare("SELECT count(*) AS count FROM events").get()?.count === 1) return
+          } finally { db.close() }
+        } catch {}
+
+        yield* effect.Effect.sleep("25 millis")
+      }
+
+      throw new Error("packed history worker did not persist a synthetic event")
+    })))
+
+    const schema = JSON.parse(readFileSync(join(root, "event.schema.json"), "utf8"))
+
+    ensure(schema.additionalProperties === false, "packed history schema is not closed")
+    ensure(readFileSync(join(root, "schema.sql"), "utf8").includes("CREATE TABLE events"), "packed history SQL schema is missing")
+    ensure(readFileSync(join(root, "AGENTS.md"), "utf8") === historyMetadata["AGENTS.md"], "packed history instructions were not installed")
+    ensure(!existsSync(join(fixture, "jevvy.jsonc")), "history wrote provider configuration")
+  }
 
   const permissions = await import(pathToFileURL(join(permissionsRoot, "dist", "index.js")).href)
 

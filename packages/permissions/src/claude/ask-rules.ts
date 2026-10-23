@@ -173,23 +173,32 @@ const literalCommandParts = (command: string): readonly string[] | undefined => 
   return parts.every((part) => part.length > 0 && !isIndirectCommand(part)) ? parts : undefined
 }
 
-export const hasHostAsk = (command: string, rules: readonly string[], reviewAskPatterns: readonly string[] = []): boolean => {
+export const inspectAskEligibility = (command: string, rules: readonly string[], reviewAskPatterns: readonly string[] = []): "review" | "host-ask" | "unreliable" => {
   const parts = literalCommandParts(command)
+  let unreliable = false
 
-  return rules.some((rule) => {
+  for (const rule of rules) {
     const ask = classifyAskRule(rule)
 
     switch (ask.kind) {
       case "review":
       case "other-tool":
-        return false
+        break
       case "host":
-        return true
+        unreliable = true
+        break
       case "host-tool":
-        return !reviewAskPatterns.includes(rule)
+        if (!reviewAskPatterns.includes(rule)) return "host-ask"
+        break
       case "host-command":
-        return parts === undefined || (!reviewAskPatterns.includes(rule) &&
-          (globMatch(command, ask.pattern) || parts.some((part) => globMatch(part, ask.pattern))))
+        if (parts === undefined) unreliable = true
+        else if (!reviewAskPatterns.includes(rule) &&
+          (globMatch(command, ask.pattern) || parts.some((part) => globMatch(part, ask.pattern)))) return "host-ask"
     }
-  })
+  }
+
+  return unreliable ? "unreliable" : "review"
 }
+
+export const hasHostAsk = (command: string, rules: readonly string[], reviewAskPatterns: readonly string[] = []): boolean =>
+  inspectAskEligibility(command, rules, reviewAskPatterns) !== "review"

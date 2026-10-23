@@ -56,6 +56,9 @@ interface ReviewAskPatterns extends Schema.Schema.Type<typeof ReviewAskPatternSe
 const JevvyConfigSchema = Schema.Struct({
   $schema: Schema.optionalKey(Schema.String),
   provider: JevProvider,
+  metrics: Schema.optionalKey(Schema.Struct({
+    enabled: Schema.optionalKey(Schema.Boolean),
+  })),
   providers: Schema.optionalKey(Schema.Struct({
     zen: Schema.optionalKey(SystemOnePresetSettings),
     typesafe: Schema.optionalKey(SystemOnePresetSettings),
@@ -79,12 +82,13 @@ interface ConfigDocument extends Schema.Schema.Type<typeof JevvyConfigSchema> {}
 
 export type JevvyConfig =
   | { readonly kind: "unconfigured" }
-  | { readonly kind: "shipped-policy"; readonly selection: ProviderSelection; readonly timeoutMs: number; readonly reviewAskPatterns: ReviewAskPatterns }
+  | { readonly kind: "shipped-policy"; readonly selection: ProviderSelection; readonly timeoutMs: number; readonly historyEnabled: boolean; readonly reviewAskPatterns: ReviewAskPatterns }
   | {
       readonly kind: "custom-policy"
       readonly selection: ProviderSelection
       readonly questions: ApprovalQuestions
       readonly timeoutMs: number
+      readonly historyEnabled: boolean
       readonly reviewAskPatterns: ReviewAskPatterns
     }
   | { readonly kind: "invalid"; readonly message: string }
@@ -240,6 +244,7 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
 
   const selection = yield* providerSelection(document.value, environmentKeys)
   const timeoutMs = document.value.permissions?.timeoutMs ?? 5_000
+  const historyEnabled = document.value.metrics?.enabled ?? false
 
   const reviewAskPatterns = document.value.permissions.reviewAskPatterns
 
@@ -251,14 +256,14 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
       return yield* new ConfigFileError({ reason: "policy" })
     }
 
-    return { kind: "custom-policy" as const, selection, questions: policy.questions, timeoutMs, reviewAskPatterns }
+    return { kind: "custom-policy" as const, selection, questions: policy.questions, timeoutMs, historyEnabled, reviewAskPatterns }
   }
 
   const questions = document.value.permissions?.questions
 
-  if (questions === undefined) return { kind: "shipped-policy" as const, selection, timeoutMs, reviewAskPatterns }
+  if (questions === undefined) return { kind: "shipped-policy" as const, selection, timeoutMs, historyEnabled, reviewAskPatterns }
 
-  return { kind: "custom-policy" as const, selection, questions, timeoutMs, reviewAskPatterns }
+  return { kind: "custom-policy" as const, selection, questions, timeoutMs, historyEnabled, reviewAskPatterns }
 }, Effect.catchTag("ConfigFileError", (error) =>
   Effect.succeed({ kind: "invalid" as const, message: invalidMessage(error.reason) })))
 

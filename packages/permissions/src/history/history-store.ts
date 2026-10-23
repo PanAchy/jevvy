@@ -1,0 +1,127 @@
+import * as Effect from "effect/Effect"
+import * as Schedule from "effect/Schedule"
+import * as Schema from "effect/Schema"
+import * as Option from "effect/Option"
+import * as Predicate from "effect/Predicate"
+import * as Function from "effect/Function"
+import * as SqlClient from "effect/sql/SqlClient"
+import type * as SqlError from "effect/sql/SqlError"
+import { HISTORY_BATCH_BYTES, HISTORY_BATCH_ROWS, HISTORY_EVENT_BYTES, HISTORY_LOGICAL_BYTES, HISTORY_ROWS, HistoryEvent, HistoryStorageError, StoredHistoryRow, eventBytes } from "../history.ts"
+
+import { historySchema } from "./schema.ts"
+
+const sqliteCode = (error: SqlError.SqlError): number => {
+  const parsed = Schema.decodeUnknownOption(Schema.Struct({ errno: Schema.Int }))(error.reason.cause)
+
+  return Option.isSome(parsed) ? parsed.value.errno & 255 : 0
+}
+
+const isBusy = (error: SqlError.SqlError | HistoryStorageError): boolean => !(error instanceof HistoryStorageError) && Predicate.isTagged(error.reason, "LockTimeoutError")
+
+const classify = (error: SqlError.SqlError): HistoryStorageError =>
+  new HistoryStorageError({ kind: isBusy(error) ? "busy" : "storage" })
+
+const singleRow = <S extends Schema.Top>(row: S) => Schema.Array(row).check(Schema.isMinLength(1), Schema.isMaxLength(1))
+
+const decodeBoundary = <S extends Schema.Top & { readonly DecodingServices: never }>(schema: S) =>
+  Function.flow(Schema.decodeUnknownEffect(schema), Effect.mapError(() => new HistoryStorageError({ kind: "unsupported-schema" })))
+
+const pruneCapacity = Effect.fn("ReviewHistory.pruneCapacity")(function*() {
+  const sql = yield* SqlClient.SqlClient
+
+  const totals = yield* sql`SELECT COUNT(*) AS rows, COALESCE(SUM(event_bytes), 0) AS bytes FROM events`.pipe(
+    Effect.flatMap(decodeBoundary(singleRow(Schema.Struct({ rows: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)), bytes: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)) })))),
+  )
+
+  if (totals[0] !== undefined && totals[0].rows <= HISTORY_ROWS && totals[0].bytes <= HISTORY_LOGICAL_BYTES) return
+  yield* sql`DELETE FROM events WHERE id IN (
+    SELECT id FROM (
+      SELECT id, ROW_NUMBER() OVER (ORDER BY ts DESC, id DESC) AS position,
+        SUM(event_bytes) OVER (ORDER BY ts DESC, id DESC ROWS UNBOUNDED PRECEDING) AS bytes
+      FROM events
+    ) WHERE position > ${HISTORY_ROWS} OR bytes > ${HISTORY_LOGICAL_BYTES}
+  )`
+})
+
+export const initializeHistory = Effect.fn("ReviewHistory.initialize")(function*() {
+  const sql = yield* SqlClient.SqlClient
+  const mode = yield* sql.unsafe("PRAGMA journal_mode").pipe(Effect.flatMap(decodeBoundary(singleRow(Schema.Struct({ journal_mode: Schema.String })))))
+
+  if (mode[0]?.journal_mode !== "delete") return yield* new HistoryStorageError({ kind: "unsupported-schema" })
+  yield* sql.unsafe("PRAGMA page_size=4096")
+  yield* sql.unsafe("PRAGMA synchronous=FULL")
+  yield* sql.unsafe("PRAGMA secure_delete=ON")
+  yield* sql.unsafe("PRAGMA temp_store=MEMORY")
+  yield* sql.unsafe("PRAGMA journal_size_limit=0")
+  yield* sql.unsafe("PRAGMA trusted_schema=OFF")
+  yield* sql.unsafe("PRAGMA max_page_count=8192")
+  const settings = { page_size: 4096, max_page_count: 8192, synchronous: 2, secure_delete: 1, temp_store: 2, journal_size_limit: 0, trusted_schema: 0, busy_timeout: 25 }
+
+  for (const [pragma, expected] of Object.entries(settings)) {
+    const raw = yield* sql.unsafe(`PRAGMA ${pragma}`)
+    const rows = yield* decodeBoundary(singleRow(Schema.Record(Schema.String, Schema.Finite)))(raw)
+
+    if (rows[0]?.[pragma === "busy_timeout" ? "timeout" : pragma] !== expected) return yield* new HistoryStorageError({ kind: "unsupported-schema" })
+  }
+
+  yield* sql.withTransaction(Effect.gen(function*() {
+    const application = yield* sql.unsafe("PRAGMA application_id").pipe(Effect.flatMap(decodeBoundary(singleRow(Schema.Struct({ application_id: Schema.Int })))))
+    const version = yield* sql.unsafe("PRAGMA user_version").pipe(Effect.flatMap(decodeBoundary(singleRow(Schema.Struct({ user_version: Schema.Int })))))
+    const definitions = yield* sql`SELECT name, sql FROM sqlite_schema ORDER BY name`.pipe(Effect.flatMap(decodeBoundary(Schema.Array(Schema.Struct({ name: Schema.String, sql: Schema.NullOr(Schema.String) })))))
+
+    if (definitions.length === 0 && application[0]?.application_id === 0 && version[0]?.user_version === 0) {
+      yield* sql.unsafe(historySchema.table)
+      yield* sql.unsafe(historySchema.index)
+      yield* sql.unsafe("PRAGMA application_id=1246058070")
+      yield* sql.unsafe("PRAGMA user_version=1")
+    } else if (application[0]?.application_id !== 1246058070 || version[0]?.user_version !== 1 || definitions.length !== 3 ||
+      definitions[0]?.name !== "events" || definitions[0]?.sql !== historySchema.table ||
+      definitions[1]?.name !== "events_ts" || definitions[1]?.sql !== historySchema.index ||
+      definitions[2]?.name !== "sqlite_autoindex_events_1" || definitions[2]?.sql !== null) {
+      return yield* new HistoryStorageError({ kind: "unsupported-schema" })
+    }
+
+    const integrity = yield* sql.unsafe("PRAGMA quick_check(1)").pipe(Effect.flatMap(decodeBoundary(singleRow(Schema.Struct({ quick_check: Schema.String })))))
+
+    if (integrity[0]?.quick_check !== "ok") return yield* new HistoryStorageError({ kind: "storage" })
+    yield* pruneCapacity()
+  }))
+}, Effect.mapError((error) => error instanceof HistoryStorageError ? error : classify(error)))
+
+export const appendHistory = Effect.fn("ReviewHistory.append")(function*(events: readonly HistoryEvent[]) {
+  if (events.length === 0 || events.length > HISTORY_BATCH_ROWS) return yield* new HistoryStorageError({ kind: "worker" })
+
+  const sql = yield* SqlClient.SqlClient
+  let bytes = 0
+  const rows: Array<typeof StoredHistoryRow.Encoded> = []
+
+  for (const event of events) {
+    yield* Schema.decodeUnknownEffect(HistoryEvent, { onExcessProperty: "error" })(event).pipe(Effect.mapError(() => new HistoryStorageError({ kind: "storage" })))
+    const size = eventBytes(event)
+    bytes += size
+
+    if (size > HISTORY_EVENT_BYTES || bytes > HISTORY_BATCH_BYTES) return yield* new HistoryStorageError({ kind: "oversized" })
+    rows.push(yield* Schema.encodeEffect(StoredHistoryRow, { onExcessProperty: "error" })({
+      id: event.id, ts: event.ts, effect: event.effect, reason: event.reason, command: event.command, model: event.model,
+      latency_ms: event.latencyMs, detail_json: event.detail, event_bytes: size,
+    }).pipe(Effect.mapError(() => new HistoryStorageError({ kind: "storage" }))))
+  }
+
+  const write = sql.withTransaction(Effect.gen(function*() {
+    for (const row of rows) {
+      yield* sql`INSERT OR IGNORE INTO events (id, ts, effect, reason, command, model, latency_ms, detail_json, event_bytes)
+        VALUES (${row.id}, ${row.ts}, ${row.effect}, ${row.reason}, ${row.command}, ${row.model}, ${row.latency_ms}, ${row.detail_json}, ${row.event_bytes})`
+    }
+
+    yield* pruneCapacity()
+  }))
+
+  yield* write.pipe(Effect.retry({ times: 2, schedule: Schedule.spaced("25 millis"), while: isBusy }), Effect.catchTag("SqlError", (error) => {
+    if (sqliteCode(error) !== 13) return Effect.fail(classify(error))
+
+    return Effect.gen(function*() {
+      yield* sql.withTransaction(sql`DELETE FROM events WHERE id IN (SELECT id FROM events ORDER BY ts, id LIMIT 256)`)
+      yield* write
+    }).pipe(Effect.mapError((error) => error instanceof HistoryStorageError ? error : classify(error)))
+  }))
+})

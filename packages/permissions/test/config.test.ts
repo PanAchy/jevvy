@@ -66,6 +66,22 @@ const withConfigFile = <A, E, R>(
 )
 
 describe("Jevvy configuration", () => {
+  it.effect.each([undefined, false, true])("loads default-off history opt-in %s", (enabled) => Effect.gen(function*() {
+    const config = yield* withConfigFile(JSON.stringify({ provider: "typesafe", metrics: { enabled } }), load)
+
+    expect(config).toMatchObject({ kind: "shipped-policy", historyEnabled: enabled ?? false })
+  }))
+
+  it.effect("rejects the unshipped nested history shape", () => Effect.gen(function*() {
+    const config = yield* withConfigFile(JSON.stringify({ provider: "typesafe", metrics: { history: { enabled: true } } }), load)
+    expect(config.kind).toBe("invalid")
+  }))
+
+  it.effect.each([true, false])("rejects a boolean metrics alias %s", (metrics) => Effect.gen(function*() {
+    const config = yield* withConfigFile(JSON.stringify({ provider: "typesafe", metrics }), load)
+    expect(config.kind).toBe("invalid")
+  }))
+
   it.effect.each([
     ["openai", "OPENAI_API_KEY"], ["microsoft", "AZURE_AI_API_KEY"],
   ] as const)("loads %s credentials from the file before its environment variable", ([provider, variable]) => Effect.gen(function*() {
@@ -381,6 +397,7 @@ describe("Jevvy configuration", () => {
 
     expect(config).toEqual({
       kind: "custom-policy",
+      historyEnabled: false,
       reviewAskPatterns: { opencode: [], claude: [] },
       timeoutMs: 5_000,
       selection: { provider: "typesafe", apiKey: undefined },
@@ -492,6 +509,7 @@ describe("Jevvy configuration", () => {
 
       expect(yield* withConfigFile(raw, load)).toEqual({
         kind: "custom-policy",
+        historyEnabled: false,
         reviewAskPatterns: { opencode: [], claude: [] },
         timeoutMs: 5_000,
         selection: {
@@ -522,6 +540,7 @@ describe("Jevvy configuration", () => {
 
     expect(yield* withConfigFile(raw, load)).toEqual({
       kind: "custom-policy",
+      historyEnabled: false,
       reviewAskPatterns: { opencode: ["*"], claude: ["Bash(git *)"] },
       timeoutMs: 12_000,
       selection: { provider: "laya", endpoint: undefined, model: undefined, apiKey: undefined },
@@ -618,6 +637,7 @@ describe("Jevvy configuration", () => {
 
       expect(yield* withConfigFile(raw, load)).toEqual({
         kind: "shipped-policy",
+        historyEnabled: false,
         reviewAskPatterns: { opencode: [], claude: [] },
         timeoutMs: 5_000,
         selection: {
@@ -637,6 +657,7 @@ describe("Jevvy configuration", () => {
 
     expect(yield* withConfigFile(raw, load)).toEqual({
       kind: "shipped-policy",
+      historyEnabled: false,
       reviewAskPatterns: { opencode: [], claude: [] },
       timeoutMs: 5_000,
       selection: { provider: "typesafe", apiKey: undefined },

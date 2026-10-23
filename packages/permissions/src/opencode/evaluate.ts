@@ -1,7 +1,10 @@
 import type { PermissionEvaluation } from "@opencode/plugin/effect/permission"
-import { Effect } from "effect"
-import type { PermissionReviewer } from "../engine.ts"
+import * as Effect from "effect/Effect"
+import type { PermissionReview, PermissionReviewer } from "../engine.ts"
 import type { JevProviderFailure } from "../core.ts"
+import type { JevProvider } from "../core.ts"
+import { observeReview } from "../history.ts"
+import type { HistoryObserver } from "../history.ts"
 import { withReviewEnabled } from "../review-control.ts"
 import type { ReviewControl } from "../review-control.ts"
 
@@ -16,6 +19,7 @@ export interface EvaluationEvent {
 }
 
 export interface EvaluateOptions {
+  readonly history?: { readonly observer: HistoryObserver; readonly provider: JevProvider }
   readonly control?: Pick<ReviewControl, "read">
   readonly inspect: (event: EvaluationEvent) => Effect.Effect<{
     readonly command: string
@@ -45,9 +49,11 @@ export const createEvaluate = (
         return undefined
       }
 
-      if (inspection.explicitAsk) return undefined
+      const review = yield* observeReview<PermissionReview | "explicit-ask">(inspection.command, inspection.explicitAsk
+        ? Effect.succeed("explicit-ask" as const)
+        : reviewer.review({ action: event.action, resources: [inspection.command] }), options.history)
 
-      return yield* reviewer.review({ action: event.action, resources: [inspection.command] })
+      return review === "explicit-ask" ? undefined : review
     })
 
     const review = yield* options.control === undefined

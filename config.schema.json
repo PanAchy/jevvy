@@ -43,6 +43,17 @@
         }
       }
     },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Opt in to bounded local Jevvy Permissions OpenCode and Claude Code review history. Verbatim commands and raw answers may contain secrets. POSIX-only. OpenCode reads this at startup, Claude Code per hook invocation. Capacity eviction and drops make coverage incomplete. No age expiry; disabling does not erase records."
+        }
+      }
+    },
     "permissions": {
       "type": "object",
       "additionalProperties": false,

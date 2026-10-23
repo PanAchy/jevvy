@@ -9,6 +9,8 @@ import { createPermissionReviewer } from "../engine.ts"
 import { createConfiguredProvider, shippedPolicyProvenance } from "../providers.ts"
 import { apiKeyFromCredential, withOpenCodeCredential } from "./credential.ts"
 import { createEvaluate } from "./evaluate.ts"
+import { createHistoryObserver } from "../history/observer.ts"
+import { historyWorkersLayer } from "../history/history-transport.ts"
 import { createCommandCapture } from "./command-capture.ts"
 import { hasExplicitAsk } from "./ask-rule.ts"
 import { createReviewControl } from "../review-control.ts"
@@ -102,6 +104,19 @@ export default Plugin.define({
       timeoutMs: permissionConfig.timeoutMs,
     }).pipe(Effect.orDie)
 
+    const history = yield* createHistoryObserver({
+      enabled: permissionConfig.historyEnabled,
+      lifetime: "host",
+      configPath,
+      report: (message) => {
+        if (message === problem) return
+
+        problem = message
+
+        if (message !== undefined) console.warn(message)
+      },
+    }).pipe(Effect.provide(historyWorkersLayer))
+
     const capture = createCommandCapture()
 
     yield* ctx.tool.hook("execute.before", capture.before)
@@ -109,6 +124,7 @@ export default Plugin.define({
     yield* ctx.tool.hook("execute.after", capture.after)
 
     const evaluate = createEvaluate(reviewer, {
+      history: history === undefined ? undefined : { observer: history, provider: selected.provider },
       control,
       inspect: (event) => Effect.gen(function*() {
         const command = capture.commandFor(event)
