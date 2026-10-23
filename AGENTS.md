@@ -81,11 +81,11 @@ Write public changelog entries and GitHub release notes for users rather than ar
 
 Run `npm run smoke:opencode` to verify the packed plugin reports an actionable setup failure without configuration and activates for a configured credential-free custom endpoint. Local dogfood configuration stays untracked. Confirm `jevvy.permissions` is `active` through OpenCode's plugin status endpoint before treating any live session behavior as evidence.
 
-Run `npm run smoke:package` and `npm run smoke:opencode` as background jobs because they can take several minutes. Do not overlap them with `npm run check` or other builds because the build scripts clean `dist`.
+Run `npm run smoke:package`, `npm run smoke:opencode`, and `npm run smoke:claude:permissions` as background jobs because they can take several minutes. Do not overlap them with `npm run check` or other builds because the build scripts clean `dist`.
 
 Add the `full-package-smoke` label to a PR for one Linux, Windows, and macOS x64/arm64 package matrix when it changes package files, exports, bins, bundled artifacts, dependencies, build tooling, installers, or platform-specific filesystem or process behavior. Remove the label after the matrix completes so later pushes use normal PR CI.
 
-Run `npm run build:permissions && npm run smoke:claude` after changing the Claude Code plugin manifest, hook registration, or bundle path. The smoke validates both manifests and loads the plugin into an isolated Claude Code host. Run `npm run smoke:package` to verify the packed hook remains dependency-free and silent on abstention. A real permission-flow smoke still requires an authenticated Claude Code host.
+Run `npm run build:permissions && npm run smoke:claude` after changing the Claude Code plugin manifest, hook registration, or bundle path. The smoke validates both manifests and loads the plugin into an isolated Claude Code host. Run `npm run smoke:package` to verify the packed hook remains dependency-free and silent on abstention. `npm run smoke:claude:permissions` drives real native permission flows through an isolated interactive host with localhost fake providers; it requires a POSIX Python PTY and the CI-pinned Claude executable, not an authenticated account.
 
 ## Commit discipline
 

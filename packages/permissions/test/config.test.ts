@@ -1,9 +1,12 @@
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
+import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "@effect/vitest"
 import * as ConfigProvider from "effect/ConfigProvider"
 import * as Effect from "effect/Effect"
+import * as FileSystem from "effect/FileSystem"
+import * as Path from "effect/Path"
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Redacted from "effect/Redacted"
 import { loadJevvyConfig } from "../src/config.ts"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
@@ -137,7 +140,10 @@ describe("Jevvy configuration", () => {
   }))
 
   it.effect("publishes the default-off nomination list in the consumer schema", () => Effect.gen(function*() {
-    const raw = yield* Effect.promise(() => readFile(new URL("../../../config.schema.json", import.meta.url), "utf8"))
+    const fs = yield* FileSystem.FileSystem
+    const path = yield* Path.Path
+    const schemaPath = yield* path.fromFileUrl(new URL("../../../config.schema.json", import.meta.url))
+    const raw = yield* fs.readFileString(schemaPath)
     const schema = JSON.parse(raw)
 
     expect(schema.properties.permissions.properties.reviewAskPatterns).toMatchObject({
@@ -147,6 +153,34 @@ describe("Jevvy configuration", () => {
         opencode: { type: "array", items: { type: "string", minLength: 1 }, default: [] },
         claude: { type: "array", items: { type: "string", minLength: 1 }, default: [] },
       },
+    })
+  }).pipe(Effect.provide(NodeServices.layer)))
+
+  it.effect.each([undefined, {}, { reviewAskPatterns: {} }, { reviewAskPatterns: { opencode: [] } }, { reviewAskPatterns: { claude: [] } }])(
+    "allocates independent host defaults on repeated loads with permissions %j",
+    (permissions) => withConfigFile(JSON.stringify({ provider: "typesafe", permissions }), (path) => Effect.gen(function*() {
+      const first = yield* load(path)
+      const second = yield* load(path)
+
+      if (first.kind !== "shipped-policy" || second.kind !== "shipped-policy") throw new Error("Expected shipped policy")
+      expect(first.reviewAskPatterns).toEqual({ opencode: [], claude: [] })
+      expect(first.reviewAskPatterns.opencode).not.toBe(first.reviewAskPatterns.claude)
+      expect(second.reviewAskPatterns.opencode).not.toBe(second.reviewAskPatterns.claude)
+      expect(first.reviewAskPatterns.opencode).not.toBe(second.reviewAskPatterns.opencode)
+      expect(first.reviewAskPatterns.claude).not.toBe(second.reviewAskPatterns.claude)
+    })),
+  )
+
+  it.effect.each([undefined, {}, { opencode: ["*"] }, { claude: ["Bash(echo *)"] }])("normalizes nominations for calibrated Laya policies %j", (reviewAskPatterns) => Effect.gen(function*() {
+    const config = yield* withConfigFile(JSON.stringify({
+      provider: "laya",
+      providers: { laya: { policy: { checkpoint: "english", questions: customQuestions } } },
+      permissions: { reviewAskPatterns },
+    }), load)
+
+    expect(config).toMatchObject({
+      kind: "custom-policy",
+      reviewAskPatterns: { opencode: reviewAskPatterns?.opencode ?? [], claude: reviewAskPatterns?.claude ?? [] },
     })
   }))
 
@@ -165,6 +199,10 @@ describe("Jevvy configuration", () => {
     const raw = JSON.stringify({ provider: "typesafe", permissions: { reviewAskPatterns } })
 
     expect(yield* withConfigFile(raw, load)).toMatchObject({ kind: "invalid" })
+  }))
+
+  it.effect.each([null, [], "permissions"])("does not default a malformed permissions object %j", (permissions) => Effect.gen(function*() {
+    expect(yield* withConfigFile(JSON.stringify({ provider: "typesafe", permissions }), load)).toMatchObject({ kind: "invalid" })
   }))
 
   it.effect("preserves nomination spelling without normalization", () => Effect.gen(function*() {

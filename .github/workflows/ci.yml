@@ -104,3 +104,4 @@ jobs:
       - run: npm install --global @anthropic-ai/claude-code@${{ env.CLAUDE_CODE_VERSION }}
       - run: npm run build:permissions
       - run: npm run smoke:claude
+      - run: npm run smoke:claude:permissions

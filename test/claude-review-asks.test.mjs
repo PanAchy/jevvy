@@ -1,12 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "@effect/vitest"
-import { existsSync } from "node:fs"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import * as Effect from "effect/Effect"
-import * as NodeServices from "@effect/platform-node/NodeServices"
-import { createClaudeHookHandler, loadClaudeSetup } from "../packages/permissions/src/claude/hook.ts"
+import { createClaudeHookHandler, loadClaudeConfiguration } from "../packages/permissions/src/claude/hook.ts"
 import { permissionAllowOutput } from "../packages/permissions/src/claude/evaluate.ts"
+import { withReviewAskFixture } from "./review-ask-fixture.ts"
 
 const invitation = "Bash(git *)"
 
@@ -34,34 +30,33 @@ describe("Claude nominated ask hook plumbing", () => {
     { name: "unsupported tool", patterns: { claude: ["*"] }, tool: "Read", calls: 0 },
     { name: "unsupported event", patterns: { claude: ["*"] }, event: "PreToolUse", calls: 0 },
     { name: "unreadable settings", patterns: { claude: [invitation] }, unreadable: true, calls: 0 },
-  ])("preserves $name with globally loaded host-scoped configuration", (scenario) => Effect.acquireUseRelease(
-    Effect.promise(() => mkdtemp(join(existsSync("/tmp/opencode") ? "/tmp/opencode" : tmpdir(), "jevvy-claude-review-asks-"))),
-    (directory) => Effect.gen(function*() {
-      const path = join(directory, "jevvy.jsonc")
+  ])("preserves $name with globally loaded host-scoped configuration", (scenario) => withReviewAskFixture(
+    ({ fs, path, directory }) => Effect.gen(function*() {
+      const configPath = path.join(directory, "jevvy.jsonc")
 
-      yield* Effect.promise(() => writeFile(path, JSON.stringify({
+      yield* fs.writeFileString(configPath, JSON.stringify({
         provider: "custom",
         providers: { custom: { endpoint: "http://127.0.0.1:1/systemone", model: "fixture-model" } },
         permissions: { reviewAskPatterns: scenario.patterns },
-      })))
+      }))
 
-      vi.stubEnv("JEVVY_CONFIG", path)
+      vi.stubEnv("JEVVY_CONFIG", configPath)
 
       const review = vi.fn(() => Effect.succeed(scenario.verdict === "ask"
         ? { effect: "ask", reason: "judged", judgments: [] }
         : { effect: "allow", judgments: [] }))
 
-      const setup = vi.fn(() => loadClaudeSetup().pipe(Effect.map((loaded) =>
-        loaded.kind === "ready" ? { ...loaded, reviewer: { review } } : loaded)))
+      const configuration = vi.fn(loadClaudeConfiguration)
+      const acquire = vi.fn(() => Effect.succeed({ kind: "ready", reviewer: { review } }))
 
-      const handler = createClaudeHookHandler(setup,
+      const handler = createClaudeHookHandler(configuration, acquire,
         () => Effect.succeed(scenario.unreadable ? undefined : scenario.rules ?? [invitation]),
         { read: () => Effect.succeed({ enabled: scenario.enabled ?? true }) })
 
       const output = yield* handler(JSON.stringify({
         session_id: "ses_fixture",
         prompt_id: "prompt_fixture",
-        transcript_path: join(directory, "transcript.jsonl"),
+        transcript_path: path.join(directory, "transcript.jsonl"),
         cwd: directory,
         permission_mode: "default",
         hook_event_name: scenario.event ?? "PermissionRequest",
@@ -71,15 +66,15 @@ describe("Claude nominated ask hook plumbing", () => {
 
       expect(output).toEqual(scenario.calls > 0 && scenario.verdict !== "ask" ? permissionAllowOutput : undefined)
       expect(review).toHaveBeenCalledTimes(scenario.calls)
+      expect(acquire).toHaveBeenCalledTimes(scenario.calls)
 
       if (scenario.calls > 0) {
         expect(review).toHaveBeenCalledExactlyOnceWith({ action: "shell", resources: [scenario.command ?? command] })
       }
 
       if (scenario.enabled === false || scenario.unreadable || scenario.tool || scenario.event) {
-        expect(setup).not.toHaveBeenCalled()
+        expect(configuration).not.toHaveBeenCalled()
       }
-    }).pipe(Effect.provide(NodeServices.layer)),
-    (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true })),
+    }),
   ))
 })

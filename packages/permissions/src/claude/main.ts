@@ -2,7 +2,7 @@
 
 import * as Effect from "effect/Effect"
 import { NodeServices } from "@effect/platform-node"
-import { createClaudeHookHandler, loadClaudeSetup } from "./hook.ts"
+import { acquireClaudeReviewer, createClaudeHookHandler, loadClaudeConfiguration } from "./hook.ts"
 import { globalJevvyConfigPath } from "../config.ts"
 import { createReviewControl } from "../review-control.ts"
 import { loadAskRules } from "./ask-rules.ts"
@@ -23,7 +23,7 @@ const run = async (): Promise<void> => {
 
     const output = await Effect.runPromise(Effect.gen(function*() {
       const control = yield* createReviewControl(globalJevvyConfigPath())
-      const handle = createClaudeHookHandler(() => loadClaudeSetup(), loadAskRules, control)
+      const handle = createClaudeHookHandler(loadClaudeConfiguration, acquireClaudeReviewer, loadAskRules, control)
 
       return yield* handle(raw)
     }).pipe(Effect.provide(NodeServices.layer)))

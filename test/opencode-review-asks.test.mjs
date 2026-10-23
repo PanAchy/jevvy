@@ -1,12 +1,9 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
 import { vi } from "vitest"
-import { existsSync } from "node:fs"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import * as Effect from "effect/Effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import plugin from "../packages/permissions/src/opencode/index.ts"
+import { withReviewAskFixture } from "./review-ask-fixture.ts"
 
 const catchAll = { action: "*", resource: "*", effect: "ask" }
 
@@ -35,21 +32,20 @@ describe("OpenCode nominated ask rules", () => {
     { name: "final host deny", patterns: ["*"], initial: "deny", expectedEffect: "deny", calls: 0 },
     { name: "review abstention", patterns: ["*"], score: 1, expectedEffect: "ask", calls: 1 },
     { name: "toggle OFF", patterns: ["*"], enabled: false, expectedEffect: "ask", calls: 0 },
-  ])("preserves $name through plugin setup and evaluation", (scenario) => Effect.acquireUseRelease(
-    Effect.promise(() => mkdtemp(join(existsSync("/tmp/opencode") ? "/tmp/opencode" : tmpdir(), "jevvy-review-asks-"))),
-    (directory) => Effect.gen(function*() {
+  ])("preserves $name through plugin setup and evaluation", (scenario) => withReviewAskFixture(
+    ({ fs, path, directory }) => Effect.gen(function*() {
       vi.spyOn(console, "info").mockImplementation(() => {})
       vi.spyOn(console, "warn").mockImplementation(() => {})
 
-      const path = join(directory, "jevvy.jsonc")
+      const configPath = path.join(directory, "jevvy.jsonc")
 
-      yield* Effect.promise(() => writeFile(path, JSON.stringify({
+      yield* fs.writeFileString(configPath, JSON.stringify({
         provider: "custom",
         providers: { custom: { endpoint: "http://127.0.0.1:1/systemone", model: "fixture-model" } },
         permissions: { reviewAskPatterns: { opencode: scenario.patterns, claude: scenario.claudePatterns }, opencode: { enabled: scenario.enabled ?? true } },
-      }), { mode: 0o600 }))
+      }), { mode: 0o600 })
 
-      vi.stubEnv("JEVVY_CONFIG", path)
+      vi.stubEnv("JEVVY_CONFIG", configPath)
 
       const hooks = new Map()
       const hook = (name, handler) => Effect.sync(() => { hooks.set(name, handler) })
@@ -99,6 +95,5 @@ describe("OpenCode nominated ask rules", () => {
         expect(agent).toHaveBeenCalledExactlyOnceWith({ agentID: "review-agent", location: { directory } })
       }
     }),
-    (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true })),
   ))
 })

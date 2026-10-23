@@ -47,14 +47,11 @@ const LayaProviderSchema = Schema.Struct({
 })
 
 const ReviewAskPatternSettings = Schema.Struct({
-  opencode: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
-  claude: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
+  opencode: Schema.Array(Schema.NonEmptyString).pipe(Schema.withDecodingDefaultKey(Effect.sync(() => []))),
+  claude: Schema.Array(Schema.NonEmptyString).pipe(Schema.withDecodingDefaultKey(Effect.sync(() => []))),
 })
 
-interface ReviewAskPatterns {
-  readonly opencode: readonly string[]
-  readonly claude: readonly string[]
-}
+interface ReviewAskPatterns extends Schema.Schema.Type<typeof ReviewAskPatternSettings> {}
 
 const JevvyConfigSchema = Schema.Struct({
   $schema: Schema.optionalKey(Schema.String),
@@ -69,13 +66,13 @@ const JevvyConfigSchema = Schema.Struct({
     laya: Schema.optionalKey(LayaProviderSchema),
     custom: Schema.optionalKey(EndpointProviderSchema),
   })),
-  permissions: Schema.optionalKey(Schema.Struct({
+  permissions: Schema.Struct({
     timeoutMs: Schema.optionalKey(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
-    reviewAskPatterns: Schema.optionalKey(ReviewAskPatternSettings),
+    reviewAskPatterns: ReviewAskPatternSettings.pipe(Schema.withDecodingDefaultKey(Effect.sync(() => ({})))),
     questions: Schema.optionalKey(ApprovalQuestions),
     opencode: Schema.optionalKey(HarnessReviewConfig),
     claude: Schema.optionalKey(HarnessReviewConfig),
-  })),
+  }).pipe(Schema.withDecodingDefaultKey(Effect.sync(() => ({})))),
 })
 
 interface ConfigDocument extends Schema.Schema.Type<typeof JevvyConfigSchema> {}
@@ -244,10 +241,7 @@ const load = Effect.fn("JevvyConfig.load")(function*(path: string, environment: 
   const selection = yield* providerSelection(document.value, environmentKeys)
   const timeoutMs = document.value.permissions?.timeoutMs ?? 5_000
 
-  const reviewAskPatterns = {
-    opencode: document.value.permissions?.reviewAskPatterns?.opencode ?? [],
-    claude: document.value.permissions?.reviewAskPatterns?.claude ?? [],
-  }
+  const reviewAskPatterns = document.value.permissions.reviewAskPatterns
 
   if (selection.provider === "laya") {
     const policy = document.value.providers?.laya?.policy
