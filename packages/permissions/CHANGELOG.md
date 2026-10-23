@@ -1,5 +1,29 @@
 # @jevvy/permissions
 
+## 0.8.0
+
+### New providers
+
+- [#53](https://github.com/PanAchy/jevvy/pull/53) [`3294e69`](https://github.com/PanAchy/jevvy/commit/3294e69d45d9628847dcc3229bda7384d425a817) - Add OpenAI Decisions (`gpt-6-luna`) and experimental Microsoft-Decision-1 via Azure Foundry. Non-Jev models require their own calibration.
+
+### Permission behavior
+
+- [#67](https://github.com/PanAchy/jevvy/pull/67) [`f66ac99`](https://github.com/PanAchy/jevvy/commit/f66ac994c580f31517259e22fd2102befc8e429a) - Let Jevvy Permissions review selected shell ask rules with `permissions.reviewAskPatterns`. Nominations are exact and host-scoped. Other host asks and finalized allow/deny decisions stay unchanged. Claude inspects visible settings only.
+
+### Configuration
+
+- [#64](https://github.com/PanAchy/jevvy/pull/64) [`892a954`](https://github.com/PanAchy/jevvy/commit/892a954c97739f2fb0c9adddb9de9db009076b12) - Enable private local review history for both hosts with `"metrics": { "enabled": true }` in global configuration. Off by default, POSIX-only and best effort; it never changes permission decisions. **Verbatim commands and raw answers may contain secrets.** Disabling history does not erase records.
+
+- [#63](https://github.com/PanAchy/jevvy/pull/63) [`0673cbf`](https://github.com/PanAchy/jevvy/commit/0673cbf1fe57dbc3b4f34db8bf760bc21f61c6ec) Thanks [@futafi](https://github.com/futafi)! - Explicitly reuse an OpenCode API key with `providers.<name>.opencodeCredential` after global credentials and environment variables. OAuth connections are skipped; Claude credentials are unchanged.
+
+### Reliability
+
+- [#67](https://github.com/PanAchy/jevvy/pull/67) [`f66ac99`](https://github.com/PanAchy/jevvy/commit/f66ac994c580f31517259e22fd2102befc8e429a) - Update the OpenCode SDK to 2.1.3, retaining OpenCode 2.0.27+ support. Claude-only use does not require OpenCode.
+
+### Fixes
+
+- [#53](https://github.com/PanAchy/jevvy/pull/53) [`3294e69`](https://github.com/PanAchy/jevvy/commit/3294e69d45d9628847dcc3229bda7384d425a817) - Fix custom-question encoding and Microsoft deployment calibration. Add provider-name filtering during setup.
+
 ## 0.7.0
 
 ### Breaking changes

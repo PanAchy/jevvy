@@ -76,6 +76,8 @@ The repository pins the exact Effect version bundled by `@opencode/plugin`. Core
 
 ## Release notes
 
+- Keep notes terse: one short bullet per user-visible change. Retain essential setup, privacy and compatibility caveats; leave implementation details in docs.
+
 Write public changelog entries and GitHub release notes for users rather than around Changesets bump types. Use only relevant headings such as `New harnesses`, `New providers`, `Permission behavior`, `Configuration`, `Reliability`, `Fixes`, and `Breaking changes`; omit empty sections. Keep `major`, `minor`, and `patch` in changeset metadata rather than public section headings. Preserve generated PR, commit, and contributor attribution links when reshaping a release entry.
 
 ## Harness dev loops
