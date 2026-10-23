@@ -1,5 +1,49 @@
 # @jevvy/permissions
 
+## 0.8.0
+
+### Minor Changes
+
+- [#64](https://github.com/PanAchy/jevvy/pull/64) [`892a954`](https://github.com/PanAchy/jevvy/commit/892a954c97739f2fb0c9adddb9de9db009076b12) - ### Configuration
+  
+  Add default-off `metrics.enabled` for local Jevvy Permissions OpenCode and Claude Code per-review history. Verbatim commands and raw answers may contain secrets. Both integrations share the private global `metrics/history.sqlite`, its schema and agent instructions for read-only reporting. No dashboard, export or telemetry is added.
+  
+  History retains newest records within 10,000 rows, 16 MiB logical event bytes and a 32 MiB main database, with extra temporary rollback-journal space. There is no age expiry; fourteen days is only a possible query timeframe. Capacity eviction, drops and storage failures make coverage incomplete. Disabling does not erase existing records. Background storage cannot change permission verdicts. Initial persistence is POSIX-only; OpenCode surfaces setup diagnostics, and Claude Code reports permanent privacy/platform setup failures at SessionStart without opening or creating a database. Claude permission-request storage failures remain silent. Claude Code uses a standalone bundled worker with a best-effort 500 ms final drain per invocation, without a daemon or external dependencies.
+
+- [#53](https://github.com/PanAchy/jevvy/pull/53) [`3294e69`](https://github.com/PanAchy/jevvy/commit/3294e69d45d9628847dcc3229bda7384d425a817) - ## New providers
+  
+  Add built-in setup choices for OpenAI Decisions with `gpt-6-luna` and experimental Microsoft-Decision-1 integration through Azure Foundry. OpenAI predicates map to Jevvy's probability answers; Microsoft uses the configured deployment and Azure API-key authentication.
+  
+  The existing questions and thresholds remain unchanged and calibrated for Jev. Other models require user calibration; API compatibility does not transfer Jev's calibration evidence.
+  
+  ## Configuration
+  
+  Type a provider name to filter assisted setup choices. Group setup documentation by API format, with per-service credentials and examples for both new integrations.
+  
+  ## Reliability
+  
+  Keep requested routes separate from expected model identities during calibration. Microsoft deployment names can differ from the provider-pinned `microsoft-decision-1` response identity without failing calibration, while unexpected reported identities still fail. No new configuration or setup step is required.
+  
+  Encode custom questions without optional criteria correctly instead of failing before the provider request.
+
+- [#67](https://github.com/PanAchy/jevvy/pull/67) [`f66ac99`](https://github.com/PanAchy/jevvy/commit/f66ac994c580f31517259e22fd2102befc8e429a) - ### Permission behavior
+  
+  Add opt-in `permissions.reviewAskPatterns: { opencode: [], claude: [] }` so Jevvy Permissions can review nominated shell asks in either host. OpenCode entries identify winning ask resource-pattern strings; Claude Code entries identify complete visible `permissions.ask` strings such as `Bash(git *)`. Nominations are exact and host-scoped, not commands to approve. Matching non-nominated Claude asks remain host-owned regardless of ordering, and uncertain selectors or command matching still cause abstention. Claude inspection covers visible settings, not managed, CLI or session rules. Existing review invitations, empty-list behavior and final host allow/deny decisions are unchanged. Reload OpenCode after changing its list; Claude reads its list on each hook invocation.
+
+- [#63](https://github.com/PanAchy/jevvy/pull/63) [`0673cbf`](https://github.com/PanAchy/jevvy/commit/0673cbf1fe57dbc3b4f34db8bf760bc21f61c6ec) Thanks [@futafi](https://github.com/futafi)! - Reuse an API key from an OpenCode integration with `providers.<name>.opencodeCredential`, as an explicit fallback after Jevvy Permissions configuration and provider environment variables. Account-login OAuth credentials are skipped without retrieving or refreshing them. Claude Code credential handling is unchanged.
+
+### Patch Changes
+
+- [#67](https://github.com/PanAchy/jevvy/pull/67) [`f66ac99`](https://github.com/PanAchy/jevvy/commit/f66ac994c580f31517259e22fd2102befc8e429a) - Update Jevvy Permissions to the OpenCode 2.1.3 plugin SDK and matching terminal UI dependencies. Keep support for OpenCode 2.0.27 and newer.
+
+- [#64](https://github.com/PanAchy/jevvy/pull/64) [`892a954`](https://github.com/PanAchy/jevvy/commit/892a954c97739f2fb0c9adddb9de9db009076b12) - ### Reliability
+  
+  Keep Claude Code review history scoped to one worker attempt per invocation, while OpenCode starts storage on its first observation and retains background recovery. Storage readiness adds no separate permission-response wait; unfinished startup shares the existing 500 ms final drain.
+  
+  Retry transient SQLite rollback-journal unlink or replacement races after rechecking private paths, instead of treating legitimate concurrent writes as permanently unsafe. Database identity and filesystem privacy checks remain strict. History is still best effort and cannot change permission decisions.
+  
+  Reduce repeated history-worker startup work with bundled schema-only imports and build-generated metadata. Skip the capacity eviction window when transactional row and byte totals are already within bounds. Existing metadata bytes, storage validation, durability and capacity limits are unchanged; contention can still drop observations.
+
 ## 0.7.0
 
 ### Breaking changes
