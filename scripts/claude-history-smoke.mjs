@@ -225,7 +225,7 @@ try {
   configPath = join(root, "jevvy.jsonc")
   filename = join(root, "metrics", "history.sqlite")
   settings()
-  const positive = spawnSync(process.execPath, [...trace.args, fileURLToPath(new URL("./history-writer-smoke.mjs", import.meta.url)), "--writer", packed, root], { env: { ...process.env, ...trace.env }, encoding: "utf8", timeout: 20000 })
+  const positive = spawnSync(process.execPath, [...trace.args, fileURLToPath(new URL("./history-writer-smoke.mjs", import.meta.url)), "--writer", packed, root, join(temporary, "claude-history-worker.js")], { env: { ...process.env, ...trace.env }, encoding: "utf8", timeout: 20000 })
   assert.equal(positive.status, 0, positive.stderr)
   const control = JSON.parse(positive.stdout)
   requirePositiveWriterControl(control)
