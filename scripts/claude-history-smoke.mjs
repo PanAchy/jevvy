@@ -228,11 +228,11 @@ try {
   const positive = spawnSync(process.execPath, [...trace.args, fileURLToPath(new URL("./history-writer-smoke.mjs", import.meta.url)), "--writer", packed, root, join(temporary, "claude-history-worker.js")], { env: { ...process.env, ...trace.env }, encoding: "utf8", timeout: 20000 })
   assert.equal(positive.status, 0, positive.stderr)
   const control = JSON.parse(positive.stdout)
-  requirePositiveWriterControl(control)
   const baseline = rows()
   assert.equal(baseline.length, 1)
   assert.equal(baseline[0].id, control.expected.id)
-  inspectHistory(join(root, "metrics"), codec)
+  const positiveStore = inspectHistory(join(root, "metrics"), codec)
+  requirePositiveWriterControl(control, positiveStore.rows[0], codec.eventBytes)
   const lock = new DatabaseSync(filename)
   lock.exec("BEGIN EXCLUSIVE")
 

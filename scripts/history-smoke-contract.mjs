@@ -29,11 +29,18 @@ export const readHistoryTrace = (filename) => {
   })
 }
 
-export const requirePositiveWriterControl = (control) => {
+export const requirePositiveWriterControl = (control, row, eventBytes) => {
   assert.equal(control.closed, true, `Sequential ${control.runtime} control must close successfully`)
   assert.deepEqual(control.sent, [control.expected.id, control.expected.id])
   assert.deepEqual(control.acknowledged, [control.expected.id, control.expected.id], "Positive controls must ACK append and duplicate")
   assert.deepEqual(control.outcomes.map(({ _tag: tag, sequence }) => [tag, sequence]), [["Stored", 1], ["Stored", 2], ["Closed", 3]])
+
+  const event = control.expected
+
+  assert.deepEqual(row, {
+    id: event.id, ts: event.ts, effect: event.effect, reason: event.reason, command: event.command,
+    model: event.model, latency_ms: event.latencyMs, detail_json: event.detail, event_bytes: eventBytes(event),
+  }, "Positive control must retain its complete original payload")
 }
 
 export const inspectHistory = (metrics, codec) => {

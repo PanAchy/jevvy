@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
-import { spawn } from "node:child_process"
+import { spawn, spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
-import { lstat, mkdtemp, readdir, realpath, rm } from "node:fs/promises"
+import { lstat, mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -124,6 +124,7 @@ if (writer) {
   }
 
   if (transportFailure) throw transportFailure
+  assert.equal(inbox.length, 0, "Unconsumed writer replies after terminal outcome")
   console.log(JSON.stringify(result))
 } else {
   const nodeOnly = process.argv.includes("--node-only")
@@ -155,9 +156,9 @@ if (writer) {
 
     for (const runtime of nodeOnly ? [process.execPath] : [process.execPath, process.env.BUN_BIN]) {
       const control = await run(runtime)
-      requirePositiveWriterControl(control)
-      controls.push(control)
       const store = inspectHistory(join(root, "metrics"), codec)
+      requirePositiveWriterControl(control, store.rows.find((row) => row.id === control.expected.id), eventBytes)
+      controls.push(control)
       assert.equal(store.uninitialized, undefined)
       assert.deepEqual(new Set(store.rows.map((row) => row.id)), new Set(controls.map((entry) => entry.expected.id)))
     }
@@ -213,7 +214,41 @@ if (writer) {
 
       const missing = offered.flatMap((event) => stored.has(event.id) ? [] : [event.id])
 
-      console.log(`${nodeOnly ? "Node-only" : "Mixed Node/Bun"} writer smoke passed: ${JSON.stringify({ controls: controls.map(({ runtime, acknowledged }) => ({ runtime, acknowledged })), results, offered: offered.length, sent: sent.size, acknowledged: acknowledged.size, stored: rows.length, storedIds: [...stored], missing, classifiedBusy: missing.length, busyReplies: results.filter((result) => result.outcomes.some(HistoryReply.guards.Failed)).length, committedWithoutAck: [...stored].filter((id) => !acknowledged.has(id)), unknown: 0, missingAcknowledged: 0, integrity: "ok" })}`)
+      const terminalFaults = [
+        ["invalid", ["invalid"]],
+        ["unsafe", [1, HistoryReply.cases.Failed.make({ kind: "unsafe-path" })]],
+        ["stored", [1, HistoryReply.cases.Stored.make({ sequence: 1 })]],
+      ]
+
+      for (const [name, frame] of terminalFaults) {
+        const preload = join(root, `terminal-${name}.mjs`)
+        await writeFile(preload, `
+import workers from "node:worker_threads"
+import { syncBuiltinESMExports } from "node:module"
+if (workers.isMainThread) {
+  const NativeWorker = workers.Worker
+  workers.Worker = class extends NativeWorker {
+    constructor() {
+      super(new URL("data:text/javascript,setInterval(() => {}, 1000)"), { execArgv: [] })
+      queueMicrotask(() => this.emit("message", [1, { _tag: "Failed", kind: "busy" }]))
+    }
+    terminate(...args) {
+      this.emit("message", ${JSON.stringify(frame)})
+      return super.terminate(...args)
+    }
+  }
+  syncBuiltinESMExports()
+}
+`, { mode: 0o600 })
+        const negative = spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, script, "--writer", packageRoot, root], { encoding: "utf8", timeout: 20_000 })
+        assert.equal(negative.error, undefined)
+        assert.equal(negative.signal, null)
+        assert.notEqual(negative.status, 0, `Busy followed by ${name} must fail`)
+        assert.equal(negative.stdout, "")
+        assert.match(negative.stderr, /Unconsumed writer replies after terminal outcome/)
+      }
+
+      console.log(`${nodeOnly ? "Node-only" : "Mixed Node/Bun"} writer smoke passed: ${JSON.stringify({ controls: controls.map(({ runtime, acknowledged }) => ({ runtime, acknowledged })), results, offered: offered.length, sent: sent.size, acknowledged: acknowledged.size, stored: rows.length, storedIds: [...stored], missing, classifiedBusy: missing.length, busyReplies: results.filter((result) => result.outcomes.some(HistoryReply.guards.Failed)).length, committedWithoutAck: [...stored].filter((id) => !acknowledged.has(id)), terminalFaultControls: terminalFaults.length, unknown: 0, missingAcknowledged: 0, integrity: "ok" })}`)
     } finally { database.close() }
   } finally { await rm(root, { recursive: true, force: true }) }
 }

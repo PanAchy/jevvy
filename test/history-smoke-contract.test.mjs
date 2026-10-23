@@ -119,6 +119,29 @@ it("reports all cold drops without treating them as positive persistence proof",
   expect(() => requirePositiveWriterControl({ runtime: "bun", closed: true, expected: event, sent: [id, id], acknowledged: [id], outcomes: [HistoryReply.cases.Stored.make({ sequence: 1 }), HistoryReply.cases.Closed.make({ sequence: 3 })] })).toThrow()
 })
 
+it.each(["command", "model", "answer"])("positive control rejects a schema-valid changed %s", (field) => {
+  const original = history.projectHistory({
+    command, provider: "custom", tsMs: 0, latencyMs: 3,
+    result: { effect: "allow", judgments: [{ resource: command, effect: "allow", model: "actual-control", answers: { synthetic: { type: "noul", noul: 0.25 } } }] },
+  }, id)
+
+  const control = { runtime: "node", closed: true, expected: original, sent: [id, id], acknowledged: [id, id], outcomes: [HistoryReply.cases.Stored.make({ sequence: 1 }), HistoryReply.cases.Stored.make({ sequence: 2 }), HistoryReply.cases.Closed.make({ sequence: 3 })] }
+
+  const stored = (value) => codec.decode({
+    id: value.id, ts: value.ts, effect: value.effect, reason: value.reason, command: value.command,
+    model: value.model, latency_ms: value.latencyMs, detail_json: JSON.stringify(value.detail), event_bytes: history.eventBytes(value),
+  })
+
+  expect(() => requirePositiveWriterControl(control, stored(original), history.eventBytes)).not.toThrow()
+
+  const changed = field === "answer"
+    ? { ...original, detail: { ...original.detail, answers: { synthetic: { type: "noul", noul: 0.75 } } } }
+    : { ...original, [field]: `different-${field}` }
+
+  const validChangedRow = stored(changed)
+  expect(() => requirePositiveWriterControl(control, validChangedRow, history.eventBytes)).toThrow(/complete original payload/)
+})
+
 it("ignores explicitly unrelated host workers but requires the history role when requested", () => {
   const unrelated = trace([{ event: "error" }]).map((entry) => ({ ...entry, worker: 2, role: "other" }))
   expect(check({ events: [...trace([busy]), ...unrelated], requireRole: true }).classifiedBusy).toHaveLength(1)
