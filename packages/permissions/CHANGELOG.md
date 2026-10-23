@@ -4,33 +4,25 @@
 
 ### New providers
 
-- [#53](https://github.com/PanAchy/jevvy/pull/53) [`3294e69`](https://github.com/PanAchy/jevvy/commit/3294e69d45d9628847dcc3229bda7384d425a817) - Add OpenAI Decisions with `gpt-6-luna` and experimental Microsoft-Decision-1 through Azure Foundry. Existing questions and thresholds remain calibrated for Jev; other models require user calibration and do not inherit that evidence.
+- [#53](https://github.com/PanAchy/jevvy/pull/53) [`3294e69`](https://github.com/PanAchy/jevvy/commit/3294e69d45d9628847dcc3229bda7384d425a817) - Add OpenAI Decisions (`gpt-6-luna`) and experimental Microsoft-Decision-1 via Azure Foundry. Non-Jev models require their own calibration.
 
 ### Permission behavior
 
-- [#67](https://github.com/PanAchy/jevvy/pull/67) [`f66ac99`](https://github.com/PanAchy/jevvy/commit/f66ac994c580f31517259e22fd2102befc8e429a) - Let Jevvy Permissions review nominated shell asks with `permissions.reviewAskPatterns: { opencode: [], claude: [] }`. OpenCode entries name winning ask resource patterns; Claude entries name complete visible asks such as `Bash(git *)`. These are exact rule nominations, not commands to approve. Other matching Claude asks remain host-owned regardless of ordering; uncertainty still causes abstention. Claude inspection does not cover managed, CLI or session rules. Existing review invitations and finalized host allow/deny decisions are unchanged. Reload OpenCode after editing its list; Claude reads its list on each invocation.
+- [#67](https://github.com/PanAchy/jevvy/pull/67) [`f66ac99`](https://github.com/PanAchy/jevvy/commit/f66ac994c580f31517259e22fd2102befc8e429a) - Let Jevvy Permissions review selected shell ask rules with `permissions.reviewAskPatterns`. Nominations are exact and host-scoped. Other host asks and finalized allow/deny decisions stay unchanged. Claude inspects visible settings only.
 
 ### Configuration
 
-- [#64](https://github.com/PanAchy/jevvy/pull/64) [`892a954`](https://github.com/PanAchy/jevvy/commit/892a954c97739f2fb0c9adddb9de9db009076b12) - Opt in to local review history for both hosts with `"metrics": { "enabled": true }` in the global Jevvy configuration. The private `metrics/history.sqlite` stores complete commands, actual judging models, raw answers, durations and allowlisted failures. Commands and answers may contain secrets. History is off by default, POSIX-only and incomplete by design; it never changes permission decisions. No dashboard, export or telemetry is added.
+- [#64](https://github.com/PanAchy/jevvy/pull/64) [`892a954`](https://github.com/PanAchy/jevvy/commit/892a954c97739f2fb0c9adddb9de9db009076b12) - Enable private local review history for both hosts with `"metrics": { "enabled": true }` in global configuration. Off by default, POSIX-only and best effort; it never changes permission decisions. **Verbatim commands and raw answers may contain secrets.** Disabling history does not erase records.
 
-- History retains up to 10,000 rows, 16 MiB of logical event data and a 32 MiB main database, with extra temporary rollback-journal space. There is no age expiry. Disabling history does not erase existing records.
-
-- [#63](https://github.com/PanAchy/jevvy/pull/63) [`0673cbf`](https://github.com/PanAchy/jevvy/commit/0673cbf1fe57dbc3b4f34db8bf760bc21f61c6ec) Thanks [@futafi](https://github.com/futafi)! - Reuse an OpenCode integration's API key with `providers.<name>.opencodeCredential`, only as an explicit fallback after global Jevvy credentials and provider environment variables. OAuth connections are skipped without retrieval or refresh. Claude Code credential handling is unchanged.
-
-- [#53](https://github.com/PanAchy/jevvy/pull/53) [`3294e69`](https://github.com/PanAchy/jevvy/commit/3294e69d45d9628847dcc3229bda7384d425a817) - Filter assisted setup choices by typing a provider name. Find per-service credentials and examples in setup guides grouped by API format.
+- [#63](https://github.com/PanAchy/jevvy/pull/63) [`0673cbf`](https://github.com/PanAchy/jevvy/commit/0673cbf1fe57dbc3b4f34db8bf760bc21f61c6ec) Thanks [@futafi](https://github.com/futafi)! - Explicitly reuse an OpenCode API key with `providers.<name>.opencodeCredential` after global credentials and environment variables. OAuth connections are skipped; Claude credentials are unchanged.
 
 ### Reliability
 
-- [#64](https://github.com/PanAchy/jevvy/pull/64) [`892a954`](https://github.com/PanAchy/jevvy/commit/892a954c97739f2fb0c9adddb9de9db009076b12) - Keep Claude history to one standalone worker attempt per invocation, with separately bounded 500 ms final drain and termination. OpenCode starts a reusable worker on its first observation. There is no extra startup wait or daemon; startup and contention can drop rows. Recheck transient SQLite journal races without weakening private-file checks. Claude reports permanent history setup failures at SessionStart without opening a database; permission-request storage failures stay silent.
-
-- [#67](https://github.com/PanAchy/jevvy/pull/67) [`f66ac99`](https://github.com/PanAchy/jevvy/commit/f66ac994c580f31517259e22fd2102befc8e429a) - Update the OpenCode integration to the 2.1.3 plugin SDK while retaining support for OpenCode 2.0.27 and newer. Claude-only use does not require OpenCode.
-
-- [#53](https://github.com/PanAchy/jevvy/pull/53) [`3294e69`](https://github.com/PanAchy/jevvy/commit/3294e69d45d9628847dcc3229bda7384d425a817) - Accept Microsoft deployment names that differ from the expected `microsoft-decision-1` response identity during calibration, while still rejecting unexpected reported identities. No configuration change is required.
+- [#67](https://github.com/PanAchy/jevvy/pull/67) [`f66ac99`](https://github.com/PanAchy/jevvy/commit/f66ac994c580f31517259e22fd2102befc8e429a) - Update the OpenCode SDK to 2.1.3, retaining OpenCode 2.0.27+ support. Claude-only use does not require OpenCode.
 
 ### Fixes
 
-- [#53](https://github.com/PanAchy/jevvy/pull/53) [`3294e69`](https://github.com/PanAchy/jevvy/commit/3294e69d45d9628847dcc3229bda7384d425a817) - Send custom questions without optional criteria correctly instead of failing before the provider request.
+- [#53](https://github.com/PanAchy/jevvy/pull/53) [`3294e69`](https://github.com/PanAchy/jevvy/commit/3294e69d45d9628847dcc3229bda7384d425a817) - Fix custom-question encoding and Microsoft deployment calibration. Add provider-name filtering during setup.
 
 ## 0.7.0
 
