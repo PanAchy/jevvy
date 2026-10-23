@@ -16,13 +16,17 @@ import { globalJevvyConfigPath } from "./config-path.ts"
 
 export { globalJevvyConfigPath } from "./config-path.ts"
 
+const ProviderCredentialSchema = Schema.Struct({
+  apiKey: Schema.NonEmptyString,
+})
+
 const SystemOnePresetSettings = Schema.Struct({
   apiKey: Schema.optionalKey(Schema.NonEmptyString),
   model: Schema.optionalKey(Schema.NonEmptyString),
   opencodeCredential: Schema.optionalKey(Schema.NonEmptyString),
 })
 
-const CustomProviderSchema = Schema.Struct({
+const EndpointProviderSchema = Schema.Struct({
   endpoint: Schema.URLFromString,
   model: Schema.NonEmptyString,
   apiKey: Schema.optionalKey(Schema.NonEmptyString),
@@ -50,8 +54,10 @@ const JevvyConfigSchema = Schema.Struct({
     typesafe: Schema.optionalKey(SystemOnePresetSettings),
     openrouter: Schema.optionalKey(SystemOnePresetSettings),
     vercel: Schema.optionalKey(SystemOnePresetSettings),
+    openai: Schema.optionalKey(ProviderCredentialSchema),
+    microsoft: Schema.optionalKey(EndpointProviderSchema),
     laya: Schema.optionalKey(LayaProviderSchema),
-    custom: Schema.optionalKey(CustomProviderSchema),
+    custom: Schema.optionalKey(EndpointProviderSchema),
   })),
   permissions: Schema.optionalKey(Schema.Struct({
     timeoutMs: Schema.optionalKey(Schema.Number.check(Schema.isFinite(), Schema.isGreaterThan(0))),
@@ -85,6 +91,8 @@ const EnvironmentApiKeys = Config.all({
   typesafe: Config.option(Config.Redacted(providerApiKeyEnvironment("typesafe"))),
   openrouter: Config.option(Config.Redacted(providerApiKeyEnvironment("openrouter"))),
   vercel: Config.option(Config.Redacted(providerApiKeyEnvironment("vercel"))),
+  openai: Config.option(Config.Redacted(providerApiKeyEnvironment("openai"))),
+  microsoft: Config.option(Config.Redacted(providerApiKeyEnvironment("microsoft"))),
   laya: Config.option(Config.Redacted(providerApiKeyEnvironment("laya"))),
 })
 
@@ -95,6 +103,8 @@ const hasCredentials = (document: ConfigDocument): boolean =>
   document.providers?.typesafe?.apiKey !== undefined ||
   document.providers?.openrouter?.apiKey !== undefined ||
   document.providers?.vercel?.apiKey !== undefined ||
+  document.providers?.openai?.apiKey !== undefined ||
+  document.providers?.microsoft?.apiKey !== undefined ||
   document.providers?.laya?.apiKey !== undefined ||
   document.providers?.custom?.apiKey !== undefined
 
@@ -149,17 +159,24 @@ const providerSelection = (
   document: ConfigDocument,
   environment: EnvironmentApiKeys,
 ): Effect.Effect<ProviderSelection, ConfigFileError> => {
-  if (document.provider === "custom") {
-    const custom = document.providers?.custom
+  if (document.provider === "custom" || document.provider === "microsoft") {
+    const custom = document.providers?.[document.provider]
 
     if (custom === undefined || (custom.endpoint.protocol !== "http:" && custom.endpoint.protocol !== "https:")) {
       return new ConfigFileError({ reason: "schema" })
     }
 
-    const apiKey = custom.apiKey === undefined ? undefined : Redacted.make(custom.apiKey)
+    if (document.provider === "microsoft" && (custom.endpoint.protocol !== "https:" ||
+      custom.endpoint.username !== "" || custom.endpoint.password !== "")) {
+      return new ConfigFileError({ reason: "schema" })
+    }
+
+    const apiKey = custom.apiKey === undefined
+      ? document.provider === "microsoft" ? environmentApiKey("microsoft", environment) : undefined
+      : Redacted.make(custom.apiKey)
 
     return Effect.succeed({
-      provider: "custom",
+      provider: document.provider,
       endpoint: custom.endpoint.href,
       model: custom.model,
       apiKey,
@@ -189,6 +206,8 @@ const providerSelection = (
   const apiKey = fileApiKey === undefined
     ? environmentApiKey(document.provider, environment)
     : Redacted.make(fileApiKey)
+
+  if (document.provider === "openai") return Effect.succeed({ provider: "openai", apiKey })
 
   return Effect.succeed({
     provider: document.provider,

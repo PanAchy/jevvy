@@ -63,7 +63,7 @@ export default Plugin.define({
 
     const selection = permissionConfig.selection
 
-    const resolved = selection.provider === "laya" || selection.provider === "custom"
+    const resolved = selection.provider === "laya" || selection.provider === "custom" || selection.provider === "openai" || selection.provider === "microsoft"
       ? selection
       : yield* withOpenCodeCredential(selection, (integrationID) => Effect.gen(function*() {
         const connection = yield* ctx.integration.connection.active(integrationID)
@@ -146,7 +146,7 @@ export default Plugin.define({
     yield* Effect.sync(() => {
       console.info("[jevvy] loaded", {
         provider: selected.provider,
-        model: selected.model,
+        model: selected.requestedModel,
         questions: permissionConfig.kind === "custom-policy"
           ? "custom"
           : shippedPolicyProvenance(selected),

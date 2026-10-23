@@ -1,6 +1,6 @@
-import { Schema } from "effect"
+import * as Schema from "effect/Schema"
 
-export const JevProvider = Schema.Literals(["zen", "typesafe", "openrouter", "vercel", "laya", "custom"])
+export const JevProvider = Schema.Literals(["zen", "typesafe", "openrouter", "vercel", "openai", "microsoft", "laya", "custom"])
 
 export type JevProvider = typeof JevProvider.Type
 

@@ -14,6 +14,47 @@ import { clearFrame, graphemes, wrapText } from "../src/init/layout.ts"
 import { enter, key, scriptedTerminal, textKeys } from "./terminal-fixture.ts"
 
 describe("setup controls", () => {
+  const searchChoices = [
+    { value: "zen", title: "OpenCode Zen" },
+    { value: "openai", title: "OpenAI Decisions" },
+    { value: "microsoft", title: "Microsoft Decision", description: "Microsoft-Decision-1 in Azure Foundry" },
+  ]
+
+  it.effect.each([
+    [[...textKeys("OPENAI"), enter], "openai"],
+    [[...textKeys("decision"), key("down"), enter], "microsoft"],
+    [[...textKeys("decision-1"), enter], "microsoft"],
+    [[...textKeys("zzzz"), enter, key("down"), key("escape"), enter], "zen"],
+    [[...textKeys("openaiX"), key("backspace"), enter], "openai"],
+    [[...textKeys("unknown"), key("u", undefined, true), key("up"), enter], "microsoft"],
+    [[key("j", "j"), key("backspace"), ...textKeys("openai"), enter], "openai"],
+  ] as const)("filters typed names, handles no matches, and supports correction: %j", ([events, expected]) => Effect.gen(function*() {
+    const ui = scriptedTerminal([events])
+
+    const selected = yield* Controls.searchableSelect({ message: "Provider", choices: searchChoices }).pipe(
+      Effect.provideService(Terminal.Terminal, ui.terminal), Effect.provide(NodeServices.layer),
+    )
+
+    expect(selected).toBe(expected)
+    expect(ui.output()).toContain("Type to filter")
+  }))
+
+  it.effect("bounds searchable choices and long search text inside a short viewport", () => Effect.gen(function*() {
+    const ui = scriptedTerminal([[key("paste", "模型".repeat(40)), enter, key("escape"), key("up"), enter]], 24, 10)
+
+    const selected = yield* Controls.searchableSelect({ message: "Provider", choices: searchChoices }).pipe(
+      Effect.provideService(Terminal.Terminal, ui.terminal), Effect.provide(NodeServices.layer),
+    )
+
+    expect(selected).toBe("microsoft")
+
+    for (const frame of ui.frames()) {
+      expect(frame.split("\n").length - 1).toBeLessThanOrEqual(10)
+
+      for (const line of frame.split("\n")) expect(stringWidth(line)).toBeLessThan(24)
+    }
+  }))
+
   it.effect("prevents an empty harness selection and preserves selected order", () => Effect.gen(function*() {
     const ui = scriptedTerminal([[enter, key("space"), key("down"), key("space"), enter]])
 
