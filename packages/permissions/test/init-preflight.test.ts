@@ -20,7 +20,7 @@ const handle = (version: string, code = 0) => ChildProcessSpawner.makeHandle({
 })
 
 describe("installer preflight", () => {
-  it.each(["2.0.27", "2.0.28", "2.1.0", "3.0.0", " 2.0.27\n", "opencode v2.0.27\n", "opencode v2.0.29\n"])("accepts supported stable version %s", (version) => {
+  it.each(["2.0.27", "2.0.28", "2.1.0", "2.1.3", "3.0.0", " 2.0.27\n", "opencode v2.0.27\n", "opencode v2.0.29\n", "opencode v2.1.3\n"])("accepts supported stable version %s", (version) => {
     expect(opencodeCompatibilityWarning(version)).toBeUndefined()
   })
 

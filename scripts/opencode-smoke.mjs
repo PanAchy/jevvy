@@ -33,7 +33,7 @@ try {
       "--network",
       "host",
       "--env",
-      `JEVVY_OPENCODE_VERSION=${process.env.JEVVY_OPENCODE_VERSION ?? "2.0.27"}`,
+      `JEVVY_OPENCODE_VERSION=${process.env.JEVVY_OPENCODE_VERSION ?? "2.1.3"}`,
       "--volume",
       `${join(temporary, tarball)}:/tmp/jevvy.tgz:ro`,
       "--volume",

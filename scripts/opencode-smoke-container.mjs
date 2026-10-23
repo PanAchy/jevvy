@@ -8,7 +8,7 @@ import { verifyControlCommand } from "./opencode-control-smoke.mjs"
 
 const root = "/tmp/jevvy-opencode-smoke"
 
-const opencodeVersion = process.env.JEVVY_OPENCODE_VERSION ?? "2.0.27"
+const opencodeVersion = process.env.JEVVY_OPENCODE_VERSION ?? "2.1.3"
 
 const project = join(root, "project")
 
