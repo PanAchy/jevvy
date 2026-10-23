@@ -1,4 +1,4 @@
-import { chmod, mkdtemp, rm, stat, writeFile } from "node:fs/promises"
+import { chmod, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "@effect/vitest"
@@ -134,6 +134,41 @@ describe("Jevvy configuration", () => {
     const provider = "openai" in providers ? "openai" : "microsoft"
 
     expect(yield* withConfigFile(JSON.stringify({ provider, providers }), load)).toMatchObject({ kind: "invalid" })
+  }))
+
+  it.effect("publishes the default-off nomination list in the consumer schema", () => Effect.gen(function*() {
+    const raw = yield* Effect.promise(() => readFile(new URL("../../../config.schema.json", import.meta.url), "utf8"))
+    const schema = JSON.parse(raw)
+
+    expect(schema.properties.permissions.properties.reviewAskPatterns).toMatchObject({
+      type: "array",
+      items: { type: "string", minLength: 1 },
+      default: [],
+    })
+  }))
+
+  it.effect.each([undefined, [], ["*"], ["npm run *", "git *"], ["*", "*"]])("loads review ask nominations %j for shipped and custom policies", (reviewAskPatterns) => Effect.gen(function*() {
+    for (const questions of [undefined, customQuestions]) {
+      const raw = JSON.stringify({ provider: "typesafe", permissions: { reviewAskPatterns, questions } })
+
+      expect(yield* withConfigFile(raw, load)).toMatchObject({
+        kind: questions === undefined ? "shipped-policy" : "custom-policy",
+        reviewAskPatterns: reviewAskPatterns ?? [],
+      })
+    }
+  }))
+
+  it.effect.each([null, "*", {}, [""], [true], [1]])("rejects malformed review ask nominations %j", (reviewAskPatterns) => Effect.gen(function*() {
+    const raw = JSON.stringify({ provider: "typesafe", permissions: { reviewAskPatterns } })
+
+    expect(yield* withConfigFile(raw, load)).toMatchObject({ kind: "invalid" })
+  }))
+
+  it.effect("preserves nomination spelling without normalization", () => Effect.gen(function*() {
+    const reviewAskPatterns = ["**", "GIT *", "tools\\*", "git * "]
+    const raw = JSON.stringify({ provider: "typesafe", permissions: { reviewAskPatterns } })
+
+    expect(yield* withConfigFile(raw, load)).toMatchObject({ kind: "shipped-policy", reviewAskPatterns })
   }))
 
   it.effect.each(presets)("sends the exact configured %s model through the real client", ([provider, variable, defaultModel, endpoint]) => Effect.gen(function*() {
@@ -297,6 +332,7 @@ describe("Jevvy configuration", () => {
 
     expect(config).toEqual({
       kind: "custom-policy",
+      reviewAskPatterns: [],
       timeoutMs: 5_000,
       selection: { provider: "typesafe", apiKey: undefined },
       questions: customQuestions,
@@ -407,6 +443,7 @@ describe("Jevvy configuration", () => {
 
       expect(yield* withConfigFile(raw, load)).toEqual({
         kind: "custom-policy",
+        reviewAskPatterns: [],
         timeoutMs: 5_000,
         selection: {
           provider: "custom",
@@ -431,11 +468,12 @@ describe("Jevvy configuration", () => {
     const raw = JSON.stringify({
       provider: "laya",
       providers: { laya: { policy: { checkpoint: "english", questions: customQuestions } } },
-      permissions: { timeoutMs: 12_000 },
+      permissions: { timeoutMs: 12_000, reviewAskPatterns: ["*"] },
     })
 
     expect(yield* withConfigFile(raw, load)).toEqual({
       kind: "custom-policy",
+      reviewAskPatterns: ["*"],
       timeoutMs: 12_000,
       selection: { provider: "laya", endpoint: undefined, model: undefined, apiKey: undefined },
       questions: customQuestions,
@@ -531,6 +569,7 @@ describe("Jevvy configuration", () => {
 
       expect(yield* withConfigFile(raw, load)).toEqual({
         kind: "shipped-policy",
+        reviewAskPatterns: [],
         timeoutMs: 5_000,
         selection: {
           provider: "custom",
@@ -549,6 +588,7 @@ describe("Jevvy configuration", () => {
 
     expect(yield* withConfigFile(raw, load)).toEqual({
       kind: "shipped-policy",
+      reviewAskPatterns: [],
       timeoutMs: 5_000,
       selection: { provider: "typesafe", apiKey: undefined },
     })

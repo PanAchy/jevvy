@@ -52,11 +52,11 @@
 <body>
   <main>
     <h1>The host decides. Jevvy can approve.</h1>
-    <p class="lead">Your agent checks permissions first. Jevvy can approve a command, but never overrides your agent's decisions.</p>
+    <p class="lead">Your agent keeps final allow and deny decisions. Jevvy reviews only delegated shell approval requests.</p>
     <figure>
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 832 556" role="img" aria-labelledby="jevvy-flow-title jevvy-flow-desc">
         <title id="jevvy-flow-title">Jevvy Permissions approval flow</title>
-        <desc id="jevvy-flow-desc">In Ask mode, your agent keeps its allow, deny, and specific ask decisions. Jevvy checks other commands needing approval and approves each command once only when every check passes. Otherwise your agent asks you to approve. Automatic approval settings still apply.</desc>
+        <desc id="jevvy-flow-desc">In Ask mode, your agent keeps final allow and deny decisions and asks not delegated to Jevvy. Jevvy checks delegated shell commands and approves each command once only when every check passes. Otherwise your agent asks you to approve. Automatic approval settings still apply.</desc>
         <defs>
           <marker id="jevvy-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0L8 3L0 6Z" fill="var(--muted)"/></marker>
           <marker id="jevvy-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><path d="M0 0L8 3L0 6Z" fill="var(--accent)"/></marker>
@@ -74,8 +74,8 @@
         <g>
           <rect class="mask" x="148" y="24" width="72" height="24"/><text class="label" x="184" y="40">ALLOW</text>
           <rect class="mask" x="584" y="88" width="88" height="24"/><text class="label" x="628" y="104">DENY</text>
-          <rect class="mask" x="616" y="8" width="152" height="24"/><text class="label" x="692" y="24">YOUR ASK RULE</text>
-          <rect class="mask" x="408" y="116" width="144" height="24"/><text class="label focal-text" x="480" y="132">NEEDS APPROVAL</text>
+          <rect class="mask" x="616" y="8" width="152" height="24"/><text class="label" x="692" y="24">ASK WITHOUT JEVVY</text>
+          <rect class="mask" x="408" y="116" width="144" height="24"/><text class="label focal-text" x="480" y="132">JEVVY REVIEW</text>
           <rect class="mask" x="408" y="264" width="112" height="24"/><text class="label focal-text" x="464" y="280">PASS</text>
           <rect class="mask" x="564" y="276" width="136" height="24"/><text class="label" x="632" y="292">NOT APPROVED</text>
           <rect class="mask" x="220" y="432" width="68" height="24"/><text class="label" x="254" y="448">NO</text>

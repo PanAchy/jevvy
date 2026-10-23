@@ -62,11 +62,11 @@ opencode plugin add @jevvy/permissions@0.5.1
 
 ## How it works
 
-Your agent checks permissions first. Its allow and deny decisions stay final. Specific `ask` rules stay with your agent. For other requests that need approval, Jevvy Permissions checks the full shell command. It approves only the current command when all checks pass, without saving an approval rule. In Ask mode, your agent asks you to approve anything Jevvy does not approve. Automatic approval settings still apply.
+Your agent checks permissions first. Its allow and deny decisions stay final. Ask rules not delegated to Jevvy stay with your agent. For delegated shell requests, Jevvy Permissions checks the full command. It approves only the current command when all checks pass, without saving an approval rule. In Ask mode, your agent asks you to approve anything Jevvy does not approve. Automatic approval settings still apply.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="./assets/jevvy-permission-flow-dark.png" />
-  <img src="./assets/jevvy-permission-flow-light.png" width="832" alt="Ask-mode permission flow. Your agent keeps its allow, deny, and specific ask decisions. Jevvy checks other commands needing approval and approves each command once only when every check passes. Otherwise your agent asks you to approve. Automatic approval settings still apply." />
+  <img src="./assets/jevvy-permission-flow-light.png" width="832" alt="Ask-mode permission flow. Your agent keeps final allow and deny decisions and asks not delegated to Jevvy. Jevvy checks delegated shell commands and approves each command once only when every check passes. Otherwise your agent asks you to approve. Automatic approval settings still apply." />
 </picture>
 
 ## Configuration
@@ -86,6 +86,7 @@ Jevvy Permissions reads one global file at `~/.config/jevvy/jevvy.jsonc`. Projec
 | `providers.<provider>.apiKey` | Unset | API key; takes precedence over its environment variable. |
 | `providers.<provider>.opencodeCredential` | Unset | OpenCode integration ID for API-key reuse. File and environment keys take priority. OpenCode only. |
 | `permissions.timeoutMs` | `5000` | Timeout for model provider in ms. |
+| `permissions.reviewAskPatterns` | `[]` | OpenCode ask rules delegated by exact resource-pattern string. Reload to apply. [Examples](https://github.com/PanAchy/jevvy/blob/main/guides/opencode-review-asks.md). |
 
 ### API formats and presets
 

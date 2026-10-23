@@ -248,6 +248,7 @@ describe("Jevvy initializer", () => {
       "provider": "typesafe",
       "providers": { "typesafe": { "apiKey": "old" } },
       "permissions": {
+        "reviewAskPatterns": ["*", "npm run *"],
         "questions": {
           "safe": {
             "type": "noul",
@@ -270,6 +271,7 @@ describe("Jevvy initializer", () => {
     expect(document.providers.openrouter).toEqual({ apiKey: "new" })
     expect(document.permissions.questions.safe.instructions).toBe("Risky?")
     expect(document.permissions.questions.safe.threshold).toBe(0.1)
+    expect(document.permissions.reviewAskPatterns).toEqual(["*", "npm run *"])
   }))
 
   it.effect("does not carry another model's questions into Laya", () => Effect.gen(function*() {

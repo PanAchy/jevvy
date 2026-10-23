@@ -47,6 +47,12 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "reviewAskPatterns": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": [],
+          "description": "OpenCode only. Exact resource-pattern strings of winning ask rules Jevvy Permissions may review for shell requests. Entries identify rules, not commands, and apply across effective agent and session rules. The existing shell catch-all invitation stays enabled. Reload OpenCode after changing this list."
+        },
         "timeoutMs": {
           "type": "number",
           "exclusiveMinimum": 0,
