@@ -14,7 +14,7 @@ const SystemOneRequest = Schema.Struct({
   ...JevRequest.fields,
 })
 
-const SystemOneResponse = Schema.Struct({
+export const SystemOneResponse = Schema.Struct({
   model: JevResult.fields.model,
   answers: JevResult.fields.answers,
 })
@@ -24,7 +24,7 @@ const RoutedSystemOneResponse = Schema.Struct({
   routing: Schema.Struct({ model: Schema.NonEmptyString }),
 })
 
-const validateRequestedAnswers = (
+export const validateRequestedAnswers = (
   provider: JevProvider,
   result: JevResult,
   questions: Readonly<Record<string, NoulQuestion>>,

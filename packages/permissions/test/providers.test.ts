@@ -37,7 +37,7 @@ describe("configured provider creation", () => {
     expect(providerSetupChoices.find(({ value }) => value === "zen")?.description).toContain(`paid ${DEFAULT_ZEN_MODEL} default`)
   })
 
-  it.each(["openai", "microsoft", "custom", "laya"] as const)("does not attribute Jev's shipped calibration to %s", (provider) => {
+  it.each(["openai", "microsoft", "cloudflare", "custom", "laya"] as const)("does not attribute Jev's shipped calibration to %s", (provider) => {
     expect(shippedPolicyProvenance({ provider, requestedModel: "jev-1.13-free" })).toBe("shipped-defaults-unverified")
   })
 
@@ -99,7 +99,20 @@ describe("configured provider creation", () => {
   it("does not fall back when the selected provider has no credential", () => {
     expect(createConfiguredProvider({ provider: "typesafe" })).toBeUndefined()
     expect(createConfiguredProvider({ provider: "openai" })).toBeUndefined()
+    expect(createConfiguredProvider({ provider: "cloudflare", accountId: "0123456789abcdef0123456789abcdef" })).toBeUndefined()
     expect(createConfiguredProvider({ provider: "microsoft", endpoint: "https://foundry.example.com/providers/microsoft/v1/systemone", model: "deployment" })).toBeUndefined()
+  })
+
+  it.each([undefined, "clef", "clef-flash"] as const)("constructs only the selected Cloudflare model %s without claiming calibration", (model) => {
+    const selected = createConfiguredProvider({
+      provider: "cloudflare", accountId: "0123456789abcdef0123456789abcdef", model, apiKey: Redacted.make("cloudflare-secret"),
+    })
+
+    if (selected === undefined) throw new Error("Expected Cloudflare provider")
+
+    expect(selected).toMatchObject({ provider: "cloudflare", requestedModel: model ?? "clef", expectedModel: model ?? "clef" })
+    expect(shippedPolicyProvenance(selected)).toBe("shipped-defaults-unverified")
+    expect(selected.redact("Invalid cloudflare-secret")).toBe("Invalid [redacted]")
   })
 
   it("constructs Microsoft with the configured deployment, not a catalog model ID", () => {

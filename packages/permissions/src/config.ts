@@ -7,7 +7,7 @@ import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
-import { DEFAULT_LAYA_MODEL, JevProvider } from "./core.ts"
+import { CloudflareAccountID, CloudflareModel, DEFAULT_LAYA_MODEL, JevProvider } from "./core.ts"
 import { ApprovalQuestions } from "./questions.ts"
 import { HarnessReviewConfig } from "./review-control.ts"
 import { providerApiKeyEnvironment } from "./providers.ts"
@@ -18,6 +18,12 @@ export { globalJevvyConfigPath } from "./config-path.ts"
 
 const ProviderCredentialSchema = Schema.Struct({
   apiKey: Schema.NonEmptyString,
+})
+
+const CloudflareProviderSchema = Schema.Struct({
+  accountId: CloudflareAccountID,
+  model: Schema.optionalKey(CloudflareModel),
+  apiKey: Schema.optionalKey(Schema.NonEmptyString),
 })
 
 const SystemOnePresetSettings = Schema.Struct({
@@ -66,6 +72,7 @@ const JevvyConfigSchema = Schema.Struct({
     vercel: Schema.optionalKey(SystemOnePresetSettings),
     openai: Schema.optionalKey(ProviderCredentialSchema),
     microsoft: Schema.optionalKey(EndpointProviderSchema),
+    cloudflare: Schema.optionalKey(CloudflareProviderSchema),
     laya: Schema.optionalKey(LayaProviderSchema),
     custom: Schema.optionalKey(EndpointProviderSchema),
   })),
@@ -106,6 +113,7 @@ const EnvironmentApiKeys = Config.all({
   vercel: Config.option(Config.Redacted(providerApiKeyEnvironment("vercel"))),
   openai: Config.option(Config.Redacted(providerApiKeyEnvironment("openai"))),
   microsoft: Config.option(Config.Redacted(providerApiKeyEnvironment("microsoft"))),
+  cloudflare: Config.option(Config.Redacted(providerApiKeyEnvironment("cloudflare"))),
   laya: Config.option(Config.Redacted(providerApiKeyEnvironment("laya"))),
 })
 
@@ -118,6 +126,7 @@ const hasCredentials = (document: ConfigDocument): boolean =>
   document.providers?.vercel?.apiKey !== undefined ||
   document.providers?.openai?.apiKey !== undefined ||
   document.providers?.microsoft?.apiKey !== undefined ||
+  document.providers?.cloudflare?.apiKey !== undefined ||
   document.providers?.laya?.apiKey !== undefined ||
   document.providers?.custom?.apiKey !== undefined
 
@@ -172,6 +181,19 @@ const providerSelection = (
   document: ConfigDocument,
   environment: EnvironmentApiKeys,
 ): Effect.Effect<ProviderSelection, ConfigFileError> => {
+  if (document.provider === "cloudflare") {
+    const cloudflare = document.providers?.cloudflare
+
+    if (cloudflare === undefined) return new ConfigFileError({ reason: "schema" })
+
+    return Effect.succeed({
+      provider: "cloudflare",
+      accountId: cloudflare.accountId,
+      model: cloudflare.model,
+      apiKey: cloudflare.apiKey === undefined ? environmentApiKey("cloudflare", environment) : Redacted.make(cloudflare.apiKey),
+    })
+  }
+
   if (document.provider === "custom" || document.provider === "microsoft") {
     const custom = document.providers?.[document.provider]
 

@@ -65,7 +65,7 @@ export default Plugin.define({
 
     const selection = permissionConfig.selection
 
-    const resolved = selection.provider === "laya" || selection.provider === "custom" || selection.provider === "openai" || selection.provider === "microsoft"
+    const resolved = selection.provider === "laya" || selection.provider === "custom" || selection.provider === "openai" || selection.provider === "microsoft" || selection.provider === "cloudflare"
       ? selection
       : yield* withOpenCodeCredential(selection, (integrationID) => Effect.gen(function*() {
         const connection = yield* ctx.integration.connection.active(integrationID)
