@@ -10,5 +10,5 @@
     "declaration": true
   },
   "include": ["src"],
-  "exclude": ["test"]
+  "exclude": ["test", "src/opencode/gui.ts"]
 }
