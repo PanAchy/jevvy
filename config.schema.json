@@ -191,7 +191,7 @@
           "type": "string",
           "enum": ["clef", "clef-flash"],
           "default": "clef",
-          "description": "Experimental decision model. Jev calibration does not transfer to either Clef model."
+          "description": "Decision model. Jev calibration does not transfer to either Clef model."
         },
         "apiKey": {
           "type": "string",

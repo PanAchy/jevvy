@@ -187,7 +187,7 @@ export const promptCloudflareProvider = Effect.fn("Init.promptCloudflareProvider
   })
 
   const model = yield* prompts.select({
-    message: "Cloudflare decision model (experimental)",
+    message: "Cloudflare decision model",
     choices: [
       { value: "clef", title: "Clef", description: "27B precision model; not calibrated by Jevvy" },
       { value: "clef-flash", title: "Clef-flash", description: "9B latency-focused model; not calibrated by Jevvy" },
@@ -297,7 +297,7 @@ const displayEndpoint = (value: string): string => {
 }
 
 const providerDetails = (provider: InitProvider): string[] => {
-  if (provider.provider === "cloudflare") return [`Model: ${provider.model} (experimental, uncalibrated)`]
+  if (provider.provider === "cloudflare") return [`Model: ${provider.model} (uncalibrated)`]
 
   if (provider.provider === "laya") {
     return [`Server: ${displayEndpoint(provider.endpoint ?? DEFAULT_LAYA_ENDPOINT)}`]

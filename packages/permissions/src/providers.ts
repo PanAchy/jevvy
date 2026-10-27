@@ -119,7 +119,7 @@ const providerDefinitions = {
   cloudflare: {
     displayName: "Cloudflare Clef",
     apiKeyEnvironment: "CLOUDFLARE_API_TOKEN",
-    setupDescription: "Clef or Clef-flash on Workers AI; experimental, uncalibrated",
+    setupDescription: "Clef or Clef-flash on Workers AI; not calibrated by Jevvy",
   },
   microsoft: {
     displayName: "Microsoft Decision",

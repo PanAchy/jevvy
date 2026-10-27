@@ -1,6 +1,6 @@
 # Cloudflare Clef
 
-Jevvy Permissions supports Cloudflare Workers AI's **Clef** and **Clef-flash** decision models experimentally, in both OpenCode and Claude Code. They use System One questions, but neither model inherits Jev's calibration evidence. Do not rely on the shipped questions and thresholds for these models without model-specific calibration.
+Jevvy Permissions supports Cloudflare Workers AI's **Clef** and **Clef-flash** decision models in both OpenCode and Claude Code. They use System One questions, but neither model inherits Jev's calibration evidence. Do not rely on the shipped questions and thresholds for these models without model-specific calibration.
 
 ## Setup
 

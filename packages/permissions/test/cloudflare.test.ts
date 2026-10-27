@@ -18,7 +18,7 @@ const response = (probability: number) => ({
   },
 })
 
-describe("experimental Cloudflare provider", () => {
+describe("Cloudflare provider", () => {
   it.effect("uses the ordinary allow-only engine and does not cache malformed provider answers", () => Effect.gen(function*() {
     const selected = createConfiguredProvider({ provider: "cloudflare", accountId, apiKey: Redacted.make("fixture-token") })
 
@@ -63,7 +63,7 @@ describe("experimental Cloudflare provider", () => {
     const summary = initPlanSummary({ harnesses: ["opencode", "claude"], provider }, "/private/jevvy.jsonc")
 
     expect(provider).toMatchObject({ provider: "cloudflare", accountId, model: "clef-flash" })
-    expect(summary).toContain("experimental, uncalibrated")
+    expect(summary).toContain("Model: clef-flash (uncalibrated)")
     expect(summary).not.toContain("private-token")
     expect(summary).not.toContain(accountId)
 
