@@ -99,7 +99,7 @@ History lives in `metrics/history.sqlite` beside the global Jevvy configuration.
 | | TypeSafe AI | `typesafe` | `TYPESAFE_API_KEY` |
 | | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
 | | Vercel AI Gateway | `vercel` | `AI_GATEWAY_API_KEY` |
-| | Microsoft Decision<br>*[Experimental setup][microsoft-guide]* | `microsoft` | `AZURE_AI_API_KEY` |
+| | Microsoft Decision<br>*[Setup guide][microsoft-guide]* | `microsoft` | `AZURE_AI_API_KEY` |
 | | Cloudflare Clef<br>*[Setup guide][cloudflare-guide]* | `cloudflare` | `CLOUDFLARE_API_TOKEN` |
 | | Laya<br>*[Setup guide][laya-guide]* | `laya` | Optional `LAYA_API_KEY` |
 | | Custom endpoint | `custom` | None |
