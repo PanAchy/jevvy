@@ -1,5 +1,23 @@
 # @jevvy/permissions
 
+## 0.9.0
+
+### Minor Changes
+
+- [#70](https://github.com/PanAchy/jevvy/pull/70) [`73adf25`](https://github.com/PanAchy/jevvy/commit/73adf252d0e4a28304b1dcd31017bf79a68e2fa1) - Add Cloudflare Clef and Clef-flash support for both harnesses. Each model needs its own calibration; requests over 8 KiB abstain rather than risk command truncation.
+
+- [#69](https://github.com/PanAchy/jevvy/pull/69) [`0b1f0bc`](https://github.com/PanAchy/jevvy/commit/0b1f0bc3cb235199ca8369332a4fa46921da6154) - Add a red/green Jevvy indicator with click-to-toggle controls in the session header for OpenCode Desktop 2.2.0 or newer through its experimental GUI API. `/jevvy` remains available without the GUI.
+
+### Patch Changes
+
+- [#76](https://github.com/PanAchy/jevvy/pull/76) [`24b350c`](https://github.com/PanAchy/jevvy/commit/24b350c7c622d4c72cd351ee5a67fb78d8230ef1) - Retry brief history storage contention during worker startup so concurrent Claude Code hooks keep their observations.
+
+- [#75](https://github.com/PanAchy/jevvy/pull/75) [`79a8146`](https://github.com/PanAchy/jevvy/commit/79a81462c252b9b8f0948c2cd0dab137d6d8cd09) - Remove the Microsoft Decision experimental setup label after a live compatibility check. Model-specific calibration remains required.
+
+- [#70](https://github.com/PanAchy/jevvy/pull/70) [`73adf25`](https://github.com/PanAchy/jevvy/commit/73adf252d0e4a28304b1dcd31017bf79a68e2fa1) - Remove the Microsoft Decision experimental label while retaining its setup and calibration caveats.
+
+- [#68](https://github.com/PanAchy/jevvy/pull/68) [`7f0f516`](https://github.com/PanAchy/jevvy/commit/7f0f516cd76e188c7d6946dc165cb913a1e0e30b) Thanks [@dependabot](https://github.com/apps/dependabot)! - Update the locked Undici dependency to 8.12.3 for upstream TLS and HTTP security fixes.
+
 ## 0.8.0
 
 ### New providers
