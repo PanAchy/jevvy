@@ -203,11 +203,15 @@ const workerProof = (events, pid, requireRole) => {
 
   assert.equal(sent.length, new Set(sent).size, "Repeated observation ID")
 
-  return { pid, worker, ready, failed, sent, acknowledged, startupStopped: terminated && ended && exitCode === 1 && !ready && !failed && sent.length === 0 }
+  return {
+    pid, worker, ready, failed, sent, acknowledged,
+    startupStopped: terminated && ended && exitCode === 1 && !ready && !failed && sent.length === 0,
+    drainStopped: terminated && ended && exitCode === 1 && ready && pending?.tag === "Append",
+  }
 }
 
 export const checkHistoryCoverage = ({ expected, store, events, lifetime = "host", requireRole = false, validate = () => undefined, report = console.log }) => {
-  const result = { expected: expected.length, delivered: [], missing: [], classifiedBusy: [], classifiedStartup: [], unknown: [], acknowledged: [], missingAcknowledged: [], uninitialized: store.uninitialized ?? null }
+  const result = { expected: expected.length, delivered: [], missing: [], classifiedBusy: [], classifiedStartup: [], classifiedDrain: [], unknown: [], acknowledged: [], missingAcknowledged: [], uninitialized: store.uninitialized ?? null }
   const issues = []
   const rows = store.rows
   assert.equal(new Set(rows.map((row) => row.id)).size, rows.length)
@@ -246,6 +250,7 @@ export const checkHistoryCoverage = ({ expected, store, events, lifetime = "host
       if (matched.length === 0) {
         if (proof?.failed && proof.acknowledged.length === 0 && (!store.uninitialized || proof.failed === "before-ready")) result.classifiedBusy.push({ command: observation.command, pid: proof.pid, worker: proof.worker, stage: proof.failed, sent: proof.sent })
         else if (lifetime === "invocation" && proof?.startupStopped) result.classifiedStartup.push({ command: observation.command, pid: proof.pid, worker: proof.worker })
+        else if (lifetime === "invocation" && proof?.drainStopped) result.classifiedDrain.push({ command: observation.command, pid: proof.pid, worker: proof.worker })
         else throw store.error ?? new Error("Unclassified missing hook observation")
       } else result.delivered.push({ command: observation.command, id: matched[0].id })
 
@@ -256,10 +261,10 @@ export const checkHistoryCoverage = ({ expected, store, events, lifetime = "host
     }
   }
 
-  report(`History coverage: ${JSON.stringify({ ...result, deliveredCount: result.delivered.length, classifiedBusyCount: result.classifiedBusy.length, classifiedStartupCount: result.classifiedStartup.length, unknownCount: result.unknown.length, acknowledgedCount: result.acknowledged.length })}`)
+  report(`History coverage: ${JSON.stringify({ ...result, deliveredCount: result.delivered.length, classifiedBusyCount: result.classifiedBusy.length, classifiedStartupCount: result.classifiedStartup.length, classifiedDrainCount: result.classifiedDrain.length, unknownCount: result.unknown.length, acknowledgedCount: result.acknowledged.length })}`)
   assert.equal(result.missingAcknowledged.length, 0, `Missing Stored IDs: ${JSON.stringify(result)}`)
   assert.equal(issues.length, 0, `Unexplained or invalid history: ${JSON.stringify(result)}`)
-  assert.equal(result.delivered.length + result.classifiedBusy.length + result.classifiedStartup.length, expected.length)
+  assert.equal(result.delivered.length + result.classifiedBusy.length + result.classifiedStartup.length + result.classifiedDrain.length, expected.length)
 
   return result
 }
