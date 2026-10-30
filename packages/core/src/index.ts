@@ -6,6 +6,10 @@ export { createCustomSystemOneClient } from "./custom.ts"
 
 export type { CustomSystemOneClientOptions } from "./custom.ts"
 
+export { CloudflareAccountID, CloudflareModel, createCloudflareClient, DEFAULT_CLOUDFLARE_MODEL } from "./cloudflare.ts"
+
+export type { CloudflareClientOptions } from "./cloudflare.ts"
+
 export { createLayaClient, DEFAULT_LAYA_ENDPOINT, DEFAULT_LAYA_MODEL } from "./laya.ts"
 
 export type { LayaClientOptions } from "./laya.ts"

@@ -66,6 +66,42 @@ const withConfigFile = <A, E, R>(
 )
 
 describe("Jevvy configuration", () => {
+  it.effect.each([undefined, "clef", "clef-flash"] as const)("loads Cloudflare model %s with file credentials before environment credentials", (model) => Effect.gen(function*() {
+    for (const apiKey of [undefined, "file-token"]) {
+      const environment = ConfigProvider.fromUnknown({ CLOUDFLARE_API_TOKEN: "environment-token", TYPESAFE_API_KEY: "unrelated" })
+
+      const config = yield* withConfigFile(JSON.stringify({
+        provider: "cloudflare", providers: { cloudflare: { accountId: "0123456789abcdef0123456789abcdef", model, apiKey } },
+      }), (path) => load(path, environment))
+
+      expect(config).toMatchObject({ kind: "shipped-policy", selection: { provider: "cloudflare", accountId: "0123456789abcdef0123456789abcdef", model } })
+
+      if (config.kind !== "shipped-policy" || config.selection.apiKey === undefined) throw new Error("Expected Cloudflare credentials")
+
+      expect(Redacted.value(config.selection.apiKey)).toBe(apiKey ?? "environment-token")
+      expect(JSON.stringify(config)).not.toContain(apiKey ?? "environment-token")
+    }
+  }))
+
+  it.effect.each([
+    undefined,
+    {},
+    { accountId: "../account" },
+    { accountId: "0123456789abcdef0123456789abcdef", model: "jev" },
+    { accountId: "0123456789abcdef0123456789abcdef", apiKey: "" },
+    { accountId: "0123456789abcdef0123456789abcdef", opencodeCredential: "cloudflare" },
+  ])("rejects incomplete or invalid Cloudflare settings: %j", (cloudflare) => Effect.gen(function*() {
+    expect(yield* withConfigFile(JSON.stringify({ provider: "cloudflare", providers: { cloudflare } }), load)).toMatchObject({ kind: "invalid" })
+  }))
+
+  it.effect("uses custom Cloudflare questions and never borrows another provider's token", () => Effect.gen(function*() {
+    const config = yield* withConfigFile(JSON.stringify({
+      provider: "cloudflare", providers: { cloudflare: { accountId: "0123456789abcdef0123456789abcdef" } }, permissions: { questions: customQuestions },
+    }), (path) => load(path, ConfigProvider.fromUnknown({ TYPESAFE_API_KEY: "unrelated-token" })))
+
+    expect(config).toMatchObject({ kind: "custom-policy", selection: { provider: "cloudflare", apiKey: undefined }, questions: customQuestions })
+  }))
+
   it.effect.each([undefined, false, true])("loads default-off history opt-in %s", (enabled) => Effect.gen(function*() {
     const config = yield* withConfigFile(JSON.stringify({ provider: "typesafe", metrics: { enabled } }), load)
 

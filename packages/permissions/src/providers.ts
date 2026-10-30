@@ -1,5 +1,6 @@
 import {
   createCustomSystemOneClient,
+  createCloudflareClient,
   createLayaClient,
   createMicrosoftClient,
   createOpenAIClient,
@@ -8,6 +9,7 @@ import {
   createVercelClient,
   createZenClient,
   DEFAULT_OPENROUTER_MODEL,
+  DEFAULT_CLOUDFLARE_MODEL,
   DEFAULT_OPENAI_MODEL,
   DEFAULT_LAYA_ENDPOINT,
   DEFAULT_LAYA_MODEL,
@@ -17,23 +19,29 @@ import {
   MICROSOFT_DECISION_MODEL,
   JevProvider,
 } from "./core.ts"
-import type { JevClient, JevProvider as JevProviderType } from "./core.ts"
+import type { CloudflareModel, JevClient, JevProvider as JevProviderType } from "./core.ts"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 
-export const BuiltInProvider = Schema.Literals(["zen", "typesafe", "openrouter", "vercel", "openai", "microsoft", "laya"])
+export const BuiltInProvider = Schema.Literals(["zen", "typesafe", "openrouter", "vercel", "openai", "microsoft", "cloudflare", "laya"])
 
 export type BuiltInProvider = Schema.Schema.Type<typeof BuiltInProvider>
 
 export type ProviderSelection =
   | {
-      readonly provider: Exclude<BuiltInProvider, "laya" | "microsoft" | "openai">
+      readonly provider: Exclude<BuiltInProvider, "laya" | "microsoft" | "openai" | "cloudflare">
       readonly model?: string
       readonly apiKey?: Redacted.Redacted<string>
       readonly opencodeCredential?: string
     }
   | {
       readonly provider: "openai"
+      readonly apiKey?: Redacted.Redacted<string>
+    }
+  | {
+      readonly provider: "cloudflare"
+      readonly accountId: string
+      readonly model?: CloudflareModel
       readonly apiKey?: Redacted.Redacted<string>
     }
   | {
@@ -104,10 +112,15 @@ const providerPresets = {
     createClient: createOpenAIClient,
     setupDescription: "Decisions API, gpt-6-luna",
   },
-} satisfies Readonly<Record<Exclude<BuiltInProvider, "microsoft" | "laya">, ProviderDefinition>>
+} satisfies Readonly<Record<Exclude<BuiltInProvider, "microsoft" | "laya" | "cloudflare">, ProviderDefinition>>
 
 const providerDefinitions = {
   ...providerPresets,
+  cloudflare: {
+    displayName: "Cloudflare Clef",
+    apiKeyEnvironment: "CLOUDFLARE_API_TOKEN",
+    setupDescription: "Clef or Clef-flash on Workers AI; not calibrated by Jevvy",
+  },
   microsoft: {
     displayName: "Microsoft Decision",
     apiKeyEnvironment: "AZURE_AI_API_KEY",
@@ -127,7 +140,7 @@ const providerDefinitions = {
 export const providerDisplayName = (provider: JevProviderType): string =>
   providerDefinitions[provider].displayName
 
-export const providerSetupChoices = (["zen", "typesafe", "openrouter", "vercel", "laya", "custom", "openai", "microsoft"] as const)
+export const providerSetupChoices = (["zen", "typesafe", "openrouter", "vercel", "laya", "custom", "openai", "microsoft", "cloudflare"] as const)
   .map((value) => ({ value, title: providerDefinitions[value].displayName, description: providerDefinitions[value].setupDescription }))
 
 export const providerApiKeyEnvironment = (provider: BuiltInProvider): string =>
@@ -153,7 +166,7 @@ const redactWith = (apiKey: string | undefined) =>
     : text.replaceAll(apiKey, "[redacted]")
 
 export const createBuiltInProvider = (
-  provider: Exclude<BuiltInProvider, "laya" | "microsoft">,
+  provider: Exclude<BuiltInProvider, "laya" | "microsoft" | "cloudflare">,
   apiKey: string,
   model: string = providerPresets[provider].model,
 ): SelectedProvider => ({
@@ -177,6 +190,18 @@ export const createConfiguredProvider = (
       requestedModel: selection.model,
       expectedModel: MICROSOFT_DECISION_MODEL,
       client: createMicrosoftClient({ endpoint: selection.endpoint, model: selection.model, apiKey }),
+      redact: redactWith(apiKey),
+    }
+  }
+
+  if (selection.provider === "cloudflare") {
+    const model = selection.model ?? DEFAULT_CLOUDFLARE_MODEL
+
+    return apiKey === undefined ? undefined : {
+      provider: "cloudflare",
+      requestedModel: model,
+      expectedModel: model,
+      client: createCloudflareClient({ accountId: selection.accountId, model, apiKey }),
       redact: redactWith(apiKey),
     }
   }

@@ -10,6 +10,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
 import { applyEdits, modify, parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
 import { DEFAULT_LAYA_ENDPOINT, DEFAULT_LAYA_MODEL } from "../core.ts"
+import type { CloudflareModel } from "../core.ts"
 import { LayaPolicy } from "../config.ts"
 import { createConfigFile } from "../config-file.ts"
 import { inspectHarness } from "./preflight.ts"
@@ -35,6 +36,12 @@ export type InitHarness = typeof InitHarness.Type
 export type InitProvider =
   | {
       readonly provider: "zen" | "typesafe" | "openrouter" | "vercel" | "openai"
+      readonly apiKey: Redacted.Redacted<string>
+    }
+  | {
+      readonly provider: "cloudflare"
+      readonly accountId: string
+      readonly model: CloudflareModel
       readonly apiKey: Redacted.Redacted<string>
     }
   | {
@@ -185,6 +192,10 @@ export class InitPlatform extends Context.Service<InitPlatform, {
 
 const providerSettings = (provider: InitProvider): Readonly<Record<string, string>> | undefined => {
   const apiKey = provider.apiKey === undefined ? undefined : Redacted.value(provider.apiKey)
+
+  if (provider.provider === "cloudflare") {
+    return { accountId: provider.accountId, model: provider.model, apiKey: Redacted.value(provider.apiKey) }
+  }
 
   if (provider.provider === "custom" || provider.provider === "microsoft") {
     return apiKey === undefined

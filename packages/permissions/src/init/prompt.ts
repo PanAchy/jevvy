@@ -7,7 +7,8 @@ import type * as Prompt from "effect/cli/Prompt"
 import * as Controls from "./controls.ts"
 import { parse } from "jsonc-parser"
 import type { ParseError } from "jsonc-parser"
-import { DEFAULT_LAYA_ENDPOINT, DEFAULT_LAYA_MODEL } from "../core.ts"
+import { CloudflareAccountID, DEFAULT_LAYA_ENDPOINT, DEFAULT_LAYA_MODEL } from "../core.ts"
+import type { CloudflareModel } from "../core.ts"
 import { providerDisplayName, providerSetupChoices } from "../providers.ts"
 import type { InitHarness, InitPlan, InitProvider, InitResult } from "./index.ts"
 import { showInitSection } from "./theme.ts"
@@ -175,6 +176,29 @@ export const promptMicrosoftProvider = Effect.fn("Init.promptMicrosoftProvider")
   return { provider: "microsoft", endpoint: endpoint.trim(), model: model.trim(), apiKey }
 })
 
+export const promptCloudflareProvider = Effect.fn("Init.promptCloudflareProvider")(function*(
+  prompts: Pick<ProviderPrompts, "text" | "password"> & {
+    readonly select: (options: Controls.SelectOptions<CloudflareModel>) => Effect.Effect<CloudflareModel, Terminal.QuitError, Prompt.Environment>
+  } = Controls,
+): Effect.fn.Return<Extract<InitProvider, { provider: "cloudflare" }>, Terminal.QuitError, Prompt.Environment> {
+  const accountId = yield* prompts.text({
+    message: "Cloudflare account ID",
+    validate: validate((value) => Schema.is(CloudflareAccountID)(value.trim()) ? undefined : "Enter a 32-character hexadecimal Cloudflare account ID"),
+  })
+
+  const model = yield* prompts.select({
+    message: "Cloudflare decision model",
+    choices: [
+      { value: "clef", title: "Clef", description: "27B precision model; not calibrated by Jevvy" },
+      { value: "clef-flash", title: "Clef-flash", description: "9B latency-focused model; not calibrated by Jevvy" },
+    ],
+  })
+
+  const apiKey = yield* promptApiKey("Enter your Cloudflare API token with Workers AI access", prompts.password)
+
+  return { provider: "cloudflare", accountId: accountId.trim(), model, apiKey }
+})
+
 export const promptLayaProvider = Effect.fn("Init.promptLayaProvider")(function*(
   prompts: LayaPrompts = layaPrompts,
   defaults: LayaPromptDefaults = {},
@@ -230,6 +254,8 @@ const promptProvider = Effect.fn("Init.promptProvider")(function*(
 
   if (provider === "microsoft") return yield* promptMicrosoftProvider()
 
+  if (provider === "cloudflare") return yield* promptCloudflareProvider()
+
   if (provider === "custom") {
     const endpoint = yield* Controls.text({
       message: "System One endpoint (http://127.0.0.1:8080/v1/systemone)",
@@ -271,6 +297,8 @@ const displayEndpoint = (value: string): string => {
 }
 
 const providerDetails = (provider: InitProvider): string[] => {
+  if (provider.provider === "cloudflare") return [`Model: ${provider.model} (uncalibrated)`]
+
   if (provider.provider === "laya") {
     return [`Server: ${displayEndpoint(provider.endpoint ?? DEFAULT_LAYA_ENDPOINT)}`]
   }
@@ -340,7 +368,7 @@ export const promptInitPlan = Effect.fn("Init.promptPlan")(function*(configPath:
     yield* showInitSection("Laya policy", "Laya needs a checkpoint-specific policy; without one, auto-approval stays off.")
   }
 
-  if (provider.provider === "openai" || provider.provider === "microsoft") {
+  if (provider.provider === "openai" || provider.provider === "microsoft" || provider.provider === "cloudflare") {
     yield* showInitSection("Model calibration", decisionModelCalibrationWarning)
   }
 

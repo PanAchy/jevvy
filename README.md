@@ -104,6 +104,7 @@ History lives in `metrics/history.sqlite` beside the global Jevvy configuration.
 | | OpenRouter | `openrouter` | `OPENROUTER_API_KEY` |
 | | Vercel AI Gateway | `vercel` | `AI_GATEWAY_API_KEY` |
 | | Microsoft Decision<br>*[Setup guide][microsoft-guide]* | `microsoft` | `AZURE_AI_API_KEY` |
+| | Cloudflare Clef<br>*[Setup guide][cloudflare-guide]* | `cloudflare` | `CLOUDFLARE_API_TOKEN` |
 | | Laya<br>*[Setup guide][laya-guide]* | `laya` | Optional `LAYA_API_KEY` |
 | | Custom endpoint | `custom` | None |
 | OpenAI Decisions | OpenAI<br>*[Setup guide][openai-guide]* | `openai` | `OPENAI_API_KEY` |
@@ -113,6 +114,8 @@ History lives in `metrics/history.sqlite` beside the global Jevvy configuration.
 [openai-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/openai.md
 
 [microsoft-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/microsoft.md
+
+[cloudflare-guide]: https://github.com/PanAchy/jevvy/blob/main/guides/cloudflare.md
 
 The plugin uses only the selected provider and never falls back to another one.
 

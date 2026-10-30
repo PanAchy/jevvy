@@ -11,7 +11,7 @@
     },
     "provider": {
       "type": "string",
-      "enum": ["zen", "typesafe", "openrouter", "vercel", "openai", "microsoft", "laya", "custom"]
+      "enum": ["zen", "typesafe", "openrouter", "vercel", "openai", "microsoft", "cloudflare", "laya", "custom"]
     },
     "providers": {
       "type": "object",
@@ -34,6 +34,9 @@
         },
         "microsoft": {
           "$ref": "#/$defs/microsoftProvider"
+        },
+        "cloudflare": {
+          "$ref": "#/$defs/cloudflareProvider"
         },
         "laya": {
           "$ref": "#/$defs/layaProvider"
@@ -161,9 +164,42 @@
         "required": ["providers"],
         "properties": { "providers": { "required": ["microsoft"] } }
       }
+    },
+    {
+      "if": {
+        "properties": { "provider": { "const": "cloudflare" } },
+        "required": ["provider"]
+      },
+      "then": {
+        "required": ["providers"],
+        "properties": { "providers": { "required": ["cloudflare"] } }
+      }
     }
   ],
   "$defs": {
+    "cloudflareProvider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["accountId"],
+      "properties": {
+        "accountId": {
+          "type": "string",
+          "pattern": "^[a-fA-F0-9]{32}$",
+          "description": "Cloudflare account ID for Workers AI."
+        },
+        "model": {
+          "type": "string",
+          "enum": ["clef", "clef-flash"],
+          "default": "clef",
+          "description": "Decision model. Jev calibration does not transfer to either Clef model."
+        },
+        "apiKey": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Cloudflare API token with Workers AI access. Alternatively set CLOUDFLARE_API_TOKEN."
+        }
+      }
+    },
     "providerCredential": {
       "type": "object",
       "additionalProperties": false,

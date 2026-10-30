@@ -4,7 +4,7 @@
 
 ### New providers
 
-- [#53](https://github.com/PanAchy/jevvy/pull/53) [`3294e69`](https://github.com/PanAchy/jevvy/commit/3294e69d45d9628847dcc3229bda7384d425a817) - Add OpenAI Decisions (`gpt-6-luna`) and experimental Microsoft-Decision-1 via Azure Foundry. Non-Jev models require their own calibration.
+- [#53](https://github.com/PanAchy/jevvy/pull/53) [`3294e69`](https://github.com/PanAchy/jevvy/commit/3294e69d45d9628847dcc3229bda7384d425a817) - Add OpenAI Decisions (`gpt-6-luna`) and Microsoft-Decision-1 via Azure Foundry. Non-Jev models require their own calibration.
 
 ### Permission behavior
 
