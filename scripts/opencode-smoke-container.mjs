@@ -176,6 +176,10 @@ const inspectPlugin = async (port, expectedProblem, exercise) => {
 
           try {
             await exercise(api)
+
+            const control = await api("POST", `/api/rpc/jevvy.permissions.control/get?location[directory]=${encodeURIComponent(project)}`, {})
+
+            if (control.output?.problem !== undefined) console.log(`OpenCode host diagnostic at ${port}: ${control.output.problem}`)
           } catch (error) {
             throw new Error(`shell permission smoke failed\n${diagnostics.join("").slice(-4000)}`, { cause: error })
           }
