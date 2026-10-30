@@ -47,6 +47,13 @@ const startupStop = [
   { event: "exit", code: 1 },
 ]
 
+const drainStop = [
+  ready,
+  append,
+  { event: "terminate" },
+  { event: "exit", code: 1 },
+]
+
 it.each([undefined, "missing-database", "missing-events-table"])("accounts for a confirmed invocation startup stop with store state %s", (uninitialized) => {
   const result = check({ lifetime: "invocation", events: trace(startupStop), store: { rows: [], uninitialized } })
   expect(result.classifiedStartup).toEqual([{ command, pid: 101, worker: 1 }])
@@ -75,13 +82,29 @@ it("does not permit a startup stop for a live host worker", () => {
   expect(() => check({ events: trace(startupStop) })).toThrow(/Unexplained/)
 })
 
+it("accounts for an invocation drain that ends while an append is in flight", () => {
+  const result = check({ lifetime: "invocation", events: trace(drainStop) })
+  expect(result.classifiedDrain).toEqual([{ command, pid: 101, worker: 1 }])
+  expect(result.classifiedStartup).toEqual([])
+  expect(result.delivered).toEqual([])
+  expect(result.acknowledged).toEqual([])
+  expect(result.unknown).toEqual([])
+})
+
+it("does not permit a drain stop for a live host worker", () => {
+  expect(() => check({ events: trace(drainStop) })).toThrow(/Unexplained/)
+})
+
 it.each([
   [{ event: "terminate" }],
   [{ event: "exit", code: 1 }],
   [{ event: "exit", code: 0 }, { event: "terminate" }],
   [{ event: "terminate" }, { event: "exit", code: 0 }],
   [ready, ...startupStop],
-  [ready, append, ...startupStop],
+  [ready, append],
+  [ready, append, { event: "terminate" }],
+  [ready, append, { event: "exit", code: 1 }],
+  [ready, append, { event: "terminate" }, { event: "exit", code: 0 }],
   [{ event: "error" }, ...startupStop],
   [{ event: "messageerror" }, ...startupStop],
   [{ event: "invalid-frame" }, ...startupStop],
@@ -117,9 +140,10 @@ it("accepts scoped cleanup after an acknowledged worker has closed and exited no
 it("requires actual hook writes rather than accepting a suite of classified drops", () => {
   const startup = check({ lifetime: "invocation", events: trace(startupStop) })
   const busyDrop = check({ events: trace([busy]) })
+  const drainDrop = check({ lifetime: "invocation", events: trace(drainStop) })
   const delivered = check({ store: { rows: [row] }, events: trace([ready, append, stored]) })
   const unacknowledged = check({ store: { rows: [row] }, events: trace([ready, append, busy]) })
-  expect(() => requirePositiveHookHistory({ coverages: [undefined, startup, busyDrop], requireAck: true })).toThrow(/must persist/)
+  expect(() => requirePositiveHookHistory({ coverages: [undefined, startup, busyDrop, drainDrop], requireAck: true })).toThrow(/must persist/)
   expect(() => requirePositiveHookHistory({ coverages: [unacknowledged], requireAck: true })).toThrow(/must persist/)
   expect(() => requirePositiveHookHistory({ coverages: [startup, delivered], requireAck: true })).not.toThrow()
   expect(() => requirePositiveHookHistory({ coverages: [unacknowledged], requireAck: false })).not.toThrow()
