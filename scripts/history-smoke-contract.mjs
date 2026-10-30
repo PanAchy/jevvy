@@ -133,6 +133,7 @@ const workerProof = (events, pid, requireRole) => {
   let previous = -Infinity
   let terminated = false
   let ended = false
+  let exitCode
   let closed = false
   const selected = own.filter((entry) => entry.worker === worker)
   assert.equal(selected[0]?.event, "spawn", "History activity before worker spawn")
@@ -143,16 +144,20 @@ const workerProof = (events, pid, requireRole) => {
     previous = entry.timeMs
     assert.equal(["error", "messageerror", "invalid-frame"].includes(entry.event), false, `History transport ${entry.event}`)
 
-    if (entry.event === "terminate") terminated = true
+    if (entry.event === "terminate") {
+      assert.equal(terminated || ended, false, "Repeated or post-exit worker termination")
+      terminated = true
+    }
 
     if (entry.event === "exit") {
       assert.equal(ended, false, "Repeated worker exit")
       assert.ok(entry.code === 0 || (terminated && entry.code === 1), "Unexpected history worker exit")
       ended = true
+      exitCode = entry.code
     }
 
     if (entry.event === "platform-ready") {
-      assert.equal(ready || Boolean(failed), false, "Conflicting history readiness")
+      assert.equal(ready || Boolean(failed) || terminated || ended, false, "Conflicting history readiness")
       ready = true
     }
 
@@ -198,11 +203,11 @@ const workerProof = (events, pid, requireRole) => {
 
   assert.equal(sent.length, new Set(sent).size, "Repeated observation ID")
 
-  return { pid, worker, ready, failed, sent, acknowledged }
+  return { pid, worker, ready, failed, sent, acknowledged, startupStopped: terminated && ended && exitCode === 1 && !ready && !failed && sent.length === 0 }
 }
 
-export const checkHistoryCoverage = ({ expected, store, events, requireRole = false, validate = () => undefined, report = console.log }) => {
-  const result = { expected: expected.length, delivered: [], missing: [], classifiedBusy: [], unknown: [], acknowledged: [], missingAcknowledged: [], uninitialized: store.uninitialized ?? null }
+export const checkHistoryCoverage = ({ expected, store, events, lifetime = "host", requireRole = false, validate = () => undefined, report = console.log }) => {
+  const result = { expected: expected.length, delivered: [], missing: [], classifiedBusy: [], classifiedStartup: [], unknown: [], acknowledged: [], missingAcknowledged: [], uninitialized: store.uninitialized ?? null }
   const issues = []
   const rows = store.rows
   assert.equal(new Set(rows.map((row) => row.id)).size, rows.length)
@@ -240,20 +245,25 @@ export const checkHistoryCoverage = ({ expected, store, events, requireRole = fa
 
       if (matched.length === 0) {
         if (proof?.failed && proof.acknowledged.length === 0 && (!store.uninitialized || proof.failed === "before-ready")) result.classifiedBusy.push({ command: observation.command, pid: proof.pid, worker: proof.worker, stage: proof.failed, sent: proof.sent })
+        else if (lifetime === "invocation" && proof?.startupStopped) result.classifiedStartup.push({ command: observation.command, pid: proof.pid, worker: proof.worker })
         else throw store.error ?? new Error("Unclassified missing hook observation")
       } else result.delivered.push({ command: observation.command, id: matched[0].id })
 
-      if (store.uninitialized) assert.ok(proof?.failed === "before-ready" && !proof.ready && proof.sent.length === 0, "Missing database/table after readiness or without initialization-busy proof")
+      if (store.uninitialized) assert.ok(proof && !proof.ready && proof.sent.length === 0 && (proof.failed === "before-ready" || (lifetime === "invocation" && proof.startupStopped)), "Missing database/table without initialization-busy or invocation-startup-stop proof")
     } catch (error) {
       result.unknown.push({ command: observation.command, error: String(error) })
       issues.push(error)
     }
   }
 
-  report(`History coverage: ${JSON.stringify({ ...result, deliveredCount: result.delivered.length, classifiedBusyCount: result.classifiedBusy.length, unknownCount: result.unknown.length, acknowledgedCount: result.acknowledged.length })}`)
+  report(`History coverage: ${JSON.stringify({ ...result, deliveredCount: result.delivered.length, classifiedBusyCount: result.classifiedBusy.length, classifiedStartupCount: result.classifiedStartup.length, unknownCount: result.unknown.length, acknowledgedCount: result.acknowledged.length })}`)
   assert.equal(result.missingAcknowledged.length, 0, `Missing Stored IDs: ${JSON.stringify(result)}`)
   assert.equal(issues.length, 0, `Unexplained or invalid history: ${JSON.stringify(result)}`)
-  assert.equal(result.delivered.length + result.classifiedBusy.length, expected.length)
+  assert.equal(result.delivered.length + result.classifiedBusy.length + result.classifiedStartup.length, expected.length)
 
   return result
+}
+
+export const requirePositiveHookHistory = ({ coverages, requireAck }) => {
+  assert.ok(coverages.some((coverage) => coverage?.delivered.some(({ id }) => !requireAck || coverage.acknowledged.includes(id))), "Actual Claude hooks must persist history; classified drops are not positive write evidence")
 }
