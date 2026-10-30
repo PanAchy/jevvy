@@ -133,6 +133,14 @@ try {
   ensure(existsSync(join(permissionsRoot, "dist", "claude-control.js")), "permissions is missing its Claude Code control executable")
   ensure(existsSync(join(permissionsRoot, "dist", "claude-controls.js")), "permissions is missing its Claude Code native controls")
   ensure(existsSync(join(permissionsRoot, "dist", "opencode", "tui.js")), "permissions is missing its OpenCode native controls")
+  ensure(existsSync(join(permissionsRoot, "dist", "gui-experimental.cjs")), "permissions is missing its OpenCode desktop indicator")
+
+  const guiControls = spawnSync(process.execPath, ["--conditions=browser", join(repo, "packages", "permissions", "test", "opencode-gui-smoke.mjs"), permissionsRoot], {
+    cwd: repo,
+    stdio: "inherit",
+  })
+
+  ensure(guiControls.status === 0, "packed OpenCode GUI controls failed in the sandbox")
   ensure(claudeHooks.modules?.[0] === "../dist/claude-controls.js", "Claude Code native controls are not registered")
 
   const nativeControls = spawnSync(process.execPath, ["--experimental-vm-modules", join(repo, "scripts", "claude-controls-smoke.mjs"), permissionsRoot], {
