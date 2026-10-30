@@ -9,7 +9,7 @@ import * as history from "../packages/permissions/src/history.ts"
 import { historySchema } from "../packages/permissions/src/history/schema.ts"
 import { historyMetadata } from "../packages/permissions/src/history/metadata-values.ts"
 import { HistoryReply } from "../packages/permissions/src/history/history-protocol.ts"
-import { checkHistoryCoverage, inspectHistory, readHistoryTrace, requirePositiveWriterControl } from "../scripts/history-smoke-contract.mjs"
+import { checkHistoryCoverage, inspectHistory, readHistoryTrace, requirePositiveHookHistory, requirePositiveWriterControl } from "../scripts/history-smoke-contract.mjs"
 
 const id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 
@@ -40,6 +40,75 @@ const stored = { event: "frame", direction: "receive", tag: "Stored", sequence: 
 const busy = { event: "frame", direction: "receive", tag: "Failed", kind: "busy" }
 
 const check = (options = {}) => checkHistoryCoverage({ expected, store: { rows: [] }, report: () => undefined, ...options })
+
+const startupStop = [
+  { event: "online" },
+  { event: "terminate" },
+  { event: "exit", code: 1 },
+]
+
+it.each([undefined, "missing-database", "missing-events-table"])("accounts for a confirmed invocation startup stop with store state %s", (uninitialized) => {
+  const result = check({ lifetime: "invocation", events: trace(startupStop), store: { rows: [], uninitialized } })
+  expect(result.classifiedStartup).toEqual([{ command, pid: 101, worker: 1 }])
+  expect(result.delivered).toEqual([])
+  expect(result.acknowledged).toEqual([])
+  expect(result.unknown).toEqual([])
+})
+
+it("replays the captured CI pre-readiness shutdown without claiming delivery", () => {
+  const events = [
+    { pid: 3289, thread: 0, timeMs: 73790.922142, event: "preload" },
+    { pid: 3289, thread: 0, timeMs: 73898.259901, event: "spawn", worker: 1, role: "history" },
+    { pid: 3289, thread: 1, timeMs: 73937.120424, event: "preload" },
+    { pid: 3289, thread: 0, timeMs: 73992.236809, event: "online", worker: 1 },
+    { pid: 3289, thread: 0, timeMs: 74396.713572, event: "terminate", worker: 1 },
+    { pid: 3289, thread: 0, timeMs: 74401.432261, event: "exit", worker: 1, code: 1 },
+  ]
+
+  const result = check({ expected: [{ command, pid: 3289 }], lifetime: "invocation", events, requireRole: true })
+
+  expect(result.classifiedStartup).toEqual([{ command, pid: 3289, worker: 1 }])
+  expect(result.delivered).toEqual([])
+})
+
+it("does not permit a startup stop for a live host worker", () => {
+  expect(() => check({ events: trace(startupStop) })).toThrow(/Unexplained/)
+})
+
+it.each([
+  [{ event: "terminate" }],
+  [{ event: "exit", code: 1 }],
+  [{ event: "exit", code: 0 }, { event: "terminate" }],
+  [{ event: "terminate" }, { event: "exit", code: 0 }],
+  [ready, ...startupStop],
+  [ready, append, ...startupStop],
+  [{ event: "error" }, ...startupStop],
+  [{ event: "messageerror" }, ...startupStop],
+  [{ event: "invalid-frame" }, ...startupStop],
+  [{ event: "terminate" }, ready, { event: "exit", code: 1 }],
+  [{ event: "terminate" }, { event: "terminate" }, { event: "exit", code: 1 }],
+].map((stages) => [stages]))("keeps incomplete or conflicting shutdown evidence red", (stages) => {
+  expect(() => check({ lifetime: "invocation", events: trace(stages) })).toThrow(/Unexplained/)
+})
+
+it("a startup stop in another hook cannot excuse the missing observation", () => {
+  expect(() => check({ lifetime: "invocation", events: trace(startupStop).map((entry) => ({ ...entry, pid: 102 })) })).toThrow(/Unexplained/)
+})
+
+it("shutdown cannot excuse an acknowledged but missing row", () => {
+  expect(() => check({ lifetime: "invocation", events: trace([ready, append, stored, ...startupStop]) })).toThrow(/Missing Stored IDs/)
+})
+
+it("requires actual hook writes rather than accepting a suite of classified drops", () => {
+  const startup = check({ lifetime: "invocation", events: trace(startupStop) })
+  const busyDrop = check({ events: trace([busy]) })
+  const delivered = check({ store: { rows: [row] }, events: trace([ready, append, stored]) })
+  const unacknowledged = check({ store: { rows: [row] }, events: trace([ready, append, busy]) })
+  expect(() => requirePositiveHookHistory({ coverages: [undefined, startup, busyDrop], requireAck: true })).toThrow(/must persist/)
+  expect(() => requirePositiveHookHistory({ coverages: [unacknowledged], requireAck: true })).toThrow(/must persist/)
+  expect(() => requirePositiveHookHistory({ coverages: [startup, delivered], requireAck: true })).not.toThrow()
+  expect(() => requirePositiveHookHistory({ coverages: [unacknowledged], requireAck: false })).not.toThrow()
+})
 
 it.each([
   ["before Ready", [busy], "before-ready"],
