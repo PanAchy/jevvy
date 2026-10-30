@@ -4,7 +4,7 @@ Select Microsoft Decision in `npx @jevvy/permissions init`, or configure Jevvy P
 
 You need an Azure Foundry resource, a deployed Microsoft-Decision-1 model, and an Azure AI API key. Follow Microsoft's [deployment guide](https://learn.microsoft.com/en-us/azure/foundry/foundry-models/how-to/use-foundry-models-microsoft-decision) for resource access, regional availability, and quotas.
 
-This integration is experimental. Its request and API-key authentication follow Microsoft's Foundry documentation. It expects standard System One Noul responses; the Foundry guide does not publish a complete Noul response example, and this integration has not been verified against a live Foundry deployment. An incompatible response results in abstention, never a guessed probability.
+A synthetic request to a live Microsoft-Decision-1 deployment verified API-key authentication and a standard System One Noul response. This confirms basic request compatibility, not calibration of the permission policy. An incompatible response results in abstention, never a guessed probability.
 
 ```jsonc
 {

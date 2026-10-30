@@ -8,11 +8,11 @@ import { isDeepStrictEqual } from "node:util"
 import { withPermissionSmoke } from "./opencode-permission-smoke.mjs"
 import { verifyControlCommand } from "./opencode-control-smoke.mjs"
 import { captureHistoryFailure, prepareHistoryTrace } from "./history-smoke-evidence.mjs"
-import { checkHistoryCoverage, inspectHistory, loadHistoryCodec, readHistoryTrace } from "./history-smoke-contract.mjs"
+import { checkHistoryCoverage, inspectHistory, loadHistoryCodec, readHistoryTrace, requirePositiveHookHistory } from "./history-smoke-contract.mjs"
 
 const root = "/tmp/jevvy-opencode-smoke"
 
-const opencodeVersion = process.env.JEVVY_OPENCODE_VERSION ?? "2.1.3"
+const opencodeVersion = process.env.JEVVY_OPENCODE_VERSION ?? "2.2.4"
 
 const project = join(root, "project")
 
@@ -176,6 +176,10 @@ const inspectPlugin = async (port, expectedProblem, exercise) => {
 
           try {
             await exercise(api)
+
+            const control = await api("POST", `/api/rpc/jevvy.permissions.control/get?location[directory]=${encodeURIComponent(project)}`, {})
+
+            if (control.output?.problem !== undefined) console.log(`OpenCode host diagnostic at ${port}: ${control.output.problem}`)
           } catch (error) {
             throw new Error(`shell permission smoke failed\n${diagnostics.join("").slice(-4000)}`, { cause: error })
           }
@@ -331,9 +335,12 @@ const verifyHistory = async () => {
     const invalid = claudeRows.filter((row) => !expected.includes(row.command) || row.reason !== "explicit-ask" || row.effect !== "ask" || row.model !== null || row.latency_ms !== null)
 
     if (invalid.length > 0) throw new Error(`Invalid Claude observations: ${JSON.stringify(invalid)}`)
-    checkHistoryCoverage({ expected: expected.map((command) => ({ command, pid: invocations.find((entry) => entry.command === command)?.pid })), store, events: readHistoryTrace(trace.file), requireRole: true, validate: (row) => {
+
+    const coverage = checkHistoryCoverage({ expected: expected.map((command) => ({ command, pid: invocations.find((entry) => entry.command === command)?.pid })), store, events: readHistoryTrace(trace.file), lifetime: "invocation", requireRole: true, validate: (row) => {
       if (row.reason !== "explicit-ask" || row.effect !== "ask" || row.model !== null || row.latency_ms !== null || JSON.stringify(row.detail_json) !== JSON.stringify({ version: 1, provider: null, answers: null, failure: null })) throw new Error("Invalid complete Claude observation")
     } })
+
+    requirePositiveHookHistory({ coverages: [coverage], requireAck: trace.file !== undefined })
 
     const remaining = [...expectedOpenCode]
 

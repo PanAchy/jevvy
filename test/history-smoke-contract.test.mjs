@@ -125,6 +125,24 @@ it("requires actual hook writes rather than accepting a suite of classified drop
   expect(() => requirePositiveHookHistory({ coverages: [unacknowledged], requireAck: false })).not.toThrow()
 })
 
+it("accounts for invocation startup stops alongside acknowledged writes without relaxing live host coverage", () => {
+  const second = { command: "echo second-synthetic", pid: 102 }
+
+  const options = {
+    expected: [...expected, second],
+    store: { rows: [row] },
+    events: [...trace([ready, append, stored]), ...trace(startupStop).map((entry) => ({ ...entry, pid: second.pid }))],
+    requireRole: true,
+  }
+
+  expect(() => check(options)).toThrow(/Unexplained/)
+
+  const result = check({ ...options, lifetime: "invocation" })
+  expect(result.delivered).toEqual([{ command, id }])
+  expect(result.classifiedStartup).toEqual([{ command: second.command, pid: second.pid, worker: 1 }])
+  expect(() => requirePositiveHookHistory({ coverages: [result], requireAck: true })).not.toThrow()
+})
+
 it.each([
   ["before Ready", [busy], "before-ready"],
   ["after Append without ACK", [ready, append, busy], "after-ready"],
