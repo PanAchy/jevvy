@@ -86,7 +86,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        opencode: ["2.0.27", "2.2.0"]
+        opencode: ["2.0.27", "2.2.4"]
     env:
       JEVVY_OPENCODE_VERSION: ${{ matrix.opencode }}
       JEVVY_SMOKE_TRACE: "1"
