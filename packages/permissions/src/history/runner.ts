@@ -18,6 +18,8 @@ import { HistoryCommand, HistoryReply } from "./history-protocol.ts"
 import { prepareHistoryStore, verifyHistoryPath } from "./history-files.ts"
 import { appendHistory, initializeHistory } from "./history-store.ts"
 
+const retryStartupBusy = { times: 6, schedule: Schedule.spaced("50 millis"), while: (error: HistoryStorageError) => error.kind === "busy" }
+
 const retryBusy = { times: 2, schedule: Schedule.spaced("25 millis"), while: (error: HistoryStorageError) => error.kind === "busy" }
 
 const program = Effect.fn("ReviewHistory.worker")(function*(sqlite: (filename: string) => Layer.Layer<SqlClient.SqlClient, SqlError.SqlError | HistoryStorageError>) {
@@ -32,10 +34,10 @@ const program = Effect.fn("ReviewHistory.worker")(function*(sqlite: (filename: s
   const work = Effect.gen(function*() {
     const sequence = yield* Effect.scoped(Effect.gen(function*() {
       const input = yield* Schema.decodeUnknownEffect(Schema.Struct({ configPath: Schema.String }), { onExcessProperty: "error" })(workerData).pipe(Effect.mapError(() => new HistoryStorageError({ kind: "worker" })))
-      const path = yield* prepareHistoryStore(input.configPath).pipe(Effect.retry(retryBusy))
+      const path = yield* prepareHistoryStore(input.configPath).pipe(Effect.retry(retryStartupBusy))
 
       return yield* Effect.gen(function*() {
-        yield* initializeHistory().pipe(Effect.andThen(verifyHistoryPath(path)), Effect.retry(retryBusy))
+        yield* initializeHistory().pipe(Effect.andThen(verifyHistoryPath(path)), Effect.retry(retryStartupBusy))
 
         const receiver = yield* runner.run((_port, raw) => Schema.decodeUnknownEffect(HistoryCommand, { onExcessProperty: "error" })(raw).pipe(
           Effect.mapError(() => new HistoryStorageError({ kind: "worker" })),
