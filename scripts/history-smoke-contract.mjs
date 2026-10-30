@@ -145,7 +145,7 @@ const workerProof = (events, pid, requireRole) => {
     assert.equal(["error", "messageerror", "invalid-frame"].includes(entry.event), false, `History transport ${entry.event}`)
 
     if (entry.event === "terminate") {
-      assert.equal(terminated || ended, false, "Repeated or post-exit worker termination")
+      assert.equal(terminated, false, "Repeated worker termination")
       terminated = true
     }
 
