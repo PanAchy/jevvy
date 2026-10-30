@@ -1,6 +1,6 @@
-import { Command, ComposerPill, Plugin, createKeyed } from "@opencode/plugin/gui"
+import { Command, Plugin, Slot, createKeyed } from "@opencode/plugin/gui"
 import { Effect, ManagedRuntime } from "effect"
-import { createSignal, onCleanup } from "solid-js"
+import { createRenderEffect, createSignal, onCleanup } from "solid-js"
 import { ReviewPresentation, ReviewPresentationError } from "../review-presentation.ts"
 import type { ReviewStatus } from "../review-presentation.ts"
 import type { ReviewIndicatorState } from "../review-indicator.ts"
@@ -76,20 +76,33 @@ export default Plugin.define({
       ? "Jevvy Permissions status unavailable"
       : `Jevvy Permissions auto-review ${state().enabled ? "enabled" : "disabled"}. Click to toggle globally on this server.`
 
-    ctx.add(ComposerPill, {
-      id: "review",
-      show(input) {
-        if (input.session.key !== ctx.sessions.current()?.key) return undefined
+    ctx.add(Slot, {
+      at: "session.header",
+      render(input) {
+        const button = document.createElement("button")
+        button.type = "button"
+        button.textContent = "Jevvy"
+        button.style.cssText = "height:32px;padding:0 8px;border:0;border-radius:4px;background:transparent;font:inherit;font-size:12px"
+        button.addEventListener("click", () => {
+          if (input.active && input.session.key === ctx.sessions.current()?.key) toggle()?.()
+        })
 
-        const enabled = state().enabled
+        createRenderEffect(() => {
+          const enabled = state().enabled
+          button.hidden = !input.active || input.session.key !== ctx.sessions.current()?.key
+          button.disabled = button.hidden || toggle() === undefined
+          button.title = statusTitle()
+          button.setAttribute("aria-label", statusTitle())
 
-        return {
-          label: "Jevvy",
-          title: statusTitle(),
-          icon: enabled === undefined ? "circle-exclamation" : enabled ? "circle-check" : "circle-x",
-          tone: enabled === undefined || state().dimmed ? undefined : enabled ? "success" : "danger",
-          run: toggle(),
-        }
+          if (enabled === undefined) button.removeAttribute("aria-pressed")
+          else button.setAttribute("aria-pressed", String(enabled))
+
+          button.style.color = enabled === undefined ? "var(--text-weak)" : enabled ? "#15803d" : "#b91c1c"
+          button.style.opacity = state().dimmed ? "0.35" : "1"
+          button.style.cursor = button.disabled ? "default" : "pointer"
+        })
+
+        return button
       },
     })
   },

@@ -31,6 +31,23 @@ const exports = {}
 
 runInNewContext(readFileSync(resolve(root, "dist/gui-experimental.cjs"), "utf8"), {
   exports,
+  document: { createElement: (name) => {
+    ensure(name === "button", "GUI must render a native header button")
+    const attributes = new Map()
+    let click
+
+    return {
+      style: {},
+      setAttribute: (key, value) => attributes.set(key, value),
+      removeAttribute: (key) => attributes.delete(key),
+      getAttribute: (key) => attributes.get(key),
+      addEventListener: (event, listener) => {
+        ensure(event === "click", "GUI registered an unexpected button listener")
+        click = listener
+      },
+      click() { if (!this.disabled) click() },
+    }
+  } },
   require: (name) => {
     ensure(modules.has(name), `GUI bundle unexpectedly requires ${name}`)
 
@@ -84,9 +101,13 @@ const a = server("/fixture/a", true)
 
 const b = server("/fixture/b", false)
 
-let pill
+const [headerActive, setHeaderActive] = Solid.createSignal(true)
 
-let contribution
+const [headerSession, setHeaderSession] = Solid.createSignal()
+
+let indicator
+
+let cachedIndicator
 
 const dispose = Solid.createRoot((dispose) => {
   exports.default.setup({
@@ -96,11 +117,14 @@ const dispose = Solid.createRoot((dispose) => {
       if (token === gui.Command) {
         commands.add(item)
         Solid.onCleanup(() => commands.delete(item))
-      } else if (token === gui.ComposerPill) {
-        ensure(item.id === "review", "GUI must register its review composer pill")
-        contribution = item
-        Solid.createRenderEffect(() => { pill = item.show({ session: session() ?? a.session }) })
-        Solid.onCleanup(() => { pill = undefined })
+      } else if (token === gui.Slot) {
+        ensure(item.at === "session.header", "GUI must register its indicator in the session header")
+        indicator = item.render({
+          get session() { return headerSession() ?? session() ?? a.session },
+          get active() { return headerActive() },
+        })
+        cachedIndicator = item.render({ session: b.session, active: false })
+        Solid.onCleanup(() => { indicator = undefined; cachedIndicator = undefined })
       } else {
         throw new Error("Unexpected GUI contribution")
       }
@@ -111,43 +135,54 @@ const dispose = Solid.createRoot((dispose) => {
 })
 
 try {
-  ensure(pill === undefined, "GUI must not show a pill without a routed session")
+  ensure(indicator.hidden && indicator.disabled, "GUI must hide its header button without a routed session")
   setSession(a.session)
-  await until(() => pill?.tone === "success", "GUI did not load ON")
-  ensure(pill.label === "Jevvy" && pill.icon === "circle-check", "GUI ON must use its compact label and success icon")
-  ensure(pill.title.includes("enabled"), "GUI must explain its enabled state accessibly")
+  await until(() => indicator?.style.color === "#15803d", "GUI did not load ON")
+  ensure(indicator.type === "button" && indicator.textContent === "Jevvy", "GUI ON must use its compact native header button")
+  ensure(indicator.getAttribute("aria-pressed") === "true", "GUI ON must expose its pressed state")
+  ensure(indicator.title.includes("enabled") && indicator.getAttribute("aria-label").includes("enabled"), "GUI must explain its enabled state accessibly")
   ensure(commands.size === 1, "GUI must register exactly one toggle command")
-  ensure(contribution.show({ session: b.session }) === undefined, "GUI must not show another session's status")
+  ensure(cachedIndicator.hidden && cachedIndicator.disabled, "GUI must hide cached timeline indicators")
 
-  pill.run()
-  await until(() => pill?.tone === "danger", "GUI click did not toggle OFF")
+  setHeaderActive(false)
+  ensure(indicator.hidden && indicator.disabled, "GUI must hide an inactive timeline's indicator")
+  indicator.click()
+  ensure(a.state.toggles === 0, "An inactive header must not toggle review")
+  setHeaderActive(true)
+  setHeaderSession(b.session)
+  ensure(indicator.hidden && indicator.disabled, "GUI must not show another session's status")
+  setHeaderSession(undefined)
+
+  indicator.click()
+  await until(() => indicator?.style.color === "#b91c1c", "GUI click did not toggle OFF")
   ensure(a.state.toggles === 1, "GUI click must persist exactly one toggle")
-  ensure(pill.icon === "circle-x" && pill.title.includes("disabled"), "GUI OFF must have a distinct icon and accessible status")
-  await until(() => pill?.tone === undefined, "GUI indicator did not blink")
-  await until(() => pill?.tone === "danger", "GUI indicator did not recover from its blink")
+  ensure(indicator.getAttribute("aria-pressed") === "false" && indicator.title.includes("disabled"), "GUI OFF must expose its state accessibly")
+  await until(() => indicator?.style.opacity === "0.35", "GUI indicator did not blink")
+  await until(() => indicator?.style.opacity === "1", "GUI indicator did not recover from its blink")
 
   for (const command of commands) command.run()
-  await until(() => pill?.tone === "success", "GUI palette command did not toggle ON")
+  await until(() => indicator?.style.color === "#15803d", "GUI palette command did not toggle ON")
 
   a.state.enabled = false
   a.emit()
-  await until(() => pill?.tone === "danger", "GUI did not follow an external toggle")
+  await until(() => indicator?.style.color === "#b91c1c", "GUI did not follow an external toggle")
 
   setSession(b.session)
-  ensure(pill?.tone === undefined, "GUI kept another server's state during a switch")
-  await until(() => pill?.tone === "danger", "GUI did not follow the selected server")
+  ensure(indicator?.style.color === "var(--text-weak)", "GUI kept another server's state during a switch")
+  await until(() => indicator?.style.color === "#b91c1c", "GUI did not follow the selected server")
+  ensure(cachedIndicator.hidden && cachedIndicator.disabled, "GUI exposed a cached timeline after its session became current")
   ensure(a.state.changed.size === 0 && b.state.changed.size === 1, "GUI leaked its old server subscription")
   ensure(commands.size === 1, "GUI leaked a palette command on server switch")
 
   b.state.problem = "Configure a provider on server B"
   b.emit()
   await until(() => diagnostics.length > 0, "GUI hid an actionable setup problem")
-  ensure(pill?.tone === undefined && pill?.icon === "circle-exclamation", "Unavailable GUI status must be neutral")
+  ensure(indicator?.style.color === "var(--text-weak)" && indicator?.getAttribute("aria-pressed") === undefined, "Unavailable GUI status must be neutral without a known toggle state")
 
   b.state.problem = undefined
   b.state.enabled = true
   b.emit()
-  await until(() => pill?.tone === "success", "GUI did not recover from setup failure")
+  await until(() => indicator?.style.color === "#15803d", "GUI did not recover from setup failure")
 
   let finishRead
   b.state.pending = new Promise((finish) => { finishRead = finish })
@@ -156,20 +191,20 @@ try {
   await until(() => b.state.reads > reads, "GUI did not start its pending read")
   setSession(a.session)
   await until(() => b.state.signal.aborted, "GUI did not abort a stale server read")
-  await until(() => pill?.tone === "danger", "GUI did not restore server A's state")
+  await until(() => indicator?.style.color === "#b91c1c", "GUI did not restore server A's state")
   finishRead({ enabled: true })
-  ensure(pill.tone === "danger", "Stale server reply overwrote GUI state")
+  ensure(indicator.style.color === "#b91c1c", "Stale server reply overwrote GUI state")
 
   setSession({ ...a.session, server: { ...a.session.server, connected: false } })
-  ensure(pill?.tone === undefined && pill?.run === undefined, "Disconnected GUI status must be neutral and read-only")
+  ensure(indicator?.style.color === "var(--text-weak)" && indicator?.disabled, "Disconnected GUI status must be neutral and read-only")
 
   setSession(undefined)
-  ensure(pill === undefined, "GUI must clear its pill when the session closes")
+  ensure(indicator.hidden && indicator.disabled, "GUI must hide its indicator when the session closes")
   ensure(commands.size === 0, "GUI retained a command without an owning server")
   ensure(a.state.changed.size === 0 && b.state.changed.size === 0, "GUI retained an event subscription after session close")
   console.log("OpenCode GUI bundle sandbox smoke passed")
 } finally {
   dispose()
   ensure(commands.size === 0, "GUI did not clean up its commands")
-  ensure(pill === undefined, "GUI did not clean up its indicator")
+  ensure(indicator === undefined && cachedIndicator === undefined, "GUI did not clean up its indicators")
 }
