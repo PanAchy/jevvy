@@ -53,6 +53,10 @@ For OpenCode v2 versions before 2.0.27:
 opencode plugin add @jevvy/permissions@0.5.1
 ```
 
+Starting in 0.9.0, Jevvy Permissions also provides a **Jevvy** indicator in the session header on OpenCode Desktop 2.2.0 or newer. Its text is green when auto-review is enabled, red when disabled, and neutral when status or setup is unavailable. Click it or use **Toggle Jevvy Permissions** in the command palette to toggle OpenCode review globally on that session's server. Claude Code's toggle is independent. `/jevvy` remains available without the GUI extension.
+
+The desktop GUI API is experimental. Keep the plugin in the desktop app's global `opencode.json(c)` to load its GUI. Disabling its GUI in **Settings > Extensions > Plugins** hides the controls but does not disable permission review. Use the Jevvy toggle to stop new reviews; host permissions remain unchanged.
+
 ### Claude Code
 
 ```text

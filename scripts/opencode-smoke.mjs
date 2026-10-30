@@ -37,7 +37,7 @@ try {
       "--network",
       "host",
       "--env",
-      `JEVVY_OPENCODE_VERSION=${process.env.JEVVY_OPENCODE_VERSION ?? "2.1.3"}`,
+      `JEVVY_OPENCODE_VERSION=${process.env.JEVVY_OPENCODE_VERSION ?? "2.2.4"}`,
       "--env",
       `JEVVY_SMOKE_TRACE=${process.env.JEVVY_SMOKE_TRACE ?? "0"}`,
       "--env",

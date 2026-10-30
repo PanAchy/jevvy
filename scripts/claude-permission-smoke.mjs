@@ -5,7 +5,7 @@ import { createServer } from "node:http"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { captureHistoryFailure, prepareHistoryTrace } from "./history-smoke-evidence.mjs"
-import { checkHistoryCoverage, inspectHistory, loadHistoryCodec, readHistoryTrace } from "./history-smoke-contract.mjs"
+import { checkHistoryCoverage, inspectHistory, loadHistoryCodec, readHistoryTrace, requirePositiveHookHistory } from "./history-smoke-contract.mjs"
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)))
 
@@ -344,7 +344,7 @@ const run = async (name, options = {}) => {
       if (events) assert.equal(historyWorkers.length, 1, "One actual PermissionRequest history worker must identify its hook PID")
       const store = inspectHistory(metrics, codec)
       assert.ok(store.rows.every((row) => row.command === command))
-      historyCoverage = checkHistoryCoverage({ expected: [{ command, pid: historyWorkers[0]?.pid }], store, events, requireRole: true, validate: (row) => {
+      historyCoverage = checkHistoryCoverage({ expected: [{ command, pid: historyWorkers[0]?.pid }], store, events, lifetime: "invocation", requireRole: true, validate: (row) => {
         assert.equal(row.command, command)
         assert.ok(Number.isFinite(Date.parse(row.ts)))
         assert.match(row.id, /^[0-9a-f-]{36}$/)
@@ -432,6 +432,11 @@ try {
   await run("redirect-uncertainty", { command: "echo jevvy-redirect-uncertainty > marker.txt", outcome: "prompt", calls: 0, unreliable: true })
   await run("metrics-disabled", { metrics: false })
   await run("history-unsafe-root", { unsafeRoot: true, ask: [], allow: ["Bash(echo jevvy-*)"], calls: 0, permissionEvents: 0 })
+
+  for (const reviewed of [false, true]) requirePositiveHookHistory({
+    coverages: results.flatMap((result) => (result.judgments > 0) === reviewed ? [result.historyCoverage] : []),
+    requireAck: process.env.JEVVY_SMOKE_TRACE === "1",
+  })
 
   for (const [name, bytes] of packedBytes) assert.deepEqual(readFileSync(join(plugin, name)), bytes, "Tracing must not alter packed hooks, workers or manifests")
   succeeded = true

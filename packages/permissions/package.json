@@ -30,7 +30,8 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
-    "./tui": "./dist/opencode/tui.js"
+    "./tui": "./dist/opencode/tui.js",
+    "./gui-experimental": "./dist/gui-experimental.cjs"
   },
   "bin": {
     "jevvy": "bin/jevvy.mjs",
@@ -48,7 +49,7 @@
   ],
   "scripts": {
     "prebuild": "npm run build --workspace=@jevvy/core && node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "tsc -p tsconfig.build.json && node ../../scripts/build-permissions.mjs && node ../../scripts/copy-calibration-assets.mjs",
+    "build": "tsc -p tsconfig.build.json && node ../../scripts/build-permissions.mjs && vite build && node ../../scripts/copy-calibration-assets.mjs",
     "prepack": "npm run build && node ../../scripts/package-readme.mjs prepare",
     "postpack": "node ../../scripts/package-readme.mjs clean"
   },
@@ -57,15 +58,15 @@
     "@effect/platform-node-shared": "4.0.1",
     "@effect/sql-sqlite-bun": "4.0.1",
     "@effect/sql-sqlite-node": "4.0.1",
-    "@opencode/plugin": "2.1.3",
+    "@opencode/plugin": "2.2.0",
     "effect": "4.0.1",
     "jsonc-parser": "^3.3.1",
     "proper-lockfile": "4.1.2",
     "string-width": "^8.3.0"
   },
   "peerDependencies": {
-    "@opentui/core": ">=0.6.6",
-    "@opentui/solid": ">=0.6.6",
+    "@opentui/core": ">=0.7.0",
+    "@opentui/solid": ">=0.7.0",
     "solid-js": ">=1.9.12"
   },
   "peerDependenciesMeta": {

@@ -6,11 +6,17 @@ import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
 import { captureHistoryFailure, prepareHistoryTrace } from "./history-smoke-evidence.mjs"
-import { checkHistoryCoverage, inspectHistory, loadHistoryCodec, readHistoryTrace, requirePositiveWriterControl } from "./history-smoke-contract.mjs"
+import { checkHistoryCoverage, inspectHistory, loadHistoryCodec, readHistoryTrace, requirePositiveHookHistory, requirePositiveWriterControl } from "./history-smoke-contract.mjs"
 
 const packed = resolve(process.argv[2])
 
 const codec = await loadHistoryCodec(packed)
+
+const startup = spawnSync(process.execPath, [fileURLToPath(new URL("./history-startup-smoke.mjs", import.meta.url)), packed], { encoding: "utf8", timeout: 10000 })
+
+assert.equal(startup.status, 0, `${startup.stdout}\n${startup.stderr}`)
+
+console.log(startup.stdout.trim())
 
 const temporary = mkdtempSync(join(realpathSync("/tmp"), "jevvy-standalone-history-"))
 
@@ -141,7 +147,7 @@ const coverage = () => {
   const store = inspectHistory(join(root, "metrics"), codec)
   assert.ok(store.rows.every((row) => expected.some((entry) => entry.command === row.command)), "Unexpected standalone observation")
 
-  return checkHistoryCoverage({ expected, store, events: readHistoryTrace(trace.file), requireRole: true, validate: (row, observation) => {
+  return checkHistoryCoverage({ expected, store, events: readHistoryTrace(trace.file), lifetime: "invocation", requireRole: true, validate: (row, observation) => {
     const judged = ["allow", "ask"].includes(observation.providerOutcome)
     assert.equal(row.reason, judged ? "judged" : "unavailable")
     assert.equal(row.effect, observation.providerOutcome === "allow" ? "allow" : "ask")
@@ -265,7 +271,8 @@ try {
     }
   }
 
-  console.log(`Standalone Claude history passed on Node ${process.versions.node}: expected=7 delivered=${historyCoverage.delivered.length} classifiedBusy=${historyCoverage.classifiedBusy.length} unknown=0; positive ACK+duplicate control; read-only SessionStart and disabled/OFF/busy/unsafe/unsupported-store silent; invocation milliseconds=${JSON.stringify(timings)}`)
+  requirePositiveHookHistory({ coverages: [historyCoverage], requireAck: trace.file !== undefined })
+  console.log(`Standalone Claude history passed on Node ${process.versions.node}: expected=7 delivered=${historyCoverage.delivered.length} classifiedBusy=${historyCoverage.classifiedBusy.length} classifiedStartup=${historyCoverage.classifiedStartup.length} unknown=0; positive ACK+duplicate control; read-only SessionStart and disabled/OFF/busy/unsafe/unsupported-store silent; invocation milliseconds=${JSON.stringify(timings)}`)
 } catch (error) {
   await Promise.allSettled(pending)
   await captureHistoryFailure({ metricsPath: join(root, "metrics"), tracePath: trace.file, invocations }, error)
