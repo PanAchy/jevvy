@@ -99,6 +99,21 @@ it("shutdown cannot excuse an acknowledged but missing row", () => {
   expect(() => check({ lifetime: "invocation", events: trace([ready, append, stored, ...startupStop]) })).toThrow(/Missing Stored IDs/)
 })
 
+it("accepts scoped cleanup after an acknowledged worker has closed and exited normally", () => {
+  const stages = [
+    ready, append, stored,
+    { event: "frame", direction: "send", tag: "Close", sequence: 2 },
+    { event: "frame", direction: "receive", tag: "Closed", sequence: 2 },
+    { event: "exit", code: 0 },
+    { event: "terminate" },
+  ]
+
+  const result = check({ events: trace(stages), store: { rows: [row] }, lifetime: "invocation" })
+  expect(result.delivered).toEqual([{ command, id }])
+  expect(result.acknowledged).toEqual([id])
+  expect(result.classifiedStartup).toEqual([])
+})
+
 it("requires actual hook writes rather than accepting a suite of classified drops", () => {
   const startup = check({ lifetime: "invocation", events: trace(startupStop) })
   const busyDrop = check({ events: trace([busy]) })
