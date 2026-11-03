@@ -53,16 +53,24 @@ For OpenCode v2 versions before 2.0.27:
 opencode plugin add @jevvy/permissions@0.5.1
 ```
 
-Starting in 0.9.0, Jevvy Permissions also provides a **Jevvy** indicator in the session header on OpenCode Desktop 2.2.0 or newer. Its text is green when auto-review is enabled, red when disabled, and neutral when status or setup is unavailable. Click it or use **Toggle Jevvy Permissions** in the command palette to toggle OpenCode review globally on that session's server. Claude Code's toggle is independent. `/jevvy` remains available without the GUI extension.
-
-The desktop GUI API is experimental. Keep the plugin in the desktop app's global `opencode.json(c)` to load its GUI. Disabling its GUI in **Settings > Extensions > Plugins** hides the controls but does not disable permission review. Use the Jevvy toggle to stop new reviews; host permissions remain unchanged.
-
 ### Claude Code
 
 ```text
 /plugin marketplace add PanAchy/jevvy
 /plugin install jevvy-permissions@jevvy
 ```
+
+## Toggle Jevvy
+
+Run `/jevvy` in OpenCode or Claude Code to turn auto-review on or off for that harness. OpenCode applies the change globally on the session's server. Claude Code keeps its own toggle, independent of OpenCode. Turning Jevvy off skips new reviews and cache lookups; reviews already started finish normally. It does not change host permission prompts or automatic approval settings.
+
+Starting in Jevvy Permissions 0.9.0, OpenCode shows a **Jevvy** indicator in the terminal prompt footer and, on OpenCode Desktop 2.2.0 or newer, in the session header. The text is green when auto-review is enabled, red when disabled, and neutral when status or setup is unavailable. It pulses after a toggle. In the terminal, use the command palette's Jevvy toggle; on the desktop, click the indicator. Claude Code shows the same Jevvy badge in its terminal status row.
+
+![The Jevvy indicator in the OpenCode terminal footer turning red from the command palette and green again](./assets/jevvy-toggle.gif)
+
+The desktop header indicator is experimental because it uses OpenCode Desktop's experimental GUI API. Keep the plugin in the desktop app's global `opencode.json(c)` to load its GUI. Disabling its GUI in **Settings > Extensions > Plugins** hides the controls but does not disable permission review. Use the Jevvy toggle to stop new reviews; host permissions remain unchanged.
+
+![Jevvy Desktop header states: green enabled, red disabled, neutral unavailable](./assets/jevvy-indicator.svg)
 
 ## How it works
 

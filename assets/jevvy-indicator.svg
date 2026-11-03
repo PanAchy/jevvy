@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="832" height="248" viewBox="0 0 832 248" role="img" aria-labelledby="title desc">
+  <title id="title">Jevvy indicator states in the OpenCode Desktop header</title>
+  <desc id="desc">Three Desktop session headers show the Jevvy button in green for enabled, red for disabled, and neutral for unavailable. The header indicator is experimental.</desc>
+
+  <rect width="832" height="248" rx="12" fill="#f7f6f3"/>
+
+  <text x="24" y="34" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" letter-spacing="0.08em" fill="#595663">OPENCODE DESKTOP HEADER</text>
+  <rect x="248" y="20" width="92" height="20" rx="10" fill="#f0ebf6" stroke="#d8cce8"/>
+  <text x="294" y="34" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#6d528f">EXPERIMENTAL</text>
+
+  <g font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+    <rect x="24" y="50" width="784" height="50" rx="8" fill="#ffffff" stroke="#d6dae1"/>
+    <text x="44" y="81" font-size="14" fill="#303540">Fix the release workflow</text>
+    <text x="660" y="81" text-anchor="end" font-size="12" fill="#6b7280">enabled</text>
+    <rect x="680" y="60" width="108" height="30" rx="6" fill="#e8f7ee" stroke="#b7e4c7"/>
+    <circle cx="696" cy="75" r="4" fill="#15803d"/>
+    <text x="708" y="79" font-size="12" font-weight="600" fill="#15803d">Jevvy</text>
+
+    <rect x="24" y="110" width="784" height="50" rx="8" fill="#ffffff" stroke="#d6dae1"/>
+    <text x="44" y="141" font-size="14" fill="#303540">Fix the release workflow</text>
+    <text x="660" y="141" text-anchor="end" font-size="12" fill="#6b7280">disabled</text>
+    <rect x="680" y="120" width="108" height="30" rx="6" fill="#fdecec" stroke="#f3c2c2"/>
+    <circle cx="696" cy="135" r="4" fill="#b91c1c"/>
+    <text x="708" y="139" font-size="12" font-weight="600" fill="#b91c1c">Jevvy</text>
+
+    <rect x="24" y="170" width="784" height="50" rx="8" fill="#ffffff" stroke="#d6dae1"/>
+    <text x="44" y="201" font-size="14" fill="#303540">Fix the release workflow</text>
+    <text x="660" y="201" text-anchor="end" font-size="12" fill="#6b7280">unavailable</text>
+    <rect x="680" y="180" width="108" height="30" rx="6" fill="#f3f4f6" stroke="#d6dae1"/>
+    <circle cx="696" cy="195" r="4" fill="#9ca3af"/>
+    <text x="708" y="199" font-size="12" font-weight="600" fill="#6b7280">Jevvy</text>
+  </g>
+</svg>

@@ -1,0 +1,14 @@
+{
+  "name": "jevvy-demo-recorders",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "effect": "4.0.1",
+    "opencode-drive": "2.3.0"
+  },
+  "devDependencies": {
+    "@anthropic-ai/claude-code": "2.1.296",
+    "@opencode/cli": "2.2.0",
+    "bun": "1.4.4"
+  }
+}
