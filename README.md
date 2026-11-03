@@ -66,9 +66,11 @@ Run `/jevvy` in OpenCode or Claude Code to turn auto-review on or off for that h
 
 Starting in Jevvy Permissions 0.9.0, OpenCode shows a **Jevvy** indicator in the terminal prompt footer and, on OpenCode Desktop 2.2.0 or newer, in the session header. The text is green when auto-review is enabled, red when disabled, and neutral when status or setup is unavailable. It pulses after a toggle. In the terminal, use the command palette's Jevvy toggle; on the desktop, click the indicator. Claude Code shows the same Jevvy badge in its terminal status row.
 
-![Jevvy indicator states in the OpenCode terminal footer and Desktop session header. Green means auto-review is enabled, red means disabled, and neutral means status or setup is unavailable.](./assets/jevvy-indicator.svg)
+![The Jevvy indicator in the OpenCode terminal footer turning red from the command palette and green again](./assets/jevvy-toggle.gif)
 
 The desktop header indicator is experimental because it uses OpenCode Desktop's experimental GUI API. Keep the plugin in the desktop app's global `opencode.json(c)` to load its GUI. Disabling its GUI in **Settings > Extensions > Plugins** hides the controls but does not disable permission review. Use the Jevvy toggle to stop new reviews; host permissions remain unchanged.
+
+![Jevvy Desktop header states: green enabled, red disabled, neutral unavailable](./assets/jevvy-indicator.svg)
 
 ## How it works
 
