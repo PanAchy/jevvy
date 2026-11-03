@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="832" height="300" viewBox="0 0 832 300" role="img" aria-labelledby="title desc">
+  <title id="title">Jevvy indicator states in OpenCode</title>
+  <desc id="desc">The Jevvy indicator in the terminal prompt footer and the OpenCode Desktop session header. Green means auto-review is enabled, red means disabled, and neutral means status or setup is unavailable. The Desktop header indicator is marked experimental.</desc>
+
+  <rect width="832" height="300" rx="12" fill="#f7f6f3"/>
+
+  <text x="24" y="34" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" letter-spacing="0.08em" fill="#595663">OPENCODE TERMINAL</text>
+
+  <rect x="24" y="46" width="784" height="60" rx="8" fill="#0f1115" stroke="#2a2f37"/>
+  <text x="44" y="82" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" fill="#9ca3af">~/projects/jevvy  main</text>
+  <text x="788" y="82" text-anchor="end" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="13" font-weight="600" fill="#22c55e">Jevvy</text>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="12">
+    <rect x="24" y="120" width="248" height="34" rx="6" fill="#ffffff" stroke="#d6dae1"/>
+    <circle cx="44" cy="137" r="4" fill="#15803d"/>
+    <text x="56" y="141" fill="#292833">Jevvy</text>
+    <text x="118" y="141" fill="#6b7280">enabled</text>
+
+    <rect x="284" y="120" width="248" height="34" rx="6" fill="#ffffff" stroke="#d6dae1"/>
+    <circle cx="304" cy="137" r="4" fill="#b91c1c"/>
+    <text x="316" y="141" fill="#292833">Jevvy</text>
+    <text x="378" y="141" fill="#6b7280">disabled</text>
+
+    <rect x="544" y="120" width="264" height="34" rx="6" fill="#ffffff" stroke="#d6dae1"/>
+    <circle cx="564" cy="137" r="4" fill="#9ca3af"/>
+    <text x="576" y="141" fill="#292833">Jevvy</text>
+    <text x="638" y="141" fill="#6b7280">unavailable</text>
+  </g>
+
+  <text x="24" y="194" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" letter-spacing="0.08em" fill="#595663">OPENCODE DESKTOP HEADER</text>
+  <rect x="248" y="180" width="92" height="20" rx="10" fill="#f0ebf6" stroke="#d8cce8"/>
+  <text x="294" y="194" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="10" font-weight="600" fill="#6d528f">EXPERIMENTAL</text>
+
+  <rect x="24" y="206" width="784" height="56" rx="8" fill="#ffffff" stroke="#d6dae1"/>
+  <text x="44" y="240" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="14" fill="#303540">Fix the release workflow</text>
+  <rect x="700" y="220" width="88" height="28" rx="6" fill="#e8f7ee" stroke="#b7e4c7"/>
+  <circle cx="716" cy="234" r="4" fill="#15803d"/>
+  <text x="728" y="238" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="12" font-weight="600" fill="#15803d">Jevvy</text>
+
+  <text x="24" y="284" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" font-size="11" fill="#6b7280">The indicator pulses after a toggle. The terminal footer uses the same colors and text.</text>
+</svg>
