@@ -56,7 +56,7 @@ describe("OpenCode shell command capture", () => {
     expect(capture.commandFor(request("changed"))).toBeUndefined()
   }))
 
-  it.effect("keeps interleaved tool fibers correlated with their own shell invocations", () => Effect.gen(function*() {
+  it.effect("keeps interleaved tool calls correlated with their own shell invocations", () => Effect.gen(function*() {
     const capture = createCommandCapture()
     const firstReady = yield* Deferred.make<void>()
     const secondReady = yield* Deferred.make<void>()
@@ -82,6 +82,29 @@ describe("OpenCode shell command capture", () => {
 
     expect(capture.commandFor(request("one"))).toBe(first.input.command)
     expect(capture.commandFor(request("two"))).toBe(second.input.command)
+  }))
+
+  it.effect("correlates tool and shell hooks that run on different fibers", () => Effect.gen(function*() {
+    const capture = createCommandCapture()
+    const call = shellCall("call", "echo hello")
+
+    yield* Fiber.join(yield* Effect.forkChild(capture.before(call)))
+    yield* Fiber.join(yield* Effect.forkChild(capture.shellBefore(invocation("echo hello"))))
+
+    expect(capture.commandFor(request("call"))).toBe("echo hello")
+  }))
+
+  it.effect("abstains when two active calls share the same command", () => Effect.gen(function*() {
+    const capture = createCommandCapture()
+    const first = shellCall("one", "echo same", "ses_one")
+    const second = shellCall("two", "echo same", "ses_two")
+
+    yield* capture.before(first)
+    yield* capture.before(second)
+    yield* capture.shellBefore(invocation("echo same"))
+
+    expect(capture.commandFor(request("one", "ses_one"))).toBeUndefined()
+    expect(capture.commandFor(request("two", "ses_two"))).toBeUndefined()
   }))
 
   it.effect("refuses to guess when nested calls share a tool-call ID", () => Effect.gen(function*() {
@@ -130,7 +153,7 @@ describe("OpenCode shell command capture", () => {
     expect(capture.commandFor(request("call_512"))).toBe("echo 512")
   }))
 
-  it.effect("abstains when a tool has multiple shell invocations or no complete command", () => Effect.gen(function*() {
+  it.effect("abstains when a tool has multiple matching shell invocations or no complete command", () => Effect.gen(function*() {
     const capture = createCommandCapture()
     const call = shellCall("call", "echo hello")
 
@@ -139,6 +162,9 @@ describe("OpenCode shell command capture", () => {
 
     yield* capture.shellBefore(invocation("  "))
     expect(capture.commandFor(request("call"))).toBeUndefined()
+
+    yield* capture.shellBefore(invocation("echo hello"))
+    expect(capture.commandFor(request("call"))).toBe("echo hello")
 
     yield* capture.shellBefore(invocation("echo hello"))
     expect(capture.commandFor(request("call"))).toBeUndefined()

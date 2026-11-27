@@ -12,6 +12,7 @@ interface ToolEvent {
   readonly sessionID: string
   readonly messageID: string
   readonly id: string
+  readonly input?: unknown
 }
 
 interface PermissionEvent {
@@ -20,6 +21,7 @@ interface PermissionEvent {
 }
 
 interface ActiveCommand {
+  readonly event: ToolEvent
   invocation?: ShellCreateBefore
   count: number
   ambiguous: boolean
@@ -28,15 +30,19 @@ interface ActiveCommand {
 const keyOf = (sessionID: string, messageID: string, id: string): string =>
   JSON.stringify([sessionID, messageID, id])
 
+const commandOf = (input: unknown): string | undefined => {
+  const command = typeof input === "object" && input !== null ? (input as { command?: unknown }).command : undefined
+
+  return typeof command === "string" && command.trim().length > 0 ? command : undefined
+}
+
 export const createCommandCapture = () => {
   const active = new Map<string, ActiveCommand>()
-  const callsByFiber = new WeakMap<object, string[]>()
 
   return {
     before: Effect.fn("OpenCode.captureShellTool")(function*(event: ToolEvent) {
       if (event.tool !== "shell") return
 
-      const fiber = yield* Effect.fiber
       const key = keyOf(event.sessionID, event.messageID, event.id)
       const current = active.get(key)
 
@@ -47,22 +53,26 @@ export const createCommandCapture = () => {
           if (oldest !== undefined) active.delete(oldest)
         }
 
-        active.set(key, { count: 1, ambiguous: false })
+        active.set(key, { event, count: 1, ambiguous: false })
       } else {
         current.count += 1
         current.ambiguous = true
       }
-
-      const calls = callsByFiber.get(fiber) ?? []
-      calls.push(key)
-      callsByFiber.set(fiber, calls)
     }),
     shellBefore: Effect.fn("OpenCode.captureShellInvocation")(function*(invocation: ShellCreateBefore) {
-      const calls = callsByFiber.get(yield* Effect.fiber)
-      const key = calls?.at(-1)
-      const current = key === undefined ? undefined : active.get(key)
+      const command = commandOf(invocation)
 
-      if (current === undefined) return
+      if (command === undefined) return
+
+      const matches = [...active.values()].filter((entry) => commandOf(entry.event.input) === command)
+
+      if (matches.length !== 1) {
+        for (const entry of matches) entry.ambiguous = true
+
+        return
+      }
+
+      const [current] = matches
 
       if (current.invocation !== undefined) {
         current.ambiguous = true
@@ -78,17 +88,6 @@ export const createCommandCapture = () => {
       if (event.tool !== "shell") return
 
       const key = keyOf(event.sessionID, event.messageID, event.id)
-      const fiber = yield* Effect.fiber
-      const calls = callsByFiber.get(fiber)
-
-      if (calls !== undefined) {
-        const index = calls.lastIndexOf(key)
-
-        if (index !== -1) calls.splice(index, 1)
-
-        if (calls.length === 0) callsByFiber.delete(fiber)
-      }
-
       const current = active.get(key)
 
       if (current === undefined) return
